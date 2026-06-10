@@ -44,31 +44,12 @@ int main()
 
     // ---- 创建核心对象 ----
     World world;
-    // ---- w=-5 层：5×5 地板 + 四柱 ----
-    for (int x = -2; x <= 2; ++x)
-        for (int z = -2; z <= 2; ++z)
-            if (x != 0 || z != 0)
-                world.set(IVec4(x, 0, z, -5), 1);
-    world.set(IVec4(-2, 1, -2, -5), 1); world.set(IVec4(2, 1, -2, -5), 1);
-    world.set(IVec4(-2, 1, 2, -5), 1); world.set(IVec4(2, 1, 2, -5), 1);
-    world.set(IVec4(-2, 2, -2, -5), 1); world.set(IVec4(2, 2, -2, -5), 1);
-    world.set(IVec4(-2, 2, 2, -5), 1); world.set(IVec4(2, 2, 2, -5), 1);
-
-    // ---- w=0 层：3×3 小平台 ----
-    for (int x = -1; x <= 1; ++x)
-        for (int z = -1; z <= 1; ++z)
-            world.set(IVec4(x, 0, z, 0), 1);
-
-    // ---- w=3 层：中心单柱 ----
-    world.set(IVec4(0, 0, 0, 3), 1);
-    world.set(IVec4(0, 1, 0, 3), 1);
-    world.set(IVec4(0, 2, 0, 3), 1);
-
-    // ---- 第四维轴线：沿 W 轴放标记块 ----
-    world.set(IVec4(0, -1, 0, -3), 1);
-    world.set(IVec4(0, -1, 0, 3), 1);
-    world.set(IVec4(0, -1, 0, -5), 1);
-    world.set(IVec4(0, -1, 0, 0), 1);
+    // 3×3×3×3 实心方块：中心 (1,1,1,-5) 在切片平面上，四面八方全包围 → 红色
+    for (int x = 0; x <= 2; ++x)
+        for (int y = 0; y <= 2; ++y)
+            for (int z = 0; z <= 2; ++z)
+                for (int w = -6; w <= -4; ++w)
+                    world.set(IVec4(x, y, z, w), 1);
 
     Camera4D camera;
     Renderer renderer(SCREEN_WIDTH, SCREEN_HEIGHT, SCALE);

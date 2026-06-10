@@ -57,42 +57,61 @@ Renderer::Renderer(int screenWidth, int screenHeight, double scale)
 // 渲染世界
 // ============================================================================
 
-void Renderer::renderWorld(const World& world, const Camera4D& cam)
+void Renderer::renderWorld(const World &world, const Camera4D &cam)
 {
-    const auto& blocks = world.getAllBlocks();
+    const auto &blocks = world.getAllBlocks();
     if (blocks.empty()) return;
 
     Vec4 camPos = cam.getPos();
 
-    struct BlockInfo { int x,y,z,w; double depth; };
+    struct BlockInfo { int x, y, z, w; double depth; };
     std::vector<BlockInfo> visible;
     visible.reserve(blocks.size());
 
-    for (const auto& pair : blocks)
+    for (const auto &pair : blocks)
     {
-        const IVec4& p = pair.first;
+        const IVec4 &p = pair.first;
         Vec4 center(static_cast<double>(p.x), static_cast<double>(p.y),
-                    static_cast<double>(p.z), static_cast<double>(p.w));
+            static_cast<double>(p.z), static_cast<double>(p.w));
         Vec4 delta = vec4Sub(center, camPos);
         double depth = vec4Dot(delta, cam.getForward());
-        visible.push_back({p.x, p.y, p.z, p.w, depth});
+        visible.push_back({ p.x, p.y, p.z, p.w, depth });
     }
 
     // 按深度降序
     std::sort(visible.begin(), visible.end(),
-              [](const BlockInfo& a, const BlockInfo& b)
-              { return a.depth > b.depth; });
+        [](const BlockInfo &a, const BlockInfo &b)
+    {
+        return a.depth > b.depth;
+    });
 
-    for (const auto& bi : visible)
-        drawBlockSlice(bi.x, bi.y, bi.z, bi.w, cam);
+    for (const auto &bi : visible)
+        drawBlockSlice(bi.x, bi.y, bi.z, bi.w, cam, world);
 }
 
 // ============================================================================
 // 超平面截 4D 立方体：真实交线
 // ============================================================================
 
-void Renderer::drawBlockSlice(int bx, int by, int bz, int bw, const Camera4D& cam)
+void Renderer::drawBlockSlice(int bx, int by, int bz, int bw,
+    const Camera4D &cam, const World &world)
 {
+    // 可见性测试：检查 8 个方向是否都被方块紧邻
+    bool occluded =
+        world.get(IVec4(bx + 1, by, bz, bw)) != 0 &&
+        world.get(IVec4(bx - 1, by, bz, bw)) != 0 &&
+        world.get(IVec4(bx, by + 1, bz, bw)) != 0 &&
+        world.get(IVec4(bx, by - 1, bz, bw)) != 0 &&
+        world.get(IVec4(bx, by, bz + 1, bw)) != 0 &&
+        world.get(IVec4(bx, by, bz - 1, bw)) != 0 &&
+        world.get(IVec4(bx, by, bz, bw + 1)) != 0 &&
+        world.get(IVec4(bx, by, bz, bw - 1)) != 0;
+
+    if (occluded)
+        setlinecolor(RGB(220, 40, 40));  // 红色标记：全遮挡
+    else
+        setlinecolor(RGB(180, 180, 180));
+
     // 生成 16 个顶点
     Vec4 worldVerts[16];
     hypercubeVertices(bx, by, bz, bw, worldVerts);
@@ -100,16 +119,14 @@ void Renderer::drawBlockSlice(int bx, int by, int bz, int bw, const Camera4D& ca
     // 计算每个顶点到切片的 over 距离
     double overDist[16];
     Vec4 camPos = cam.getPos();
-    const Vec4& over = cam.getOver();
+    const Vec4 &over = cam.getOver();
     for (int i = 0; i < 16; ++i)
         overDist[i] = vec4Dot(vec4Sub(worldVerts[i], camPos), over);
-
-    setlinecolor(RGB(180, 180, 180));
 
     // 遍历 24 个面
     for (int f = 0; f < 24; ++f)
     {
-        const int* face = FACES[f];
+        const int *face = FACES[f];
 
         // 收集此面内与切片相交的边
         Vec4 hitPoints[4];
@@ -134,7 +151,7 @@ void Renderer::drawBlockSlice(int bx, int by, int bz, int bw, const Camera4D& ca
                 t = 0.5;
 
             Vec4 pt = vec4Add(worldVerts[a],
-                        vec4Scale(vec4Sub(worldVerts[b], worldVerts[a]), t));
+                vec4Scale(vec4Sub(worldVerts[b], worldVerts[a]), t));
             hitPoints[hitCount++] = pt;
             if (hitCount >= 4) break;
         }
@@ -142,11 +159,11 @@ void Renderer::drawBlockSlice(int bx, int by, int bz, int bw, const Camera4D& ca
         // 绘制交线段
         for (int i = 0; i + 1 < hitCount; i += 2)
         {
-            ProjResult p0 = project(hitPoints[i],   cam, m_scale, m_offsetX, m_offsetY, cam.getPitch());
-            ProjResult p1 = project(hitPoints[i+1], cam, m_scale, m_offsetX, m_offsetY, cam.getPitch());
+            ProjResult p0 = project(hitPoints[i], cam, m_scale, m_offsetX, m_offsetY, cam.getPitch());
+            ProjResult p1 = project(hitPoints[i + 1], cam, m_scale, m_offsetX, m_offsetY, cam.getPitch());
             if (p0.valid && p1.valid)
                 line(static_cast<int>(p0.screenPos.x), static_cast<int>(p0.screenPos.y),
-                     static_cast<int>(p1.screenPos.x), static_cast<int>(p1.screenPos.y));
+                    static_cast<int>(p1.screenPos.x), static_cast<int>(p1.screenPos.y));
         }
     }
 }

@@ -15,9 +15,9 @@ class Renderer
 public:
     Renderer(int screenWidth, int screenHeight, double scale = 400.0);
 
-    void renderWorld(const World& world, const Camera4D& cam);
+    void renderWorld(const World &world, const Camera4D &cam);
     void drawCrosshair() const;
-    void drawHUD(const Camera4D& cam) const;
+    void drawHUD(const Camera4D &cam) const;
 
 private:
     /**
@@ -25,7 +25,8 @@ private:
      * @param bx,by,bz,bw  方块整数中心
      * @param cam          摄像机
      */
-    void drawBlockSlice(int bx, int by, int bz, int bw, const Camera4D& cam);
+    void drawBlockSlice(int bx, int by, int bz, int bw,
+        const Camera4D &cam, const World &world);
 
     int m_screenWidth, m_screenHeight;
     double m_scale, m_offsetX, m_offsetY;
