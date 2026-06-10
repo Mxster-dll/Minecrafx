@@ -1,18 +1,13 @@
 #include "camera.h"
 
 Camera4D::Camera4D()
-    : m_pos(0.0, 1.0, 0.0, -5.0)   // y=1 站在地板上方，w=-5 使地板可见
+    : m_pos(0.0, 2.0, 0.0, -5.0)
     , m_right(1.0, 0.0, 0.0, 0.0)
     , m_up(0.0, 1.0, 0.0, 0.0)
     , m_forward(0.0, 0.0, 1.0, 0.0)
     , m_over(0.0, 0.0, 0.0, 1.0)
-{
-    // 预旋转：使 right/forward/over 在 XZW 子空间内充分混合
-    // 这样 WASD 移动会同时影响 X、Z、W 三轴（仅 Y 轴由 Space/Shift 独占）
-    rotateXZ(0.6);
-    rotateXW(0.4);
-    rotateZW(0.8);
-}
+    , m_pitch(0.0)
+{}
 
 void Camera4D::move(const Vec4 &direction)
 {
@@ -152,30 +147,109 @@ void Camera4D::rotateZW(double angle)
     orthonormalize();
 }
 
+void Camera4D::rotateAroundUp(double angle)
+{
+    double c = std::cos(angle);
+    double s = std::sin(angle);
+    // 在 {right, forward} 平面内绕 up 旋转（偏航）
+    Vec4 newRight(
+        m_right.x * c - m_forward.x * s,
+        m_right.y * c - m_forward.y * s,
+        m_right.z * c - m_forward.z * s,
+        m_right.w * c - m_forward.w * s);
+    Vec4 newForward(
+        m_right.x * s + m_forward.x * c,
+        m_right.y * s + m_forward.y * c,
+        m_right.z * s + m_forward.z * c,
+        m_right.w * s + m_forward.w * c);
+    m_right = newRight;
+    m_forward = newForward;
+    orthonormalize();
+}
+
+void Camera4D::rotateAroundRight(double angle)
+{
+    double c = std::cos(angle);
+    double s = std::sin(angle);
+    // 在 {forward, up} 平面内绕 right 旋转（俯仰）
+    Vec4 newForward(
+        m_forward.x * c + m_up.x * s,
+        m_forward.y * c + m_up.y * s,
+        m_forward.z * c + m_up.z * s,
+        m_forward.w * c + m_up.w * s);
+    Vec4 newUp(
+        m_up.x * c - m_forward.x * s,
+        m_up.y * c - m_forward.y * s,
+        m_up.z * c - m_forward.z * s,
+        m_up.w * c - m_forward.w * s);
+    m_forward = newForward;
+    m_up = newUp;
+    orthonormalize();
+}
+
+void Camera4D::rotateAroundForward(double angle)
+{
+    double c = std::cos(angle);
+    double s = std::sin(angle);
+    // 在 {up, over} 平面内绕 forward 旋转（滚转 / 切片角度）
+    Vec4 newUp(
+        m_up.x * c - m_over.x * s,
+        m_up.y * c - m_over.y * s,
+        m_up.z * c - m_over.z * s,
+        m_up.w * c - m_over.w * s);
+    Vec4 newOver(
+        m_up.x * s + m_over.x * c,
+        m_up.y * s + m_over.y * c,
+        m_up.z * s + m_over.z * c,
+        m_up.w * s + m_over.w * c);
+    m_up = newUp;
+    m_over = newOver;
+    orthonormalize();
+}
+
+void Camera4D::rotateSlice(double angle)
+{
+    double c = std::cos(angle);
+    double s = std::sin(angle);
+    // 绕 right=j 轴旋转 forward↔over（切片平面 span{right,forward} 绕 j 在 XZW 内转）
+    // right 和 up 保持不变
+    Vec4 newForward(
+        m_forward.x * c - m_over.x * s,
+        m_forward.y * c - m_over.y * s,
+        m_forward.z * c - m_over.z * s,
+        m_forward.w * c - m_over.w * s);
+    Vec4 newOver(
+        m_forward.x * s + m_over.x * c,
+        m_forward.y * s + m_over.y * c,
+        m_forward.z * s + m_over.z * c,
+        m_forward.w * s + m_over.w * c);
+    m_forward = newForward;
+    m_over = newOver;
+    orthonormalize();
+}
+
+void Camera4D::addPitch(double delta)
+{
+    m_pitch += delta;
+    if (m_pitch > 1.2) m_pitch = 1.2;
+    if (m_pitch < -1.2) m_pitch = -1.2;
+}
+
 void Camera4D::orthonormalize()
 {
-    // 先锁定 up = (0,1,0,0)（高度轴永不偏离）
+    // 锁定 up = 全局高度轴 (0,1,0,0)
     m_up = Vec4(0.0, 1.0, 0.0, 0.0);
-
-    // 清除 right/forward/over 中可能因浮点误差积累的 Y 分量
     m_right.y = 0.0;
     m_forward.y = 0.0;
     m_over.y = 0.0;
-
-    // Gram-Schmidt 正交化（right → forward → over，up 已固定）
     gramSchmidt(m_right, m_forward, m_over, m_up);
-    // 注意：gramSchmidt 最后处理 m_up，但 m_up 已归一化且与其他向量正交
-    //       由于 right/forward/over 的 y=0，m_up=(0,1,0,0) 不会被修改
 }
 
 void Camera4D::reset()
 {
-    m_pos = Vec4(0.0, 1.0, 0.0, -5.0);
+    m_pos = Vec4(0.0, 2.0, 0.0, -5.0);
     m_right = Vec4(1.0, 0.0, 0.0, 0.0);
     m_up = Vec4(0.0, 1.0, 0.0, 0.0);
     m_forward = Vec4(0.0, 0.0, 1.0, 0.0);
-    m_over = Vec4(0.0, 0.0, 0.0, 1.0);    // 恢复初始混合旋转
-    rotateXZ(0.6);
-    rotateXW(0.4);
-    rotateZW(0.8);
+    m_over = Vec4(0.0, 0.0, 0.0, 1.0);    m_pitch = 0.0;
 }

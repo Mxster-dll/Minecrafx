@@ -11,7 +11,7 @@
 class Camera4D
 {
 public:
-    /** @brief 构造默认摄像机：位置 (0,1,0,-5)，up 锁定为 (0,1,0,0) */
+    /** @brief 构造默认摄像机：位置 (0,2,0,-5)，标准正交基 */
     Camera4D();
 
     // ---- 移动 ----
@@ -33,6 +33,29 @@ public:
     void rotateYW(double angle);
     /** @brief 绕 ZW 平面旋转（影响 forward 和 over） */
     void rotateZW(double angle);
+
+    // ---- 本地轴旋转（用于鼠标视角控制） ----
+
+    /** @brief 绕 up 轴旋转 right↔forward（偏航 / 左右环顾） */
+    void rotateAroundUp(double angle);
+
+    /** @brief 绕 right 轴旋转 forward↔up（俯仰 / 上下看） */
+    void rotateAroundRight(double angle);
+
+    /** @brief 绕 forward 轴旋转 up↔over（滚转） */
+    void rotateAroundForward(double angle);
+
+    /** @brief 绕 right 轴旋转 forward↔over（切片旋转：保持 j 轴不动） */
+    void rotateSlice(double angle);
+
+    // ---- 俯仰 ----
+
+    /** @brief 设置俯仰角（视角向量与 XZW 平面的夹角，弧度） */
+    void setPitch(double angle) { m_pitch = angle; }
+    /** @brief 调整俯仰角 */
+    void addPitch(double delta);
+    /** @brief 获取俯仰角 */
+    double getPitch() const { return m_pitch; }
 
     // ---- 正交化 ----
 
@@ -58,4 +81,5 @@ private:
     Vec4 m_up;
     Vec4 m_forward;
     Vec4 m_over;
+    double m_pitch;  // 俯仰角（弧度），限幅 [-1.2, 1.2]
 };

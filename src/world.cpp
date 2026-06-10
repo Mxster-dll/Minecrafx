@@ -18,12 +18,38 @@ void World::set(const IVec4 &pos, int type)
 
 void generateFloor(World &world)
 {
-    // y=0, w=0 平面，x,z 范围 [-4, 3] 生成 8×8 石板
     for (int x = -4; x <= 3; ++x)
-    {
         for (int z = -4; z <= 3; ++z)
+            world.set(IVec4(x, 0, z, 0), 1);
+}
+
+void generateHypercubeShell(World &world,
+    int cx, int cy, int cz, int cw,
+    int halfSize)
+{
+    int r = halfSize;
+    for (int x = cx - r; x <= cx + r; ++x)
+    {
+        for (int y = cy - r; y <= cy + r; ++y)
         {
-            world.set(IVec4(x, 0, z, 0), 1);  // 类型 1 = 石块
+            for (int z = cz - r; z <= cz + r; ++z)
+            {
+                for (int w = cw - r; w <= cw + r; ++w)
+                {
+                    int dx = (x > cx) ? (x - cx) : (cx - x);
+                    int dy = (y > cy) ? (y - cy) : (cy - y);
+                    int dz = (z > cz) ? (z - cz) : (cz - z);
+                    int dw = (w > cw) ? (w - cw) : (cw - w);
+
+                    int dist = dx;
+                    if (dy > dist) dist = dy;
+                    if (dz > dist) dist = dz;
+                    if (dw > dist) dist = dw;
+
+                    if (dist == r)
+                        world.set(IVec4(x, y, z, w), 1);
+                }
+            }
         }
     }
 }
