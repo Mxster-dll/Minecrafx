@@ -230,9 +230,9 @@ void Renderer::drawHUD(const Camera4D &cam) const
     // 操作提示
     settextcolor(RGB(200, 200, 200));
 
-    const wchar_t *help1 = L"W/S/A/D: Move  |  Space/Shift: Up/Down  |  Q/E: 4D strafe";
-    const wchar_t *help2 = L"1-6: Rotate planes  |  LMB: Break  |  RMB: Place  |  R: Reset";
-    const wchar_t *help3 = L"ESC: Exit";
+    const wchar_t *help1 = L"W/S: Fwd/Back  |  A/D: Strafe  |  Space/Shift: Up/Down";
+    const wchar_t *help2 = L"Q/E + Wheel: Rotate 4D slice  |  Mouse: Look(XW)";
+    const wchar_t *help3 = L"1:XZ 2:XW 3:ZW  |  LMB: Break  |  RMB: Place  |  R: Reset  |  ESC: Exit";
 
     TextOutW(hdc, 10, m_screenHeight - 80, help1, (int) wcslen(help1));
     TextOutW(hdc, 10, m_screenHeight - 60, help2, (int) wcslen(help2));

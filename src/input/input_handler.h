@@ -10,17 +10,17 @@
 /**
  * @brief 输入处理器 — 封装键盘、鼠标状态与点击事件
  *
- * 组合 KeyboardInput 和 MouseInput，额外提供鼠标点击检测（上升沿触发）、
- * 以及射线检测函数。
+ * 组合 KeyboardInput 和 MouseInput，通过窗口子类化可靠拦截 WM_MOUSEWHEEL，
+ * 额外提供鼠标点击检测（上升沿触发）以及射线检测函数。
  */
 class InputHandler
 {
 public:
-    /**
-     * @brief 构造输入处理器
-     * @param hwnd 窗口句柄
-     */
+    /** @brief 构造并子类化窗口以拦截滚轮消息 */
     explicit InputHandler(HWND hwnd);
+
+    /** @brief 析构时恢复原窗口过程 */
+    ~InputHandler();
 
     /**
      * @brief 每帧调用，刷新键盘和鼠标状态
@@ -49,6 +49,12 @@ public:
      */
     bool getMouseClick(int button);
 
+    /**
+     * @brief 获取并清空本帧累积的鼠标滚轮增量
+     * @return 滚轮增量（正值向上/远离，负值向下/靠近，WHEEL_DELTA=120）
+     */
+    int getMouseWheel();
+
 private:
     HWND m_hwnd;
     KeyboardInput m_keyboard;
@@ -58,6 +64,13 @@ private:
     static constexpr int MOUSE_BUTTON_COUNT = 3;
     bool m_mouseCurr[MOUSE_BUTTON_COUNT];
     bool m_mousePrev[MOUSE_BUTTON_COUNT];
+
+    // 鼠标滚轮累积
+    int m_wheelDelta;
+
+    // ---- 窗口子类化（拦截 WM_MOUSEWHEEL） ----
+    WNDPROC m_oldWndProc;
+    static LRESULT CALLBACK wndProcHook(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 };
 
 // ============================================================================

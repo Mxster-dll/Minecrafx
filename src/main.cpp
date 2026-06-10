@@ -8,6 +8,7 @@
 
 #include <graphics.h>
 #include <windows.h>
+#include <imm.h>
 #include <cmath>
 
 #include "linalg.h"
@@ -21,10 +22,12 @@
  // ============================================================================
 constexpr int    SCREEN_WIDTH = 800;
 constexpr int    SCREEN_HEIGHT = 600;
-constexpr double MOVE_SPEED = 0.1;    // 每帧移动速度
-constexpr double ROTATE_ANGLE = 0.03;   // 每帧旋转角度（弧度）
-constexpr double SCALE = 400.0;  // 投影缩放因子
-constexpr int    FRAME_SLEEP_MS = 16;     // 约 60 FPS
+constexpr double MOVE_SPEED = 0.1;          // 键盘移动速度
+constexpr double MOUSE_SENSITIVITY = 0.002; // 鼠标视角灵敏度（弧度/像素）
+constexpr double ROTATE_ANGLE = 0.03;       // 键盘旋转角度（弧度）
+constexpr double WHEEL_ANGLE = 0.1;         // 滚轮旋转角度（弧度/格）
+constexpr double SCALE = 400.0;          // 投影缩放因子
+constexpr int    FRAME_SLEEP_MS = 16;    // 约 60 FPS
 
 // ============================================================================
 // 主函数
@@ -34,6 +37,10 @@ int main()
     // ---- 初始化图形窗口与双缓冲 ----
     initgraph(SCREEN_WIDTH, SCREEN_HEIGHT);
     HWND hwnd = GetHWnd();
+
+    // 禁用输入法：防止 Shift 等键被系统拦截切换中英文
+    ImmAssociateContext(hwnd, NULL);
+
     BeginBatchDraw();
 
     // ---- 创建核心对象 ----
@@ -68,57 +75,60 @@ int main()
         }
 
         // ================================================================
-        // 移动处理
+        // 鼠标视角转动
+        //   水平拖动 → rotateXW（环顾 4D 左右，保持 up=Y 不变）
+        //   滚轮     → rotateZW（绕高度轴旋转 3D 切片方向）
         // ================================================================
-        Vec4 moveDir;  // 累积移动方向
+        {
+            auto [dx, dy] = input.getMouseDelta();
+            if (dx != 0)
+                camera.rotateXW(static_cast<double>(dx) * MOUSE_SENSITIVITY);
+            // 垂直鼠标暂不绑定旋转，保持 up 恒为高度轴
+            (void) dy;
+        }
 
-        // 前后移动：沿 forward 向量
+        // 滚轮 + Q/E：绕高度轴旋转 3D 切片（仅改变 4D 朝向，不改变位置）
+        {
+            int wheel = input.getMouseWheel();
+            if (wheel != 0)
+            {
+                double angle = (wheel / static_cast<double>(WHEEL_DELTA)) * WHEEL_ANGLE;
+                camera.rotateZW(angle);
+            }
+        }
+        {
+            double rotAngle = ROTATE_ANGLE;
+            if (input.isKeyDown(Key::E))
+                camera.rotateZW(rotAngle);
+            if (input.isKeyDown(Key::Q))
+                camera.rotateZW(-rotAngle);
+        }
+
+        // ================================================================
+        // 移动处理（全部在 3D 切片空间内）
+        //   W/S     — 沿 forward 向量（切片前后）
+        //   A/D     — 沿 right   向量（切片左右）
+        //   Space/Shift — 沿 up=(0,1,0,0) 向量（纯高度）
+        // ================================================================
+        Vec4 moveDir;
+
         if (input.isKeyDown(Key::W))
             moveDir = vec4Add(moveDir, vec4Scale(camera.getForward(), MOVE_SPEED));
         if (input.isKeyDown(Key::S))
             moveDir = vec4Add(moveDir, vec4Scale(camera.getForward(), -MOVE_SPEED));
 
-        // 左右移动：沿 right 向量
         if (input.isKeyDown(Key::D))
             moveDir = vec4Add(moveDir, vec4Scale(camera.getRight(), MOVE_SPEED));
         if (input.isKeyDown(Key::A))
             moveDir = vec4Add(moveDir, vec4Scale(camera.getRight(), -MOVE_SPEED));
 
-        // 上下移动：沿 up 向量
         if (input.isKeyDown(Key::Space))
             moveDir = vec4Add(moveDir, vec4Scale(camera.getUp(), MOVE_SPEED));
         if (input.isKeyDown(Key::LShift) || input.isKeyDown(Key::RShift))
             moveDir = vec4Add(moveDir, vec4Scale(camera.getUp(), -MOVE_SPEED));
 
-        // 第四维移动：沿 over 向量
-        if (input.isKeyDown(Key::E))
-            moveDir = vec4Add(moveDir, vec4Scale(camera.getOver(), MOVE_SPEED));
-        if (input.isKeyDown(Key::Q))
-            moveDir = vec4Add(moveDir, vec4Scale(camera.getOver(), -MOVE_SPEED));
-
-        // 应用移动
         if (vec4LengthSq(moveDir) > 1e-12)
             camera.move(moveDir);
-
-        // ================================================================
-        // 旋转处理（六种平面旋转，Shift 反转方向）
-        // ================================================================
-        double rotAngle = ROTATE_ANGLE;
-        bool shift = input.isKeyDown(Key::LShift) || input.isKeyDown(Key::RShift);
-
-        // 用 isPressed 检测单次触发（也可以持续按住旋转，用 isKeyDown）
-        if (input.isKeyDown(Key::Num1))
-            camera.rotateXY(shift ? -rotAngle : rotAngle);
-        if (input.isKeyDown(Key::Num2))
-            camera.rotateXZ(shift ? -rotAngle : rotAngle);
-        if (input.isKeyDown(Key::Num3))
-            camera.rotateYZ(shift ? -rotAngle : rotAngle);
-        if (input.isKeyDown(Key::Num4))
-            camera.rotateXW(shift ? -rotAngle : rotAngle);
-        if (input.isKeyDown(Key::Num5))
-            camera.rotateYW(shift ? -rotAngle : rotAngle);
-        if (input.isKeyDown(Key::Num6))
-            camera.rotateZW(shift ? -rotAngle : rotAngle);
 
         // ================================================================
         // 方块交互（鼠标点击）

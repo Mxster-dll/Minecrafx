@@ -194,25 +194,30 @@ ProjResult project(const Vec4 &worldPos, const Camera4D &cam,
     Vec4 v = vec4Sub(worldPos, cam.getPos());
     double camX = vec4Dot(v, cam.getRight());
     double camY = vec4Dot(v, cam.getUp());
-    /* camZ 保留用于未来深度缓冲 */
-    // double camZ = vec4Dot(v, cam.getForward());
+    double camZ = vec4Dot(v, cam.getForward());
     double camW = vec4Dot(v, cam.getOver());
 
-    ProjResult result;
-    result.camW = camW;
+    // 混合深度：over 为主深度，forward 提供次级视差
+    //  这样 W/S（沿 forward）移动时画面也会产生可见变化
+    constexpr double FORWARD_DEPTH_WEIGHT = 0.25;
+    double depth = camW + camZ * FORWARD_DEPTH_WEIGHT;
 
-    // w 裁剪
-    if (camW <= 0.1)
+    ProjResult result;
+    result.camW = camW;  // 保留原始 camW 用于排序/颜色
+
+    // 深度裁剪
+    if (depth <= 0.1)
     {
         result.valid = false;
         result.screenPos = Vec2();
         return result;
     }
 
-    // 4D→3D 透视除法
-    double invW = 1.0 / camW;
-    double projX = camX * invW;
-    double projY = camY * invW;
+    // 透视除法
+    double invDepth = 1.0 / depth;
+    double projX = camX * invDepth;
+    double projY = camY * invDepth;
+    // camZ / depth 忽略（同之前 camZ/camW）
     // camZ / camW 被忽略（用于未来深度缓冲区）
 
     // 3D→2D 正交投影（EasyX y 轴向下）

@@ -1,6 +1,9 @@
 #include "input_handler.h"
 #include <cmath>
 
+// 用于 SetProp/GetProp 的属性名
+static const wchar_t *PROP_NAME = L"InputHandler_This";
+
 // ============================================================================
 // InputHandler
 // ============================================================================
@@ -9,12 +12,91 @@ InputHandler::InputHandler(HWND hwnd)
     : m_hwnd(hwnd)
     , m_keyboard(hwnd)
     , m_mouse(hwnd)
+    , m_wheelDelta(0)
+    , m_oldWndProc(nullptr)
 {
     for (int i = 0; i < MOUSE_BUTTON_COUNT; ++i)
     {
         m_mouseCurr[i] = false;
         m_mousePrev[i] = false;
     }
+
+    // 注册 Raw Input：直接从鼠标硬件读取滚轮数据，绕过消息队列
+    RAWINPUTDEVICE rid;
+    rid.usUsagePage = 0x01;        // 通用桌面
+    rid.usUsage = 0x02;        // 鼠标
+    rid.dwFlags = RIDEV_INPUTSINK;  // 即使非前台也接收
+    rid.hwndTarget = m_hwnd;
+    RegisterRawInputDevices(&rid, 1, sizeof(rid));
+
+    // 子类化窗口以拦截 WM_INPUT（Raw Input 通过此消息送达）
+    SetProp(m_hwnd, PROP_NAME, reinterpret_cast<HANDLE>(this));
+    m_oldWndProc = reinterpret_cast<WNDPROC>(
+        SetWindowLongPtr(m_hwnd, GWLP_WNDPROC,
+            reinterpret_cast<LONG_PTR>(wndProcHook)));
+}
+
+InputHandler::~InputHandler()
+{
+    // 恢复原窗口过程
+    if (m_oldWndProc)
+    {
+        SetWindowLongPtr(m_hwnd, GWLP_WNDPROC,
+            reinterpret_cast<LONG_PTR>(m_oldWndProc));
+    }
+    RemoveProp(m_hwnd, PROP_NAME);
+
+    // 注销 Raw Input
+    RAWINPUTDEVICE rid;
+    rid.usUsagePage = 0x01;
+    rid.usUsage = 0x02;
+    rid.dwFlags = RIDEV_REMOVE;
+    rid.hwndTarget = nullptr;
+    RegisterRawInputDevices(&rid, 1, sizeof(rid));
+}
+
+LRESULT CALLBACK InputHandler::wndProcHook(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    InputHandler *self = reinterpret_cast<InputHandler *>(
+        GetProp(hwnd, PROP_NAME));
+
+    // 处理 Raw Input 消息
+    if (msg == WM_INPUT && self)
+    {
+        UINT size = 0;
+        GetRawInputData(reinterpret_cast<HRAWINPUT>(lp), RID_INPUT,
+            nullptr, &size, sizeof(RAWINPUTHEADER));
+        if (size > 0 && size <= sizeof(RAWINPUT))
+        {
+            RAWINPUT raw;
+            if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lp), RID_INPUT,
+                &raw, &size, sizeof(RAWINPUTHEADER)) == size)
+            {
+                if (raw.header.dwType == RIM_TYPEMOUSE)
+                {
+                    // 检查滚轮标志
+                    USHORT flags = raw.data.mouse.usButtonFlags;
+                    if (flags & RI_MOUSE_WHEEL)
+                    {
+                        // 滚轮数据在 usButtonData 中（有符号 short）
+                        self->m_wheelDelta += static_cast<short>(
+                            raw.data.mouse.usButtonData);
+                    }
+                }
+            }
+        }
+    }
+    // 后备：也拦截 WM_MOUSEWHEEL（某些系统可能仍发送此消息）
+    else if (msg == WM_MOUSEWHEEL && self)
+    {
+        self->m_wheelDelta += GET_WHEEL_DELTA_WPARAM(wp);
+    }
+
+    // 调用原窗口过程
+    if (self && self->m_oldWndProc)
+        return CallWindowProc(self->m_oldWndProc, hwnd, msg, wp, lp);
+
+    return DefWindowProc(hwnd, msg, wp, lp);
 }
 
 void InputHandler::update()
@@ -68,6 +150,13 @@ bool InputHandler::getMouseClick(int button)
         m_mouseCurr[button] = false;
 
     return clicked;
+}
+
+int InputHandler::getMouseWheel()
+{
+    int delta = m_wheelDelta;
+    m_wheelDelta = 0;
+    return delta;
 }
 
 // ============================================================================
