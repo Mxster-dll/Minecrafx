@@ -6,17 +6,40 @@
 #include <windows.h>
 
 // ============================================================================
-// 3D 立方体 12 条边（顶点 0-7，汉明距离 1）
+// 超立方体 24 个二维面（每个面 4 个顶点，构成一个正方形）
 // ============================================================================
-const int Renderer::CUBE_EDGES[12][2] = {
-    {0,1}, {0,2}, {0,4},
-    {1,3}, {1,5},
-    {2,3}, {2,6},
-    {3,7},
-    {4,5}, {4,6},
-    {5,7},
-    {6,7}
+const int Renderer::FACES[24][4] = {
+    // XY 面（z,w 固定，变化 bit0,bit1：顺序 0-1-3-2）
+    {0,1,3,2}, {4,5,7,6}, {8,9,11,10}, {12,13,15,14},
+    // XZ 面（y,w 固定，变化 bit0,bit2：顺序 0-1-5-4）
+    {0,1,5,4}, {2,3,7,6}, {8,9,13,12}, {10,11,15,14},
+    // XW 面（y,z 固定，变化 bit0,bit3：顺序 0-2-6-4）
+    {0,2,6,4}, {1,3,7,5}, {8,10,14,12}, {9,11,15,13},
+    // YZ 面（x,w 固定，变化 bit1,bit2：顺序 0-2,3,1  → 0-2-10-8? 不对，变化 bit1,bit2）
+    // 顶点: 0(0000), 2(0100), 10(1010), 8(1000) → 顺序 0-2-10-8
+    {0,2,10,8}, {1,3,11,9}, {4,6,14,12}, {5,7,15,13},
+    // YW 面（x,z 固定，变化 bit1,bit3：顺序 0-1-9-8）
+    {0,1,9,8}, {2,3,11,10}, {4,5,13,12}, {6,7,15,14},
+    // ZW 面（x,y 固定，变化 bit2,bit3：顺序 0-4-12-8）
+    {0,4,12,8}, {1,5,13,9}, {2,6,14,10}, {3,7,15,11}
 };
+
+// 生成 16 个顶点
+static void hypercubeVertices(int bx, int by, int bz, int bw, Vec4 v[16])
+{
+    double cx = static_cast<double>(bx);
+    double cy = static_cast<double>(by);
+    double cz = static_cast<double>(bz);
+    double cw = static_cast<double>(bw);
+    for (int i = 0; i < 16; ++i)
+    {
+        double sx = (i & 1) ? 0.5 : -0.5;
+        double sy = (i & 2) ? 0.5 : -0.5;
+        double sz = (i & 4) ? 0.5 : -0.5;
+        double sw = (i & 8) ? 0.5 : -0.5;
+        v[i] = Vec4(cx + sx, cy + sy, cz + sz, cw + sw);
+    }
+}
 
 // ============================================================================
 // 构造
@@ -31,109 +54,100 @@ Renderer::Renderer(int screenWidth, int screenHeight, double scale)
 {}
 
 // ============================================================================
-// 生成 3D 立方体的 8 个世界空间顶点（W 固定为方块 W 坐标）
-// ============================================================================
-static void cubeVerticesWorld(int bx, int by, int bz, int bw, Vec4 verts[8])
-{
-    double cx = static_cast<double>(bx);
-    double cy = static_cast<double>(by);
-    double cz = static_cast<double>(bz);
-    double cw = static_cast<double>(bw);
-    for (int i = 0; i < 8; ++i)
-    {
-        double sx = (i & 1) ? 0.5 : -0.5;
-        double sy = (i & 2) ? 0.5 : -0.5;
-        double sz = (i & 4) ? 0.5 : -0.5;
-        verts[i] = Vec4(cx + sx, cy + sy, cz + sz, cw);
-    }
-}
-
-// ============================================================================
-// 渲染世界：切片过滤 + 3D 立方体
+// 渲染世界
 // ============================================================================
 
-void Renderer::renderWorld(const World &world, const Camera4D &cam)
+void Renderer::renderWorld(const World& world, const Camera4D& cam)
 {
-    const auto &blocks = world.getAllBlocks();
+    const auto& blocks = world.getAllBlocks();
     if (blocks.empty()) return;
 
     Vec4 camPos = cam.getPos();
-    const Vec4 &over = cam.getOver();
 
-    // 收集切片内的方块（|overDist| ≤ 0.5 表示切片穿过方块）
-    struct BlockInfo { IVec4 pos; double overDist; double depth; };
+    struct BlockInfo { int x,y,z,w; double depth; };
     std::vector<BlockInfo> visible;
     visible.reserve(blocks.size());
 
-    for (const auto &pair : blocks)
+    for (const auto& pair : blocks)
     {
-        const IVec4 &p = pair.first;
-        Vec4 center(static_cast<double>(p.x),
-            static_cast<double>(p.y),
-            static_cast<double>(p.z),
-            static_cast<double>(p.w));
+        const IVec4& p = pair.first;
+        Vec4 center(static_cast<double>(p.x), static_cast<double>(p.y),
+                    static_cast<double>(p.z), static_cast<double>(p.w));
         Vec4 delta = vec4Sub(center, camPos);
-        double od = vec4Dot(delta, over);
-        if (od < -0.5 || od > 0.5) continue;  // 切片未穿过此方块
-
-        // 深度用 camZ（forward 方向距离）
         double depth = vec4Dot(delta, cam.getForward());
-        visible.push_back({ p, od, depth });
+        visible.push_back({p.x, p.y, p.z, p.w, depth});
     }
 
-    if (visible.empty()) return;
-
-    // 按深度降序（远到近）
+    // 按深度降序
     std::sort(visible.begin(), visible.end(),
-        [](const BlockInfo &a, const BlockInfo &b)
-    {
-        return a.depth > b.depth;
-    });
+              [](const BlockInfo& a, const BlockInfo& b)
+              { return a.depth > b.depth; });
 
-    // 逐个绘制
-    for (const auto &bi : visible)
-        drawBlock3D(bi.pos, cam, bi.overDist);
+    for (const auto& bi : visible)
+        drawBlockSlice(bi.x, bi.y, bi.z, bi.w, cam);
 }
 
 // ============================================================================
-// 绘制单个 3D 立方体
+// 超平面截 4D 立方体：真实交线
 // ============================================================================
 
-void Renderer::drawBlock3D(const IVec4 &blockPos, const Camera4D &cam, double overDist)
+void Renderer::drawBlockSlice(int bx, int by, int bz, int bw, const Camera4D& cam)
 {
-    // 生成 8 个世界空间顶点（W 固定，X/Y/Z 变化 ±0.5）
-    Vec4 worldVerts[8];
-    cubeVerticesWorld(blockPos.x, blockPos.y, blockPos.z, blockPos.w, worldVerts);
+    // 生成 16 个顶点
+    Vec4 worldVerts[16];
+    hypercubeVertices(bx, by, bz, bw, worldVerts);
 
-    // 投影所有顶点：4D→2D
-    ProjResult proj[8];
-    bool anyValid = false;
-    for (int i = 0; i < 8; ++i)
+    // 计算每个顶点到切片的 over 距离
+    double overDist[16];
+    Vec4 camPos = cam.getPos();
+    const Vec4& over = cam.getOver();
+    for (int i = 0; i < 16; ++i)
+        overDist[i] = vec4Dot(vec4Sub(worldVerts[i], camPos), over);
+
+    setlinecolor(RGB(180, 180, 180));
+
+    // 遍历 24 个面
+    for (int f = 0; f < 24; ++f)
     {
-        proj[i] = project(worldVerts[i], cam, m_scale, m_offsetX, m_offsetY, cam.getPitch());
-        if (proj[i].valid) anyValid = true;
-    }
-    if (!anyValid) return;
+        const int* face = FACES[f];
 
-    // 亮度：离切片越近越亮
-    double brightness = 1.0 - std::abs(overDist) * 1.2;
-    if (brightness < 0.15) brightness = 0.15;
-    if (brightness > 1.0)  brightness = 1.0;
-    int gray = static_cast<int>(200 * brightness);
-    setlinecolor(RGB(gray, gray, gray));
+        // 收集此面内与切片相交的边
+        Vec4 hitPoints[4];
+        int hitCount = 0;
 
-    // 绘制 12 条边
-    for (int e = 0; e < 12; ++e)
-    {
-        int i0 = CUBE_EDGES[e][0];
-        int i1 = CUBE_EDGES[e][1];
-        if (!proj[i0].valid || !proj[i1].valid) continue;
+        // 检查 4 条边（正方形中相邻顶点对）
+        for (int e = 0; e < 4; ++e)
+        {
+            int a = face[e];
+            int b = face[(e + 1) & 3];  // 循环相邻
+            double da = overDist[a];
+            double db = overDist[b];
 
-        int x0 = static_cast<int>(proj[i0].screenPos.x);
-        int y0 = static_cast<int>(proj[i0].screenPos.y);
-        int x1 = static_cast<int>(proj[i1].screenPos.x);
-        int y1 = static_cast<int>(proj[i1].screenPos.y);
-        line(x0, y0, x1, y1);
+            if ((da > 0 && db > 0) || (da < 0 && db < 0))
+                continue;  // 同侧，不相交
+
+            // 计算交点（线性插值）
+            double t = 0.0;
+            if (std::abs(da - db) > 1e-12)
+                t = da / (da - db);
+            else
+                t = 0.5;
+
+            Vec4 pt = vec4Add(worldVerts[a],
+                        vec4Scale(vec4Sub(worldVerts[b], worldVerts[a]), t));
+            hitPoints[hitCount++] = pt;
+            if (hitCount >= 4) break;
+        }
+
+        // 绘制交线段
+        for (int i = 0; i + 1 < hitCount; i += 2)
+        {
+            ProjResult p0 = project(hitPoints[i],   cam, m_scale, m_offsetX, m_offsetY, cam.getPitch());
+            ProjResult p1 = project(hitPoints[i+1], cam, m_scale, m_offsetX, m_offsetY, cam.getPitch());
+            if (p0.valid && p1.valid)
+                line(static_cast<int>(p0.screenPos.x), static_cast<int>(p0.screenPos.y),
+                     static_cast<int>(p1.screenPos.x), static_cast<int>(p1.screenPos.y));
+        }
     }
 }
 

@@ -49,10 +49,10 @@ int main()
         for (int z = -2; z <= 2; ++z)
             if (x != 0 || z != 0)
                 world.set(IVec4(x, 0, z, -5), 1);
-    world.set(IVec4(-2, 1, -2, -5), 1); world.set(IVec4( 2, 1, -2, -5), 1);
-    world.set(IVec4(-2, 1,  2, -5), 1); world.set(IVec4( 2, 1,  2, -5), 1);
-    world.set(IVec4(-2, 2, -2, -5), 1); world.set(IVec4( 2, 2, -2, -5), 1);
-    world.set(IVec4(-2, 2,  2, -5), 1); world.set(IVec4( 2, 2,  2, -5), 1);
+    world.set(IVec4(-2, 1, -2, -5), 1); world.set(IVec4(2, 1, -2, -5), 1);
+    world.set(IVec4(-2, 1, 2, -5), 1); world.set(IVec4(2, 1, 2, -5), 1);
+    world.set(IVec4(-2, 2, -2, -5), 1); world.set(IVec4(2, 2, -2, -5), 1);
+    world.set(IVec4(-2, 2, 2, -5), 1); world.set(IVec4(2, 2, 2, -5), 1);
 
     // ---- w=0 层：3×3 小平台 ----
     for (int x = -1; x <= 1; ++x)
@@ -66,9 +66,9 @@ int main()
 
     // ---- 第四维轴线：沿 W 轴放标记块 ----
     world.set(IVec4(0, -1, 0, -3), 1);
-    world.set(IVec4(0, -1, 0,  3), 1);
+    world.set(IVec4(0, -1, 0, 3), 1);
     world.set(IVec4(0, -1, 0, -5), 1);
-    world.set(IVec4(0, -1, 0,  0), 1);
+    world.set(IVec4(0, -1, 0, 0), 1);
 
     Camera4D camera;
     Renderer renderer(SCREEN_WIDTH, SCREEN_HEIGHT, SCALE);
