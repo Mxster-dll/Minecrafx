@@ -4,6 +4,7 @@
 #include <utility>
 #include <cstdio>
 #include <cwchar>
+#include <iostream>
 #include <windows.h>
 
 // ============================================================================
@@ -53,13 +54,15 @@ Renderer::Renderer(int screenWidth, int screenHeight, double scale)
     , m_scale(scale)
     , m_offsetX(screenWidth / 2.0)
     , m_offsetY(screenHeight / 2.0)
-    , m_blockHalf(0.5 / 16.0)  // 16³ 超立方体
+    , m_blockHalf(0.5 / 16.0)
     , m_frameCount(0)
+    , m_texLoaded(false)
 {
     m_zbuf.resize(m_screenWidth * m_screenHeight);
+    memset(m_tex, 0, sizeof(m_tex));
 }
 
-// 从方块坐标生成伪随机颜色
+// 从方块坐标生成伪随机颜色（纹理未加载时使用）
 static COLORREF blockColor(int x, int y, int z, int w)
 {
     unsigned int h = static_cast<unsigned int>(
@@ -69,6 +72,53 @@ static COLORREF blockColor(int x, int y, int z, int w)
     int g = 60 + ((h >> 8) & 0xFF) % 156;
     int b = 60 + ((h >> 16) & 0xFF) % 156;
     return RGB(r, g, b);
+}
+
+Renderer::~Renderer()
+{}
+
+COLORREF Renderer::getBlockColor(int x, int y, int z, int w) const
+{
+    if (m_texLoaded)
+    {
+        // 纹理坐标取模映射到 [0,15]
+        int tx = (x % 16 + 16) % 16;
+        int ty = (y % 16 + 16) % 16;
+        int tz = (z % 16 + 16) % 16;
+        int tw = (w % 16 + 16) % 16;
+        return m_tex[tx][ty][tz][tw];
+    }
+    return blockColor(x, y, z, w);
+}
+
+void Renderer::loadTextures(const wchar_t *basePath)
+{
+    wchar_t path[512];
+    for (int x = 0; x < 16; ++x)
+    {
+        for (int z = 0; z < 16; ++z)
+        {
+            swprintf(path, 512, L"%ls/x%02d/z%02d.png", basePath, x, z);
+            // std::wcout << path << std::endl;
+            IMAGE img;
+            loadimage(&img, path);
+            DWORD *buf = GetImageBuffer(&img);
+            if (buf && img.getwidth() > 0)
+            {
+                int w = img.getwidth(), h = img.getheight();
+                for (int y = 0; y < 16 && y < h; ++y)
+                    for (int ww = 0; ww < 16 && ww < w; ++ww)
+                        m_tex[x][15 - y][z][ww] = buf[y * w + ww];
+                if (x == 0 && z == 0)
+                    std::wcout << L"  loaded color[0][0][0][0]=0x" << std::hex << m_tex[0][0][0][0] << std::dec << L" w=" << w << L" h=" << h << std::endl;
+            }
+            else
+            {
+                std::wcout << L"  FAILED: w=" << img.getwidth() << L" buf=" << (buf ? L"ok" : L"null") << std::endl;
+            }
+        }
+    }
+    m_texLoaded = true;
 }
 
 // ============================================================================
@@ -199,7 +249,7 @@ void Renderer::drawBlockWire(int bx, int by, int bz, int bw,
         world.get(IVec4(bx, by, bz, bw + 1)) && world.get(IVec4(bx, by, bz, bw - 1)))
         return;
 
-    COLORREF col = blockColor(bx, by, bz, bw);
+    COLORREF col = getBlockColor(bx, by, bz, bw);
     int r = GetRValue(col), g = GetGValue(col), b = GetBValue(col);
     COLORREF dark = RGB((r * 2) / 5, (g * 2) / 5, (b * 2) / 5);
 
@@ -266,7 +316,7 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
             world.get(IVec4(bx, by, bz, bw + 1)) && world.get(IVec4(bx, by, bz, bw - 1)))
             continue;
 
-        COLORREF col = blockColor(bx, by, bz, bw);
+        COLORREF col = getBlockColor(bx, by, bz, bw);
 
         Vec4 verts[16]; hypercubeVertices(bx, by, bz, bw, verts, m_blockHalf);
         double od[16];

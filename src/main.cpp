@@ -55,6 +55,7 @@ int main()
 
     Camera4D camera;
     Renderer renderer(SCREEN_WIDTH, SCREEN_HEIGHT, SCALE);
+    renderer.loadTextures(L"D:/Project/Ongoing/Minecrafx/assert/texture/grass_block");
     InputHandler input(hwnd);
 
     // 切片旋转平滑变量（无回弹：速度直接追踪瞬时输入）

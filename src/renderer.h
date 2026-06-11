@@ -15,10 +15,14 @@ class Renderer
 {
 public:
     Renderer(int screenWidth, int screenHeight, double scale = 400.0);
+    ~Renderer();
 
     void renderWorld(const World &world, const Camera4D &cam);
     void drawCrosshair() const;
     void drawHUD(const Camera4D &cam) const;
+
+    /** @brief 从 assert/texture/grass_block/ 加载纹理颜色 */
+    void loadTextures(const wchar_t *basePath);
 
 private:
     void drawBlockWire(int bx, int by, int bz, int bw,
@@ -26,12 +30,17 @@ private:
     void drawAllWires(const World &world, const Camera4D &cam);
     void drawFacesStep(const World &world, const Camera4D &cam);
 
+    COLORREF getBlockColor(int x, int y, int z, int w) const;
+
     int m_screenWidth, m_screenHeight;
     double m_scale, m_offsetX, m_offsetY;
-    double m_blockHalf;  // 方块半边长（默认 0.5）
+    double m_blockHalf;
     int m_frameCount;
     std::vector<double> m_zbuf;
-    DWORD *m_pBits;  // DIB 位图像素指针
+    DWORD *m_pBits;
+
+    COLORREF m_tex[16][16][16][16];  // 纹理颜色表
+    bool m_texLoaded;
 
     void resetBuffers();
     void fillPolygonZ(const POINT *pts, int n, const double *depths, COLORREF color);
