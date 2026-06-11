@@ -46,11 +46,11 @@ int main()
 
     // ---- 创建核心对象 ----
     World world;
-    // 3×3×3×3 实心方块：中心 (1,1,1,-5) 在切片平面上，四面八方全包围 → 红色
-    for (int x = 0; x <= 2; ++x)
-        for (int y = 0; y <= 2; ++y)
-            for (int z = 0; z <= 2; ++z)
-                for (int w = -6; w <= -4; ++w)
+    // 16³ 超立方体，w 索引 -88..-73 → 实际 w=-5.5..-4.56，切片 w=-5 穿过中间
+    for (int x = 0; x < 16; ++x)
+        for (int y = 0; y < 16; ++y)
+            for (int z = 0; z < 16; ++z)
+                for (int w = -88; w <= -73; ++w)
                     world.set(IVec4(x, y, z, w), 1);
 
     Camera4D camera;

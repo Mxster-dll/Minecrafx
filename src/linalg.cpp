@@ -207,7 +207,7 @@ ProjResult project(const Vec4 &worldPos, const Camera4D &cam,
     ProjResult result;
     result.camW = camW;
 
-    if (depth <= 0.1)
+    if (depth <= 1e-6)
     {
         result.valid = false;
         result.screenPos = Vec2();

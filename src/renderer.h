@@ -28,6 +28,7 @@ private:
 
     int m_screenWidth, m_screenHeight;
     double m_scale, m_offsetX, m_offsetY;
+    double m_blockHalf;  // 方块半边长（默认 0.5）
     int m_frameCount;
     std::vector<double> m_zbuf;
     DWORD *m_pBits;  // DIB 位图像素指针

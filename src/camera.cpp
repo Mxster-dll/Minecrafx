@@ -1,7 +1,7 @@
 #include "camera.h"
 
 Camera4D::Camera4D()
-    : m_pos(0.0, 2.0, 0.0, -5.0)
+    : m_pos(0.0, 0.5, 0.0, -5.0)   // Y 与方块同高度
     , m_right(1.0, 0.0, 0.0, 0.0)
     , m_up(0.0, 1.0, 0.0, 0.0)
     , m_forward(0.0, 0.0, 1.0, 0.0)
@@ -247,7 +247,7 @@ void Camera4D::orthonormalize()
 
 void Camera4D::reset()
 {
-    m_pos = Vec4(0.0, 2.0, 0.0, -5.0);
+    m_pos = Vec4(0.0, 0.5, 0.0, -5.0);
     m_right = Vec4(1.0, 0.0, 0.0, 0.0);
     m_up = Vec4(0.0, 1.0, 0.0, 0.0);
     m_forward = Vec4(0.0, 0.0, 1.0, 0.0);

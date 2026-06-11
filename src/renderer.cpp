@@ -26,18 +26,19 @@ const int Renderer::FACES[24][4] = {
 };
 
 // 生成 16 个顶点
-static void hypercubeVertices(int bx, int by, int bz, int bw, Vec4 v[16])
+static void hypercubeVertices(int bx, int by, int bz, int bw, Vec4 v[16], double half)
 {
-    double cx = static_cast<double>(bx);
-    double cy = static_cast<double>(by);
-    double cz = static_cast<double>(bz);
-    double cw = static_cast<double>(bw);
+    double sp = half * 2.0;  // 间距 = 2×半边长，保证相邻方块无间隙
+    double cx = static_cast<double>(bx) * sp;
+    double cy = static_cast<double>(by) * sp;
+    double cz = static_cast<double>(bz) * sp;
+    double cw = static_cast<double>(bw) * sp;
     for (int i = 0; i < 16; ++i)
     {
-        double sx = (i & 1) ? 0.5 : -0.5;
-        double sy = (i & 2) ? 0.5 : -0.5;
-        double sz = (i & 4) ? 0.5 : -0.5;
-        double sw = (i & 8) ? 0.5 : -0.5;
+        double sx = (i & 1) ? half : -half;
+        double sy = (i & 2) ? half : -half;
+        double sz = (i & 4) ? half : -half;
+        double sw = (i & 8) ? half : -half;
         v[i] = Vec4(cx + sx, cy + sy, cz + sz, cw + sw);
     }
 }
@@ -52,6 +53,7 @@ Renderer::Renderer(int screenWidth, int screenHeight, double scale)
     , m_scale(scale)
     , m_offsetX(screenWidth / 2.0)
     , m_offsetY(screenHeight / 2.0)
+    , m_blockHalf(0.5 / 16.0)  // 16³ 超立方体
     , m_frameCount(0)
 {
     m_zbuf.resize(m_screenWidth * m_screenHeight);
@@ -183,7 +185,7 @@ void Renderer::drawBlockWire(int bx, int by, int bz, int bw,
     int r = GetRValue(col), g = GetGValue(col), b = GetBValue(col);
     COLORREF dark = RGB((r * 2) / 5, (g * 2) / 5, (b * 2) / 5);
 
-    Vec4 verts[16]; hypercubeVertices(bx, by, bz, bw, verts);
+    Vec4 verts[16]; hypercubeVertices(bx, by, bz, bw, verts, m_blockHalf);
     double od[16];
     Vec4 cPos = cam.getPos();
     const Vec4 &ov = cam.getOver();
@@ -246,7 +248,7 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
 
         COLORREF col = blockColor(bx, by, bz, bw);
 
-        Vec4 verts[16]; hypercubeVertices(bx, by, bz, bw, verts);
+        Vec4 verts[16]; hypercubeVertices(bx, by, bz, bw, verts, m_blockHalf);
         double od[16];
         for (int i = 0; i < 16; ++i)
             od[i] = vec4Dot(vec4Sub(verts[i], camPos), ov);
