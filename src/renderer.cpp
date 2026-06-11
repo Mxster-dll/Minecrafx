@@ -117,6 +117,18 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
     DeleteObject(hBmp);
 }
 
+// 快速判断方块是否可能与切片相交
+static bool mayIntersectSlice(int bx, int by, int bz, int bw,
+    const Vec4 &camPos, const Vec4 &over, double half, double sp)
+{
+    double cx = bx * sp, cy = by * sp, cz = bz * sp, cw = bw * sp;
+    double centerOD = over.x * (cx - camPos.x) + over.y * (cy - camPos.y)
+        + over.z * (cz - camPos.z) + over.w * (cw - camPos.w);
+    double extent = half * (std::abs(over.x) + std::abs(over.y)
+        + std::abs(over.z) + std::abs(over.w));
+    return std::abs(centerOD) <= extent + 1e-9;
+}
+
 // ============================================================================
 // 第一步：遍历所有方块，只画深色交线（框线）
 // ============================================================================
@@ -127,14 +139,20 @@ void Renderer::drawAllWires(const World &world, const Camera4D &cam)
     if (blocks.empty()) return;
 
     Vec4 camPos = cam.getPos();
+    const Vec4 &over = cam.getOver();
+    double sp = m_blockHalf * 2.0;
+
     struct BI { int x, y, z, w; double depth; };
     std::vector<BI> list; list.reserve(blocks.size());
     for (const auto &p : blocks)
     {
-        Vec4 c(static_cast<double>(p.first.x), static_cast<double>(p.first.y),
-            static_cast<double>(p.first.z), static_cast<double>(p.first.w));
-        list.push_back({ p.first.x, p.first.y, p.first.z, p.first.w,
-                        vec4Dot(vec4Sub(c, camPos), cam.getForward()) });
+        int bx = p.first.x, by = p.first.y, bz = p.first.z, bw = p.first.w;
+        if (!mayIntersectSlice(bx, by, bz, bw, camPos, over, m_blockHalf, sp))
+            continue;
+        double cx = bx * sp, cy = by * sp, cz = bz * sp, cw = bw * sp;
+        Vec4 center(cx, cy, cz, cw);
+        double fwd = vec4Dot(vec4Sub(center, camPos), cam.getForward());
+        list.push_back({ bx, by, bz, bw, fwd });
     }
     std::sort(list.begin(), list.end(), [](const BI &a, const BI &b) { return a.depth > b.depth; });
 
@@ -238,7 +256,9 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
     for (const auto &pair : blocks)
     {
         int bx = pair.first.x, by = pair.first.y, bz = pair.first.z, bw = pair.first.w;
-
+        // 快速剔除：切片不可能穿过此方块
+        if (!mayIntersectSlice(bx, by, bz, bw, camPos, ov, m_blockHalf, m_blockHalf * 2.0))
+            continue;
         // 遮挡检测
         if (world.get(IVec4(bx + 1, by, bz, bw)) && world.get(IVec4(bx - 1, by, bz, bw)) &&
             world.get(IVec4(bx, by + 1, bz, bw)) && world.get(IVec4(bx, by - 1, bz, bw)) &&
