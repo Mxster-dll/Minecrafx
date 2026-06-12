@@ -42,6 +42,13 @@ private:
     clock_t m_fpsTime;
     int m_fps;
 
+    // 诊断计数器
+    int m_diagTotal;
+    int m_diagSlice;
+    int m_diagOccl;
+    int m_diagGeom;
+    int m_diagFaces;
+
     COLORREF m_tex[16][16][16][16];  // 纹理颜色表
     bool m_texLoaded;
 

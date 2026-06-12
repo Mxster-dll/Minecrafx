@@ -59,6 +59,11 @@ Renderer::Renderer(int screenWidth, int screenHeight, double scale)
     , m_fpsFrames(0)
     , m_fpsTime(0)
     , m_fps(0)
+    , m_diagTotal(0)
+    , m_diagSlice(0)
+    , m_diagOccl(0)
+    , m_diagGeom(0)
+    , m_diagFaces(0)
     , m_texLoaded(false)
 {
     m_zbuf.resize(m_screenWidth * m_screenHeight);
@@ -200,22 +205,28 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
     Vec4 camPos = cam.getPos();
     const Vec4 &ov = cam.getOver();
 
-    // 收集所有方块的交线段，构建 (block, 胞腔) �?交点列表
+    // 诊断计数
+    m_diagTotal = static_cast<int>(blocks.size());
+    m_diagSlice = 0;
+    m_diagOccl = 0;
+    m_diagGeom = 0;
+
     struct FaceData { int bx, by, bz, bw; COLORREF col; POINT pts[12]; double depths[12]; int n; };
     std::vector<FaceData> allFaces;
 
     for (const auto &pair : blocks)
     {
         int bx = pair.first.x, by = pair.first.y, bz = pair.first.z, bw = pair.first.w;
-        // 快速剔除：切片不可能穿过此方块
         if (!mayIntersectSlice(bx, by, bz, bw, camPos, ov, m_blockHalf, m_blockHalf * 2.0))
             continue;
-        // 遮挡检�?
+        ++m_diagSlice;
+
         if (world.get(IVec4(bx + 1, by, bz, bw)) && world.get(IVec4(bx - 1, by, bz, bw)) &&
             world.get(IVec4(bx, by + 1, bz, bw)) && world.get(IVec4(bx, by - 1, bz, bw)) &&
             world.get(IVec4(bx, by, bz + 1, bw)) && world.get(IVec4(bx, by, bz - 1, bw)) &&
             world.get(IVec4(bx, by, bz, bw + 1)) && world.get(IVec4(bx, by, bz, bw - 1)))
             continue;
+        ++m_diagOccl;
 
         COLORREF col = getBlockColor(bx, by, bz, bw);
 
@@ -242,6 +253,7 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
             if (hc == 2) segs[sc++] = { hits[0], hits[1], f };
         }
         if (sc == 0) continue;
+        ++m_diagGeom;
 
         // 8 个胞�?
         struct Cell { int bit, val; };
@@ -334,7 +346,9 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
         }
     }
 
-    // 逐帧显示：收集所有面及其深度，按深度排序后用深度缓冲绘制
+    m_diagFaces = static_cast<int>(allFaces.size());
+
+    // 深度排序 + 绘制
     struct FaceWithDepth { FaceData fd; double avgDepth; };
     std::vector<FaceWithDepth> fds;
     for (auto &fd : allFaces)
@@ -474,7 +488,19 @@ void Renderer::drawHUD(const Camera4D &cam) const
     // 帧率（右上角�?
     swprintf(buf, 256, L"FPS: %d", m_fps);
     TextOutW(hdc, m_screenWidth - 100, 10, buf, (int) wcslen(buf));
-
+    // 诊断信息（右上角列表）
+    settextcolor(RGB(255, 255, 100));
+    swprintf(buf, 256, L"方块总数: %d", m_diagTotal);
+    TextOutW(hdc, m_screenWidth - 200, 30, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"切片通过: %d", m_diagSlice);
+    TextOutW(hdc, m_screenWidth - 200, 48, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"遮挡通过: %d", m_diagOccl);
+    TextOutW(hdc, m_screenWidth - 200, 66, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"几何生成: %d", m_diagGeom);
+    TextOutW(hdc, m_screenWidth - 200, 84, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"渲染面数: %d", m_diagFaces);
+    TextOutW(hdc, m_screenWidth - 200, 102, buf, (int) wcslen(buf));
+    settextcolor(RGB(255, 255, 255));
     // 坐标
     swprintf(buf, 256, L"Pos: (%.1f, %.1f, %.1f, %.1f)",
         pos.x, pos.y, pos.z, pos.w);
