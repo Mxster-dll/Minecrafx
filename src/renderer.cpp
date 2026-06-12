@@ -323,14 +323,7 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
 
             if (orderedN < 3) continue;
 
-            // 按胞腔所在轴调节亮度
-            double bright = 1.0 - cb * 0.18;
-            COLORREF faceCol = RGB(
-                static_cast<int>(GetRValue(col) * bright),
-                static_cast<int>(GetGValue(col) * bright),
-                static_cast<int>(GetBValue(col) * bright));
-
-            FaceData fd = { bx,by,bz,bw, faceCol, {}, {}, 0 };
+            FaceData fd = { bx,by,bz,bw, col, {}, {}, 0 };
             for (int i = 0; i < orderedN && fd.n < 12; ++i)
             {
                 fd.pts[fd.n] = orderedPts[i];
