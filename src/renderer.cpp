@@ -577,54 +577,81 @@ void Renderer::fillPolygonZ(const POINT *pts, int n, const double *depths, COLOR
     if (maxY >= m_screenHeight) maxY = m_screenHeight - 1;
     if (minY > maxY) return;
 
-    // 对每条扫描线，计算多边形交点
+    // ---- 预计算每条边的斜率（除法只做一次） ----
+    struct EdgePre { double x, z; double dxdy, dzdy; int yStart; int yEnd; };
+    EdgePre epre[12]; int ec = 0;
+    double *zbuf = m_zbuf.data();
+    DWORD *bits = m_pBits;
+    int sw = m_screenWidth;
+
+    for (int i = 0; i < n; ++i)
+    {
+        int j = (i + 1) % n;
+        int y0 = pts[i].y, y1 = pts[j].y;
+        if (y0 == y1) continue;  // 水平边跳过
+
+        // 确保 y0 < y1（从顶到底）
+        int topY, botY, topIdx;
+        if (y0 < y1) { topY = y0; botY = y1; topIdx = i; }
+        else { topY = y1; botY = y0; topIdx = j; }
+
+        int otherIdx = (topIdx == i) ? j : i;
+        double invDy = 1.0 / (botY - topY);
+        double xTop = pts[topIdx].x;
+        double zTop = depths[topIdx];
+        double dx = pts[otherIdx].x - xTop;
+        double dz = depths[otherIdx] - zTop;
+        double dxdy = dx * invDy;
+        double dzdy = dz * invDy;
+
+        // 推进到第一条有效扫描线
+        int startY = topY;
+        if (startY < minY)
+        {
+            double adv = static_cast<double>(minY - topY);
+            xTop += dxdy * adv;
+            zTop += dzdy * adv;
+            startY = minY;
+        }
+        if (startY > maxY) continue;
+
+        int yEnd = botY;
+        if (yEnd > maxY + 1) yEnd = maxY + 1;
+
+        epre[ec++] = { xTop, zTop, dxdy, dzdy, startY, yEnd };
+    }
+
+    // ---- 扫描线循环（凸多边形：每条线恰有 0/2 交点） ----
     for (int y = minY; y <= maxY; ++y)
     {
-        // 找到与扫描线相交的所有边
-        struct Edge { double x; double z; };
-        Edge edges[12]; int ec = 0;
+        double xL = 1e9, xR = -1e9, zL = 0, zR = 0;
+        int hit = 0;
 
-        for (int i = 0; i < n; ++i)
+        for (int e = 0; e < ec; ++e)
         {
-            int j = (i + 1) % n;
-            int y0 = pts[i].y, y1 = pts[j].y;
-            if ((y0 <= y && y1 > y) || (y1 <= y && y0 > y))
-            {
-                double t = static_cast<double>(y - y0) / static_cast<double>(y1 - y0);
-                double x = pts[i].x + t * (pts[j].x - pts[i].x);
-                double z = depths[i] + t * (depths[j] - depths[i]);
-                if (ec < 12) edges[ec++] = { x, z };
-            }
+            if (y < epre[e].yStart || y >= epre[e].yEnd) continue;
+            double cx = epre[e].x, cz = epre[e].z;
+            if (cx < xL) { xL = cx; zL = cz; }
+            if (cx > xR) { xR = cx; zR = cz; }
+            ++hit;
+            epre[e].x += epre[e].dxdy;
+            epre[e].z += epre[e].dzdy;
         }
 
-        // �?x 排序
-        for (int i = 0; i < ec; ++i)
-            for (int j = i + 1; j < ec; ++j)
-                if (edges[i].x > edges[j].x) std::swap(edges[i], edges[j]);
+        if (hit < 2) continue;
 
-        // 逐对填充水平线段
-        for (int k = 0; k + 1 < ec; k += 2)
+        int x0 = static_cast<int>(xL), x1 = static_cast<int>(xR);
+        if (x0 < 0) x0 = 0;
+        if (x1 >= sw) x1 = sw - 1;
+        if (x0 > x1) continue;
+
+        double dz = (x1 > x0) ? (zR - zL) / (x1 - x0) : 0;
+        double z = zL;
+        double *zptr = zbuf + y * sw + x0;
+        DWORD *bptr = bits + y * sw + x0;
+        for (int x = x0; x <= x1; ++x, z += dz, ++zptr, ++bptr)
         {
-            int x0 = static_cast<int>(edges[k].x);
-            int x1 = static_cast<int>(edges[k + 1].x);
-            double z0 = edges[k].z;
-            double z1 = edges[k + 1].z;
-
-            if (x0 < 0) x0 = 0;
-            if (x1 >= m_screenWidth) x1 = m_screenWidth - 1;
-            if (x0 > x1) continue;
-
-            double dz = (x1 > x0) ? (z1 - z0) / (x1 - x0) : 0;
-            double z = z0;
-            for (int x = x0; x <= x1; ++x, z += dz)
-            {
-                int idx = y * m_screenWidth + x;
-                if (idx >= 0 && idx < static_cast<int>(m_zbuf.size()) && z < m_zbuf[idx])
-                {
-                    m_zbuf[idx] = z;
-                    m_pBits[idx] = color;
-                }
-            }
+            if (z < *zptr) { *zptr = z; *bptr = color; }
         }
     }
 }
