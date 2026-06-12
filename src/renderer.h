@@ -49,6 +49,13 @@ private:
     int m_diagGeom;
     int m_diagFaces;
 
+    // 耗时累加器（clock 滴答）
+    clock_t m_timeIter;     // 遍历+切片过滤
+    clock_t m_timeOccl;     // 遮挡检测
+    clock_t m_timeGeom;     // 几何计算
+    clock_t m_timeRast;     // 深度排序+光栅化
+    int m_timeSamples;      // 采样帧数
+
     COLORREF m_tex[16][16][16][16];  // 纹理颜色表
     bool m_texLoaded;
 

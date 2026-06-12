@@ -64,6 +64,11 @@ Renderer::Renderer(int screenWidth, int screenHeight, double scale)
     , m_diagOccl(0)
     , m_diagGeom(0)
     , m_diagFaces(0)
+    , m_timeIter(0)
+    , m_timeOccl(0)
+    , m_timeGeom(0)
+    , m_timeRast(0)
+    , m_timeSamples(0)
     , m_texLoaded(false)
 {
     m_zbuf.resize(m_screenWidth * m_screenHeight);
@@ -205,14 +210,19 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
     Vec4 camPos = cam.getPos();
     const Vec4 &ov = cam.getOver();
 
-    // 诊断计数
     m_diagTotal = static_cast<int>(blocks.size());
     m_diagSlice = 0;
     m_diagOccl = 0;
     m_diagGeom = 0;
+    m_diagFaces = 0;
+
+    clock_t t0 = clock();
 
     struct FaceData { int bx, by, bz, bw; COLORREF col; POINT pts[12]; double depths[12]; int n; };
     std::vector<FaceData> allFaces;
+
+    clock_t tOcclAcc = 0;
+    clock_t tGeomAcc = 0;
 
     for (const auto &pair : blocks)
     {
@@ -221,12 +231,19 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
             continue;
         ++m_diagSlice;
 
+        clock_t tOccl0 = clock();
         if (world.get(IVec4(bx + 1, by, bz, bw)) && world.get(IVec4(bx - 1, by, bz, bw)) &&
             world.get(IVec4(bx, by + 1, bz, bw)) && world.get(IVec4(bx, by - 1, bz, bw)) &&
             world.get(IVec4(bx, by, bz + 1, bw)) && world.get(IVec4(bx, by, bz - 1, bw)) &&
             world.get(IVec4(bx, by, bz, bw + 1)) && world.get(IVec4(bx, by, bz, bw - 1)))
+        {
+            tOcclAcc += (clock() - tOccl0);
             continue;
+        }
+        tOcclAcc += (clock() - tOccl0);
         ++m_diagOccl;
+
+        clock_t tGeom0 = clock();
 
         COLORREF col = getBlockColor(bx, by, bz, bw);
 
@@ -344,7 +361,14 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
             }
             allFaces.push_back(fd);
         }
+        tGeomAcc += (clock() - tGeom0);
     }
+
+    // 各阶段耗时累计
+    clock_t t1 = clock();
+    m_timeIter += (t1 - t0) - tOcclAcc - tGeomAcc;  // 遍历+切片 = 总时间 - 遮挡 - 几何
+    m_timeOccl += tOcclAcc;
+    m_timeGeom += tGeomAcc;
 
     m_diagFaces = static_cast<int>(allFaces.size());
 
@@ -370,6 +394,9 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
         int r = GetRValue(fd.col), g = GetGValue(fd.col), b = GetBValue(fd.col);
         fillPolygonZ(fd.pts, fd.n, fd.depths, RGB(r, g, b));
     }
+
+    m_timeRast += (clock() - t1);
+    ++m_timeSamples;
 }
 
 // ============================================================================
@@ -585,21 +612,49 @@ void Renderer::drawHUD(const Camera4D &cam) const
     // ========================================
     // FPS + 诊断（右上角）
     // ========================================
+    double invCLK = 1000.0 / CLOCKS_PER_SEC;
+    double msIter = (m_timeSamples > 0) ? (m_timeIter * invCLK / m_timeSamples) : 0.0;
+    double msOccl = (m_timeSamples > 0) ? (m_timeOccl * invCLK / m_timeSamples) : 0.0;
+    double msGeom = (m_timeSamples > 0) ? (m_timeGeom * invCLK / m_timeSamples) : 0.0;
+    double msRast = (m_timeSamples > 0) ? (m_timeRast * invCLK / m_timeSamples) : 0.0;
+    double msTotal = msIter + msOccl + msGeom + msRast;
+
+    int xLeft = 530;
+    int xRight = m_screenWidth - 12;
+
     settextcolor(RGB(255, 255, 255));
+    SetTextAlign(hdc, TA_LEFT);
     swprintf(buf, 256, L"FPS: %d", m_fps);
-    TextOutW(hdc, m_screenWidth - 100, 10, buf, (int) wcslen(buf));
+    TextOutW(hdc, xLeft, 10, buf, (int) wcslen(buf));
+    SetTextAlign(hdc, TA_RIGHT);
+    swprintf(buf, 256, L"合计: %5.1fms", msTotal);
+    TextOutW(hdc, xRight, 10, buf, (int) wcslen(buf));
 
     settextcolor(RGB(255, 255, 100));
-    swprintf(buf, 256, L"方块总数: %d", m_diagTotal);
-    TextOutW(hdc, m_screenWidth - 200, 30, buf, (int) wcslen(buf));
-    swprintf(buf, 256, L"切片通过: %d", m_diagSlice);
-    TextOutW(hdc, m_screenWidth - 200, 48, buf, (int) wcslen(buf));
-    swprintf(buf, 256, L"遮挡通过: %d", m_diagOccl);
-    TextOutW(hdc, m_screenWidth - 200, 66, buf, (int) wcslen(buf));
-    swprintf(buf, 256, L"几何生成: %d", m_diagGeom);
-    TextOutW(hdc, m_screenWidth - 200, 84, buf, (int) wcslen(buf));
-    swprintf(buf, 256, L"渲染面数: %d", m_diagFaces);
-    TextOutW(hdc, m_screenWidth - 200, 102, buf, (int) wcslen(buf));
+    SetTextAlign(hdc, TA_LEFT);
+    swprintf(buf, 256, L"方块总数: %-8d", m_diagTotal); TextOutW(hdc, xLeft, 30, buf, (int) wcslen(buf));
+    SetTextAlign(hdc, TA_RIGHT);
+    swprintf(buf, 256, L"%5.1fms", msIter);              TextOutW(hdc, xRight, 30, buf, (int) wcslen(buf));
+
+    SetTextAlign(hdc, TA_LEFT);
+    swprintf(buf, 256, L"切片通过: %-8d", m_diagSlice); TextOutW(hdc, xLeft, 50, buf, (int) wcslen(buf));
+    SetTextAlign(hdc, TA_RIGHT);
+    swprintf(buf, 256, L"%5.1fms", msOccl);              TextOutW(hdc, xRight, 50, buf, (int) wcslen(buf));
+
+    SetTextAlign(hdc, TA_LEFT);
+    swprintf(buf, 256, L"遮挡通过: %-8d", m_diagOccl); TextOutW(hdc, xLeft, 70, buf, (int) wcslen(buf));
+    SetTextAlign(hdc, TA_RIGHT);
+    swprintf(buf, 256, L"%5.1fms", msGeom);              TextOutW(hdc, xRight, 70, buf, (int) wcslen(buf));
+
+    SetTextAlign(hdc, TA_LEFT);
+    swprintf(buf, 256, L"几何生成: %-8d", m_diagGeom); TextOutW(hdc, xLeft, 90, buf, (int) wcslen(buf));
+    SetTextAlign(hdc, TA_RIGHT);
+    swprintf(buf, 256, L"%5.1fms", msRast);              TextOutW(hdc, xRight, 90, buf, (int) wcslen(buf));
+
+    SetTextAlign(hdc, TA_LEFT);
+    swprintf(buf, 256, L"渲染面数: %-8d", m_diagFaces); TextOutW(hdc, xLeft, 110, buf, (int) wcslen(buf));
+
+    SetTextAlign(hdc, TA_LEFT);
     settextcolor(RGB(255, 255, 255));
 
     // ========================================
