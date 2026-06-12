@@ -65,11 +65,22 @@ Renderer::Renderer(int screenWidth, int screenHeight, double scale)
     , m_diagOccl(0)
     , m_diagGeom(0)
     , m_diagFaces(0)
-    , m_timeClear(0)
-    , m_timeIter(0)
-    , m_timeOccl(0)
-    , m_timeGeom(0)
-    , m_timeRast(0)
+    , m_timeZBuf(0)
+    , m_timeDIB(0)
+    , m_timeCellTest(0)
+    , m_timeSurfChk(0)
+    , m_timeVertGen(0)
+    , m_timeOverDot(0)
+    , m_time24Face(0)
+    , m_timeCellGrp(0)
+    , m_timeEpiMatch(0)
+    , m_timeChain(0)
+    , m_timeDSort(0)
+    , m_timeSort(0)
+    , m_timeBBOX(0)
+    , m_timeEdges(0)
+    , m_timePixWr(0)
+    , m_timeBitBlt(0)
     , m_timeWorld(0)
     , m_timeElapsed(0)
     , m_tPrev(0)
@@ -150,8 +161,8 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
 
     clock_t t = clock();
     resetBuffers();
+    m_timeZBuf += clock() - t;  t = clock();
 
-    // 创建 32-bit DIB 位图
     HDC hdc = GetImageHDC();
     BITMAPINFO bmi = {};
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -169,18 +180,18 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
     HDC memDC = CreateCompatibleDC(hdc);
     HBITMAP oldBmp = (HBITMAP) SelectObject(memDC, hBmp);
 
-    // 填充背景
     DWORD bg = 0x001E0A0A;
     int total = m_screenWidth * m_screenHeight;
     for (int i = 0; i < total; ++i) bits[i] = bg;
-    m_timeClear += clock() - t;  t = clock();
+    m_timeDIB += clock() - t;  t = clock();
 
     m_pBits = bits;
     drawFacesStep(world, cam);
     m_pBits = nullptr;
 
-    // 刷到屏幕
+    clock_t tBlt = clock();
     BitBlt(hdc, 0, 0, m_screenWidth, m_screenHeight, memDC, 0, 0, SRCCOPY);
+    m_timeBitBlt += clock() - tBlt;
 
     SelectObject(memDC, oldBmp);
     DeleteDC(memDC);
@@ -234,13 +245,10 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
     m_diagFaces = 0;
     double sp = m_blockHalf * 2.0;
 
-    clock_t t0 = clock();
-
     struct FaceData { int bx, by, bz, bw; COLORREF col; POINT pts[12]; double depths[12]; int n; };
     std::vector<FaceData> allFaces;
 
     clock_t tOcclAcc = 0;
-    clock_t tGeomAcc = 0;
 
     for (const auto &pair : blocks)
     {
@@ -260,8 +268,6 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
         }
         tOcclAcc += (clock() - tOccl0);
         ++m_diagOccl;
-
-        clock_t tGeom0 = clock();
 
         COLORREF col = getBlockColor(bx, by, bz, bw);
 
@@ -379,7 +385,6 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
             }
             allFaces.push_back(fd);
         }
-        tGeomAcc += (clock() - tGeom0);
     }
 
     // ---- 超方块：16 分法递归遍历 ----
@@ -393,6 +398,7 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
         std::function<void(int, int, int, int, int)> traverse =
             [&](int bx, int by, int bz, int bw, int size)
         {
+            clock_t t = clock();
             // 胞腔-切片相交测试
             double cs = size * sp;
             double cx = (bx + size * 0.5) * sp;
@@ -402,8 +408,8 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
             double cod = ov.x * (cx - camPos.x) + ov.y * (cy - camPos.y) + ov.z * (cz - camPos.z) + ov.w * (cw - camPos.w);
             double ext = cs * (std::abs(ov.x) + std::abs(ov.y) + std::abs(ov.z) + std::abs(ov.w));
             if (std::abs(cod) > ext + 1e-9) return;
-
             ++m_diagSlice;
+            m_timeCellTest += clock() - t;  t = clock();
 
             if (size == 1)
             {
@@ -411,12 +417,15 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
                 if (lx > 0 && lx < SuperBlock::SIZE - 1 && ly>0 && ly < SuperBlock::SIZE - 1 &&
                     lz>0 && lz < SuperBlock::SIZE - 1 && lw>0 && lw < SuperBlock::SIZE - 1) return;
                 ++m_diagOccl;
+                m_timeSurfChk += clock() - t;  t = clock();
 
-                clock_t tGeom0 = clock();
                 COLORREF col = getBlockColor(bx, by, bz, bw);
                 Vec4 verts[16]; hypercubeVertices(bx, by, bz, bw, verts, m_blockHalf);
+                m_timeVertGen += clock() - t;  t = clock();
+
                 double od[16];
                 for (int i = 0; i < 16; ++i) od[i] = vec4Dot(vec4Sub(verts[i], camPos), ov);
+                m_timeOverDot += clock() - t;  t = clock();
 
                 struct Seg2 { Vec4 a, b; int fi; };
                 Seg2 segs[24]; int sc = 0;
@@ -428,13 +437,14 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
                         int a = fc[e], b = fc[(e + 1) & 3];
                         double da = od[a], db = od[b];
                         if ((da > 0 && db > 0) || (da < 0 && db < 0)) continue;
-                        double t = (std::abs(da - db) > 1e-12) ? da / (da - db) : 0.5;
-                        h[hc++] = vec4Add(verts[a], vec4Scale(vec4Sub(verts[b], verts[a]), t));
+                        double t2 = (std::abs(da - db) > 1e-12) ? da / (da - db) : 0.5;
+                        h[hc++] = vec4Add(verts[a], vec4Scale(vec4Sub(verts[b], verts[a]), t2));
                     }
                     if (hc == 2) segs[sc++] = { h[0],h[1],f };
                 }
-                if (sc == 0) { tGeomAcc += (clock() - tGeom0); return; }
+                if (sc == 0) return;
                 ++m_diagGeom;
+                m_time24Face += clock() - t;  t = clock();
 
                 struct Cell { int bit, val; };
                 const Cell cells[8] = { {0,0},{0,1},{1,0},{1,1},{2,0},{2,1},{3,0},{3,1} };
@@ -468,6 +478,8 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
                         int si = cSegs[i]; int ai = epc;
                         eps[epc++] = { segs[si].a,i,ai + 1 }; eps[epc++] = { segs[si].b,i,ai };
                     }
+                    m_timeCellGrp += clock() - t;  t = clock();
+
                     int next[12];
                     for (int i = 0; i < epc; ++i)
                     {
@@ -478,6 +490,8 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
                             if (vec4DistSq(eps[i].pos, eps[j].pos) < 1e-6) { next[i] = eps[j].pt; break; }
                         }
                     }
+                    m_timeEpiMatch += clock() - t;  t = clock();
+
                     POINT oPt[12]; double oDp[12]; int oN = 0; bool used[12] = {}; int cur = 0;
                     while (cur >= 0 && !used[cur] && oN < 12)
                     {
@@ -488,12 +502,12 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
                         oDp[oN] = vec4Dot(vec4Sub(eps[cur].pos, camPos), cam.getForward());
                         ++oN; cur = next[cur];
                     }
+                    m_timeChain += clock() - t;  t = clock();
                     if (oN < 3) continue;
                     FaceData fd = { bx,by,bz,bw,col,{},{},0 };
                     for (int i = 0; i < oN && fd.n < 12; ++i) { fd.pts[fd.n] = oPt[i]; fd.depths[fd.n] = oDp[i]; ++fd.n; }
                     allFaces.push_back(fd);
                 }
-                tGeomAcc += (clock() - tGeom0);
                 return;
             }
             int h = size / 2;
@@ -504,38 +518,38 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
         traverse(baseX, baseY, baseZ, baseW, SuperBlock::SIZE);
     }
 
-    // 各阶段耗时累计
-    clock_t t1 = clock();
-    m_timeIter += (t1 - t0) - tOcclAcc - tGeomAcc;  // 遍历+切片 = 总时间 - 遮挡 - 几何
-    m_timeOccl += tOcclAcc;
-    m_timeGeom += tGeomAcc;
-
     m_diagFaces = static_cast<int>(allFaces.size());
 
-    // 深度排序 + 绘制
-    struct FaceWithDepth { FaceData fd; double avgDepth; };
-    std::vector<FaceWithDepth> fds;
-    for (auto &fd : allFaces)
-    {
-        double sumZ = 0;
-        for (int i = 0; i < fd.n; ++i) sumZ += fd.depths[i];
-        fds.push_back({ fd, sumZ / fd.n });
-    }
-    // 从远到近排序（painter 预排�?+ z-buffer�?
-    std::sort(fds.begin(), fds.end(), [](const FaceWithDepth &a, const FaceWithDepth &b)
-    {
-        return a.avgDepth > b.avgDepth;
-    });
+    // 深度汇总
+    // clock_t tSumZ = clock();
+    // struct FaceWithDepth { FaceData fd; double avgDepth; };
+    // std::vector<FaceWithDepth> fds;
+    // for (auto &fd : allFaces)
+    // {
+    //     double sumZ = 0;
+    //     for (int i = 0; i < fd.n; ++i) sumZ += fd.depths[i];
+    //     fds.push_back({ fd, sumZ / fd.n });
+    // }
+    // m_timeDSort += clock() - tSumZ;  // 汇总
 
-    int showCount = static_cast<int>(fds.size());  // 全部显示
-    for (int i = 0; i < static_cast<int>(fds.size()) && i < showCount; ++i)
+    // 排序
+    // clock_t tSort = clock();
+    // std::sort(fds.begin(), fds.end(), [](const FaceWithDepth &a, const FaceWithDepth &b)
+    // {
+    //     return a.avgDepth > b.avgDepth;
+    // });
+    // m_timeSort += clock() - tSort;
+
+    // 扫描线填充（不排序，直接按收集顺序绘制）
+    clock_t tFill0 = clock();
+    int showCount = static_cast<int>(allFaces.size());
+    for (int i = 0; i < static_cast<int>(allFaces.size()) && i < showCount; ++i)
     {
-        const FaceData &fd = fds[i].fd;
+        const FaceData &fd = allFaces[i];
         int r = GetRValue(fd.col), g = GetGValue(fd.col), b = GetBValue(fd.col);
         fillPolygonZ(fd.pts, fd.n, fd.depths, RGB(r, g, b));
     }
-
-    m_timeRast += (clock() - t1);
+    m_timePixWr += clock() - tFill0;
     ++m_timeSamples;
 }
 
@@ -751,69 +765,75 @@ void Renderer::drawHUD(const Camera4D &cam) const
     // FPS + 诊断（右上角）
     // ========================================
     double invCLK = 1000.0 / CLOCKS_PER_SEC;
-    double msClear = (m_timeSamples > 0) ? (m_timeClear * invCLK / m_timeSamples) : 0.0;
-    double msIter = (m_timeSamples > 0) ? (m_timeIter * invCLK / m_timeSamples) : 0.0;
-    double msOccl = (m_timeSamples > 0) ? (m_timeOccl * invCLK / m_timeSamples) : 0.0;
-    double msGeom = (m_timeSamples > 0) ? (m_timeGeom * invCLK / m_timeSamples) : 0.0;
-    double msRast = (m_timeSamples > 0) ? (m_timeRast * invCLK / m_timeSamples) : 0.0;
-    double msWorld = (m_timeSamples > 0) ? (m_timeWorld * invCLK / m_timeSamples) : 0.0;
-    double msElapsed = (m_timeSamples > 0) ? (m_timeElapsed * invCLK / m_timeSamples) : 0.0;
-    double msTotal = msClear + msIter + msOccl + msGeom + msRast;
-    double msOther = msElapsed - msWorld;
-    if (msOther < 0.0) msOther = 0.0;
+    auto ms = [&](clock_t t) { return (m_timeSamples > 0) ? (t * invCLK / m_timeSamples) : 0.0; };
+    double mZBuf = ms(m_timeZBuf);
+    double mDIB = ms(m_timeDIB);
+    double mCellT = ms(m_timeCellTest);
+    double mSurf = ms(m_timeSurfChk);
+    double mVertG = ms(m_timeVertGen);
+    double mOverD = ms(m_timeOverDot);
+    double m24F = ms(m_time24Face);
+    double mCellG = ms(m_timeCellGrp);
+    double mEpiM = ms(m_timeEpiMatch);
+    double mChain = ms(m_timeChain);
+    double mDSort = ms(m_timeDSort);    double mSort = ms(m_timeSort);    double mBBOX = ms(m_timeBBOX);
+    double mEdges = ms(m_timeEdges);
+    double mPixWr = ms(m_timePixWr);
+    double mBlt = ms(m_timeBitBlt);
+    double mWorld = ms(m_timeWorld);
+    double mElapsed = ms(m_timeElapsed);
+    double mGeom = mVertG + mOverD + m24F + mCellG + mEpiM + mChain;
+    double mRast = mDSort + mSort + mBBOX + mEdges + mPixWr;
+    double mTotal = mZBuf + mDIB + mCellT + mSurf + mGeom + mRast + mBlt;
+    double mOther = mElapsed - mWorld;
+    if (mOther < 0.0) mOther = 0.0;
 
     int xLeft = 530;
     int xRight = m_screenWidth - 12;
 
     settextcolor(RGB(255, 255, 255));
     SetTextAlign(hdc, TA_LEFT);
-    swprintf(buf, 256, L"FPS: %d (%.0fms)", m_fps, msElapsed);
+    swprintf(buf, 256, L"FPS: %d (%.0fms)", m_fps, mElapsed);
     TextOutW(hdc, xLeft, 10, buf, (int) wcslen(buf));
     SetTextAlign(hdc, TA_RIGHT);
-    swprintf(buf, 256, L"子项计: %5.1fms", msTotal);
+    swprintf(buf, 256, L"子项计: %5.1fms", mTotal);
     TextOutW(hdc, xRight, 10, buf, (int) wcslen(buf));
 
-    settextcolor(RGB(255, 255, 100));
-    SetTextAlign(hdc, TA_LEFT);
-    swprintf(buf, 256, L"清理填充: %-8s", "");           TextOutW(hdc, xLeft, 30, buf, (int) wcslen(buf));
-    SetTextAlign(hdc, TA_RIGHT);
-    swprintf(buf, 256, L"%5.1fms", msClear);              TextOutW(hdc, xRight, 30, buf, (int) wcslen(buf));
+    auto drawRow = [&](int y, const wchar_t *label, double val, COLORREF clr)
+    {
+        settextcolor(clr);
+        SetTextAlign(hdc, TA_LEFT);
+        swprintf(buf, 256, L"%ls", label);  TextOutW(hdc, xLeft, y, buf, (int) wcslen(buf));
+        SetTextAlign(hdc, TA_RIGHT);
+        swprintf(buf, 256, L"%5.1fms", val); TextOutW(hdc, xRight, y, buf, (int) wcslen(buf));
+    };
 
-    SetTextAlign(hdc, TA_LEFT);
-    swprintf(buf, 256, L"遍历过滤: %-8s", "");           TextOutW(hdc, xLeft, 50, buf, (int) wcslen(buf));
-    SetTextAlign(hdc, TA_RIGHT);
-    swprintf(buf, 256, L"%5.1fms", msIter);               TextOutW(hdc, xRight, 50, buf, (int) wcslen(buf));
+    COLORREF Y = RGB(255, 255, 100), D = RGB(200, 200, 120);
+    drawRow(30, L"清空深度缓冲:", mZBuf, Y);
+    drawRow(48, L"创建DIB+背景:", mDIB, Y);
+    drawRow(66, L"16分法相交测试:", mCellT, Y);
+    drawRow(84, L"表面方块判断:", mSurf, Y);
+    drawRow(102, L"生成16顶点:", mVertG, D);
+    drawRow(118, L"16次over点积:", mOverD, D);
+    drawRow(134, L"24面边求交:", m24F, D);
+    drawRow(150, L"胞腔分组:", mCellG, D);
+    drawRow(166, L"端点匹配(next[]):", mEpiM, D);
+    drawRow(182, L"链追踪+投影:", mChain, D);
+    // drawRow(200, L"深度汇总:", mDSort, Y);
+    // drawRow(218, L"排序:", mSort, Y);
+    drawRow(236, L"填充-逐像素写:", mPixWr, Y);
+    drawRow(254, L"BitBlt刷屏:", mBlt, Y);
+    drawRow(272, L"渲染总计:", mWorld, Y);
+    drawRow(290, L"其他:", mOther, RGB(255, 150, 100));
 
+    // 方块总数 + 面数
+    settextcolor(Y);
     SetTextAlign(hdc, TA_LEFT);
-    swprintf(buf, 256, L"遮挡检测: %-8s", "");           TextOutW(hdc, xLeft, 70, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"方块总数: %d", m_diagTotal);
+    TextOutW(hdc, xLeft, 320, buf, (int) wcslen(buf));
     SetTextAlign(hdc, TA_RIGHT);
-    swprintf(buf, 256, L"%5.1fms", msOccl);               TextOutW(hdc, xRight, 70, buf, (int) wcslen(buf));
-
-    SetTextAlign(hdc, TA_LEFT);
-    swprintf(buf, 256, L"几何计算: %-8s", "");           TextOutW(hdc, xLeft, 90, buf, (int) wcslen(buf));
-    SetTextAlign(hdc, TA_RIGHT);
-    swprintf(buf, 256, L"%5.1fms", msGeom);               TextOutW(hdc, xRight, 90, buf, (int) wcslen(buf));
-
-    SetTextAlign(hdc, TA_LEFT);
-    swprintf(buf, 256, L"光栅化:   %-8s", "");           TextOutW(hdc, xLeft, 110, buf, (int) wcslen(buf));
-    SetTextAlign(hdc, TA_RIGHT);
-    swprintf(buf, 256, L"%5.1fms", msRast);               TextOutW(hdc, xRight, 110, buf, (int) wcslen(buf));
-
-    SetTextAlign(hdc, TA_LEFT);
-    swprintf(buf, 256, L"渲染总计: %-8s", "");           TextOutW(hdc, xLeft, 130, buf, (int) wcslen(buf));
-    SetTextAlign(hdc, TA_RIGHT);
-    swprintf(buf, 256, L"%5.1fms", msWorld);              TextOutW(hdc, xRight, 130, buf, (int) wcslen(buf));
-
-    settextcolor(RGB(255, 150, 100));
-    SetTextAlign(hdc, TA_LEFT);
-    swprintf(buf, 256, L"其他:     %-8s", "");           TextOutW(hdc, xLeft, 150, buf, (int) wcslen(buf));
-    SetTextAlign(hdc, TA_RIGHT);
-    swprintf(buf, 256, L"%5.1fms", msOther);              TextOutW(hdc, xRight, 150, buf, (int) wcslen(buf));
-
-    SetTextAlign(hdc, TA_LEFT);
-    swprintf(buf, 256, L"方块总数: %-8d", m_diagTotal);  TextOutW(hdc, xLeft, 170, buf, (int) wcslen(buf));
-    SetTextAlign(hdc, TA_RIGHT);
-    swprintf(buf, 256, L"面:%d", m_diagFaces);            TextOutW(hdc, xRight, 170, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"面:%d", m_diagFaces);
+    TextOutW(hdc, xRight, 320, buf, (int) wcslen(buf));
 
     SetTextAlign(hdc, TA_LEFT);
     settextcolor(RGB(255, 255, 255));

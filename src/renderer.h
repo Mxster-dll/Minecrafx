@@ -53,15 +53,26 @@ private:
     int m_diagGeom;
     int m_diagFaces;
 
-    // 耗时累加器（mutable 允许 const 函数中更新）
-    mutable clock_t m_timeClear;
-    mutable clock_t m_timeIter;
-    mutable clock_t m_timeOccl;
-    mutable clock_t m_timeGeom;
-    mutable clock_t m_timeRast;
-    mutable clock_t m_timeWorld;   // renderWorld 总耗时
-    mutable clock_t m_timeElapsed; // 实际帧间耗时
-    mutable clock_t m_tPrev;       // 上一帧 clock
+    // 耗时累加器 — 每项对应一步原子操作
+    mutable clock_t m_timeZBuf;    // 清空深度缓冲
+    mutable clock_t m_timeDIB;     // 创建DIB+填充背景
+    mutable clock_t m_timeCellTest;// 胞腔-切片相交测试(16分法)
+    mutable clock_t m_timeSurfChk; // 表面方块判断
+    mutable clock_t m_timeVertGen; // 生成16个顶点
+    mutable clock_t m_timeOverDot; // 16次 over·vertex 点积
+    mutable clock_t m_time24Face;  // 24面边跨越检测+求交点
+    mutable clock_t m_timeCellGrp; // 胞腔分组(交线段归入8胞腔)
+    mutable clock_t m_timeEpiMatch;// 端点匹配(next[]链)
+    mutable clock_t m_timeChain;   // 链追踪+投影
+    mutable clock_t m_timeDSort;   // 面深度汇总
+    mutable clock_t m_timeSort;    // 深度排序
+    mutable clock_t m_timeBBOX;    // 多边形包围盒
+    mutable clock_t m_timeEdges;   // 扫描线边求交
+    mutable clock_t m_timePixWr;   // 逐像素z-buffer写入
+    mutable clock_t m_timeBitBlt;  // BitBlt刷屏
+    mutable clock_t m_timeWorld;
+    mutable clock_t m_timeElapsed;
+    mutable clock_t m_tPrev;
     int m_timeSamples;
 
     COLORREF m_tex[16][16][16][16];
