@@ -485,10 +485,110 @@ void Renderer::drawHUD(const Camera4D &cam) const
     wchar_t buf[256];
     HDC hdc = GetImageHDC();
 
-    // 帧率（右上角�?
+    // ========================================
+    // 左上角：XZW 三维坐标系可视化
+    // ========================================
+    const int vpX = 10, vpY = 10, vpW = 150, vpH = 140;
+    const int ox = vpX + vpW / 2, oy = vpY + vpH / 2 + 5;
+    const double vs = 45.0;
+
+    // 黑底
+    setfillcolor(BLACK);
+    solidrectangle(vpX, vpY, vpX + vpW, vpY + vpH);
+
+    auto proj3 = [&](double vx, double vz, double vw) -> POINT
+    {
+        // 斜二侧画法：WZ 平面真实比例，X 轴 45° 左下，半深
+        const double k = 0.35355339;  // 0.5 × cos(45°)
+        return {
+            static_cast<int>(ox + vz * vs - vx * vs * k),
+            static_cast<int>(oy - vw * vs + vx * vs * k)
+        };
+    };
+
+    POINT oPt = proj3(0, 0, 0);
+
+    // ---- n 的垂直平面（半透明粉色四边形） ----
+    Vec4 n3 = Vec4(o.x, 0.0, o.z, o.w);
+    double nLen = vec4Length(n3);
+    if (nLen > 1e-9) { n3 = vec4Scale(n3, 1.0 / nLen); }
+
+    // 找平面内两个正交方向 u, v（与 n3 垂直）
+    Vec4 u3, v3;
+    // 挑一个不平行于 n3 的向量
+    if (std::abs(n3.x) < 0.9)      u3 = Vec4(1.0, 0.0, 0.0, 0.0);
+    else if (std::abs(n3.z) < 0.9) u3 = Vec4(0.0, 0.0, 1.0, 0.0);
+    else                           u3 = Vec4(0.0, 0.0, 0.0, 1.0);
+    // u = normalize(u3 - (u3·n3)*n3)
+    double dotUN = u3.x * n3.x + u3.z * n3.z + u3.w * n3.w;
+    u3 = Vec4(u3.x - dotUN * n3.x, 0.0, u3.z - dotUN * n3.z, u3.w - dotUN * n3.w);
+    double uLen = std::sqrt(u3.x * u3.x + u3.z * u3.z + u3.w * u3.w);
+    if (uLen > 1e-9) { u3.x /= uLen; u3.z /= uLen; u3.w /= uLen; }
+    // v = n3 × u3（3D 叉积在 XZW 空间）
+    v3.x = n3.z * u3.w - n3.w * u3.z;
+    v3.z = n3.w * u3.x - n3.x * u3.w;
+    v3.w = n3.x * u3.z - n3.z * u3.x;
+
+    const double pHalf = 1.1;
+    POINT pCorners[4] = {
+        proj3(u3.x * pHalf + v3.x * pHalf,  u3.z * pHalf + v3.z * pHalf,  u3.w * pHalf + v3.w * pHalf),
+        proj3(u3.x * pHalf - v3.x * pHalf,  u3.z * pHalf - v3.z * pHalf,  u3.w * pHalf - v3.w * pHalf),
+        proj3(-u3.x * pHalf - v3.x * pHalf, -u3.z * pHalf - v3.z * pHalf, -u3.w * pHalf - v3.w * pHalf),
+        proj3(-u3.x * pHalf + v3.x * pHalf, -u3.z * pHalf + v3.z * pHalf, -u3.w * pHalf + v3.w * pHalf)
+    };
+    setfillcolor(RGB(80, 60, 90));
+    setlinecolor(RGB(150, 100, 180));
+    fillpolygon(pCorners, 4);
+
+    // ---- 坐标轴 ----
+    auto drawArrow2 = [](POINT from, POINT to, COLORREF clr)
+    {
+        setlinecolor(clr);
+        line(from.x, from.y, to.x, to.y);
+    };
+
+    POINT xPt = proj3(1.2, 0, 0);
+    POINT zPt = proj3(0, 1.2, 0);
+    POINT wPt = proj3(0, 0, 1.2);
+    drawArrow2(oPt, xPt, RGB(255, 100, 100));
+    drawArrow2(oPt, zPt, RGB(100, 255, 100));
+    drawArrow2(oPt, wPt, RGB(100, 150, 255));
+
+    settextcolor(RGB(255, 100, 100)); TextOutW(hdc, xPt.x - 20, xPt.y + 2, L"X", 1);
+    settextcolor(RGB(100, 255, 100)); TextOutW(hdc, zPt.x + 2, zPt.y - 8, L"Z", 1);
+    settextcolor(RGB(100, 150, 255)); TextOutW(hdc, wPt.x - 8, wPt.y - 18, L"W", 1);
+
+    // i（forward，黄色）
+    Vec4 i3 = Vec4(f.x, 0.0, f.z, f.w);
+    double iLen = vec4Length(i3);
+    if (iLen > 1e-9) { i3 = vec4Scale(i3, 1.0 / iLen); }
+    POINT iP = proj3(i3.x, i3.z, i3.w);
+    drawArrow2(oPt, iP, RGB(255, 220, 50));
+    settextcolor(RGB(255, 220, 50)); TextOutW(hdc, iP.x + 3, iP.y - 10, L"i", 1);
+
+    // j（right，青色）
+    Vec4 j3 = Vec4(r.x, 0.0, r.z, r.w);
+    double jLen = vec4Length(j3);
+    if (jLen > 1e-9) { j3 = vec4Scale(j3, 1.0 / jLen); }
+    POINT jP = proj3(j3.x, j3.z, j3.w);
+    drawArrow2(oPt, jP, RGB(50, 220, 220));
+    settextcolor(RGB(50, 220, 220)); TextOutW(hdc, jP.x + 3, jP.y - 10, L"j", 1);
+
+    // n（over，粉色法向）
+    n3 = Vec4(o.x, 0.0, o.z, o.w);
+    nLen = vec4Length(n3);
+    if (nLen > 1e-9) { n3 = vec4Scale(n3, 1.0 / nLen); }
+    POINT nP = proj3(n3.x, n3.z, n3.w);
+    drawArrow2(oPt, nP, RGB(255, 120, 255));
+    settextcolor(RGB(255, 120, 255)); TextOutW(hdc, nP.x + 3, nP.y - 10, L"n", 1);
+
+    // ========================================
+    // FPS + 诊断（右上角）
+    // ========================================
+    settextcolor(RGB(255, 255, 255));
     swprintf(buf, 256, L"FPS: %d", m_fps);
     TextOutW(hdc, m_screenWidth - 100, 10, buf, (int) wcslen(buf));
-    // 诊断信息（右上角列表）
+
     settextcolor(RGB(255, 255, 100));
     swprintf(buf, 256, L"方块总数: %d", m_diagTotal);
     TextOutW(hdc, m_screenWidth - 200, 30, buf, (int) wcslen(buf));
@@ -501,30 +601,28 @@ void Renderer::drawHUD(const Camera4D &cam) const
     swprintf(buf, 256, L"渲染面数: %d", m_diagFaces);
     TextOutW(hdc, m_screenWidth - 200, 102, buf, (int) wcslen(buf));
     settextcolor(RGB(255, 255, 255));
-    // 坐标
+
+    // ========================================
+    // 坐标信息（左侧，坐标系下方）
+    // ========================================
+    int infoY = vpY + vpH + 5;
     swprintf(buf, 256, L"Pos: (%.1f, %.1f, %.1f, %.1f)",
         pos.x, pos.y, pos.z, pos.w);
-    TextOutW(hdc, 10, 10, buf, (int) wcslen(buf));
+    TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
+    infoY += 18;
 
-    // 基向�?
-    swprintf(buf, 256, L"Right:  (%.2f, %.2f, %.2f, %.2f)", r.x, r.y, r.z, r.w);
-    TextOutW(hdc, 10, 30, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"Fwd(i): (%.2f, %.2f, %.2f, %.2f)", f.x, f.y, f.z, f.w);
+    TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
+    infoY += 18;
 
-    swprintf(buf, 256, L"Fwd:    (%.2f, %.2f, %.2f, %.2f)", f.x, f.y, f.z, f.w);
-    TextOutW(hdc, 10, 50, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"Rgt(j): (%.2f, %.2f, %.2f, %.2f)", r.x, r.y, r.z, r.w);
+    TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
+    infoY += 18;
 
-    swprintf(buf, 256, L"Over:   (%.2f, %.2f, %.2f, %.2f)", o.x, o.y, o.z, o.w);
-    TextOutW(hdc, 10, 70, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"Ovr(n): (%.2f, %.2f, %.2f, %.2f)", o.x, o.y, o.z, o.w);
+    TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
+    infoY += 18;
 
-    swprintf(buf, 256, L"Up:     (%.2f, %.2f, %.2f, %.2f)", cam.getUp().x, cam.getUp().y, cam.getUp().z, cam.getUp().w);
-    TextOutW(hdc, 10, 90, buf, (int) wcslen(buf));
-
-    // XZW 子空间投影（Y 分量置零�?
-    settextcolor(RGB(150, 200, 255));
-    swprintf(buf, 256, L"i(fwd_XZW): (%.2f, 0, %.2f, %.2f)", f.x, f.z, f.w);
-    TextOutW(hdc, 10, 115, buf, (int) wcslen(buf));
-    swprintf(buf, 256, L"j(rgt_XZW): (%.2f, 0, %.2f, %.2f)", r.x, r.z, r.w);
-    TextOutW(hdc, 10, 135, buf, (int) wcslen(buf));
-    swprintf(buf, 256, L"n(ovr_XZW): (%.2f, 0, %.2f, %.2f)", o.x, o.z, o.w);
-    TextOutW(hdc, 10, 155, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"Up:    (%.2f, %.2f, %.2f, %.2f)", cam.getUp().x, cam.getUp().y, cam.getUp().z, cam.getUp().w);
+    TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
 }
