@@ -30,6 +30,8 @@ public:
     /** @brief 添加超方块（不展开，渲染时 16 分法遍历） */
     void addSuperBlock(const SuperBlock &sb) { m_superBlocks.push_back(sb); }
 
+    static const int FACES[24][4];  // 24个二维面的顶点索引（公开供预计算用）
+
 private:
     void drawFacesStep(const World &world, const Camera4D &cam);
 
@@ -96,5 +98,4 @@ private:
 
     void resetBuffers();
     void fillPolygonZ(const POINT *pts, int n, const double *depths, COLORREF color);
-    static const int FACES[24][4];
 };

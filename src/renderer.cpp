@@ -27,6 +27,25 @@ const int Renderer::FACES[24][4] = {
     {0,4,12,8}, {1,5,13,9}, {2,6,14,10}, {3,7,15,11}
 };
 
+// 预计算：每个面哪两 bit 固定及其值（位掩码）
+static const auto s_fix = []()
+{
+    struct { int bits[24]; int vals[24]; } r;
+    for (int f = 0; f < 24; ++f)
+    {
+        const int *fc = Renderer::FACES[f];
+        int v0 = fc[0], bm = 0, vm = 0;
+        for (int bit = 0; bit < 4; ++bit)
+        {
+            int m = 1 << bit; bool same = true;
+            for (int i = 1; i < 4; ++i) if ((fc[i] & m) != (v0 & m)) { same = false; break; }
+            if (same) { bm |= m; if (v0 & m) vm |= m; }
+        }
+        r.bits[f] = bm; r.vals[f] = vm;
+    }
+    return r;
+}();
+
 // 生成 16 个顶�?
 static void hypercubeVertices(int bx, int by, int bz, int bw, Vec4 v[16], double half)
 {
@@ -334,17 +353,6 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
         // 8 个胞腔
         struct Cell { int bit, val; };
         const Cell cells[8] = { {0,0},{0,1},{1,0},{1,1},{2,0},{2,1},{3,0},{3,1} };
-        auto faceBits = [](const int *f) -> std::pair<int, int>
-        {
-            int v = f[0], b0 = -1, b1 = -1;
-            for (int bit = 0; bit < 4; ++bit)
-            {
-                int m = 1 << bit; bool same = true;
-                for (int i = 1; i < 4; ++i) if ((f[i] & m) != (v & m)) { same = false; break; }
-                if (same) { if (b0 < 0) b0 = bit; else b1 = bit; }
-            }
-            return { b0,b1 };
-        };
 
         for (int ci = 0; ci < 8; ++ci)
         {
@@ -352,12 +360,13 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
             int cSegs[6]; int csc = 0;
             for (int s = 0; s < sc; ++s)
             {
-                const int *f = FACES[segs[s].faceIdx];
-                auto [b0, b1] = faceBits(f);
-                bool ok = false;
-                if (b0 == cb && ((f[0] >> cb) & 1) == cv) ok = true;
-                if (b1 == cb && ((f[0] >> cb) & 1) == cv) ok = true;
-                if (ok && csc < 6) cSegs[csc++] = s;
+                int fi = segs[s].faceIdx;
+                int bm = s_fix.bits[fi];
+                if ((bm >> cb) & 1)
+                {  // bit cb 在此面中固定
+                    if (((s_fix.vals[fi] >> cb) & 1) == cv)  // 固定值等于胞腔值
+                        if (csc < 6) cSegs[csc++] = s;
+                }
             }
             if (csc < 3) continue;
 
@@ -486,27 +495,19 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
 
                 struct Cell { int bit, val; };
                 const Cell cells[8] = { {0,0},{0,1},{1,0},{1,1},{2,0},{2,1},{3,0},{3,1} };
-                auto fb = [](const int *f)->std::pair<int, int>
-                {
-                    int v = f[0], b0 = -1, b1 = -1;
-                    for (int bit = 0; bit < 4; ++bit)
-                    {
-                        int m = 1 << bit; bool same = true;
-                        for (int i = 1; i < 4; ++i) if ((f[i] & m) != (v & m)) { same = false; break; }
-                        if (same) { if (b0 < 0)b0 = bit; else b1 = bit; }
-                    }
-                    return { b0,b1 };
-                };
                 for (int ci = 0; ci < 8; ++ci)
                 {
                     int cb = cells[ci].bit, cv = cells[ci].val;
                     int cSegs[6]; int csc = 0;
                     for (int s = 0; s < sc; ++s)
                     {
-                        const int *f = FACES[segs[s].fi];
-                        auto [b0, b1] = fb(f);
-                        if ((b0 == cb && ((f[0] >> cb) & 1) == cv) || (b1 == cb && ((f[0] >> cb) & 1) == cv))
-                            if (csc < 6) cSegs[csc++] = s;
+                        int fi = segs[s].fi;
+                        int bm = s_fix.bits[fi];
+                        if ((bm >> cb) & 1)
+                        {
+                            if (((s_fix.vals[fi] >> cb) & 1) == cv)
+                                if (csc < 6) cSegs[csc++] = s;
+                        }
                     }
                     if (csc < 3) continue;
                     struct EP { Vec4 pos; int si; int pt; };
