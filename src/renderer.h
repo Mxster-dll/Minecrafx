@@ -6,6 +6,7 @@
 #include "superblock.h"
 #include <graphics.h>
 #include <vector>
+#include <deque>
 #include <ctime>
 
 /**
@@ -74,6 +75,19 @@ private:
     mutable clock_t m_timeElapsed;
     mutable clock_t m_tPrev;
     int m_timeSamples;
+
+    // 100ms 时间切片队列（保留最近5片 = 500ms 窗口）
+    static const int TIME_SLICES = 5;
+    static const clock_t SLICE_TICKS = 100 * CLOCKS_PER_SEC / 1000;
+    struct TimeSlice
+    {
+        clock_t zBuf, dib, cellTest, surfChk, vertGen, overDot;
+        clock_t f24, cellGrp, epiMatch, chain, dsort, sort_;
+        clock_t bbox, edges, pixWr, bitBlt, world, elapsed;
+        int samples;
+    };
+    mutable std::deque<TimeSlice> m_timeSlices;
+    mutable clock_t m_sliceStart;  // 当前切片起始时刻
 
     COLORREF m_tex[16][16][16][16];
     bool m_texLoaded;

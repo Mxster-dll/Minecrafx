@@ -85,6 +85,7 @@ Renderer::Renderer(int screenWidth, int screenHeight, double scale)
     , m_timeElapsed(0)
     , m_tPrev(0)
     , m_timeSamples(0)
+    , m_sliceStart(0)
     , m_texLoaded(false)
 {
     m_zbuf.resize(m_screenWidth * m_screenHeight);
@@ -214,6 +215,35 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
     if (m_tPrev != 0)
         m_timeElapsed += clock() - m_tPrev;
     m_tPrev = clock();
+
+    // 100ms 时间切片：当前切片满则推入队列，弹出最旧切片
+    if (m_sliceStart == 0) m_sliceStart = clock();  // 首帧初始化
+    if (clock() - m_sliceStart >= SLICE_TICKS)
+    {
+        TimeSlice ts;
+        ts.zBuf = m_timeZBuf;       ts.dib = m_timeDIB;
+        ts.cellTest = m_timeCellTest; ts.surfChk = m_timeSurfChk;
+        ts.vertGen = m_timeVertGen;   ts.overDot = m_timeOverDot;
+        ts.f24 = m_time24Face;        ts.cellGrp = m_timeCellGrp;
+        ts.epiMatch = m_timeEpiMatch; ts.chain = m_timeChain;
+        ts.dsort = m_timeDSort;       ts.sort_ = m_timeSort;
+        ts.bbox = m_timeBBOX;         ts.edges = m_timeEdges;
+        ts.pixWr = m_timePixWr;       ts.bitBlt = m_timeBitBlt;
+        ts.world = m_timeWorld;       ts.elapsed = m_timeElapsed;
+        ts.samples = m_timeSamples;
+        m_timeSlices.push_back(ts);
+        if (static_cast<int>(m_timeSlices.size()) > TIME_SLICES)
+            m_timeSlices.pop_front();
+        // 重置当前切片
+        m_timeZBuf = 0;   m_timeDIB = 0;      m_timeCellTest = 0;
+        m_timeSurfChk = 0; m_timeVertGen = 0;  m_timeOverDot = 0;
+        m_time24Face = 0;  m_timeCellGrp = 0;  m_timeEpiMatch = 0;
+        m_timeChain = 0;   m_timeDSort = 0;    m_timeSort = 0;
+        m_timeBBOX = 0;    m_timeEdges = 0;    m_timePixWr = 0;
+        m_timeBitBlt = 0;  m_timeWorld = 0;    m_timeElapsed = 0;
+        m_timeSamples = 0;
+        m_sliceStart = clock();
+    }
 }
 
 // 快速判断方块是否可能与切片相交
@@ -269,14 +299,18 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
         tOcclAcc += (clock() - tOccl0);
         ++m_diagOccl;
 
+        clock_t tG = clock();
         COLORREF col = getBlockColor(bx, by, bz, bw);
 
         Vec4 verts[16]; hypercubeVertices(bx, by, bz, bw, verts, m_blockHalf);
+        m_timeVertGen += clock() - tG;  tG = clock();
+
         double od[16];
         for (int i = 0; i < 16; ++i)
             od[i] = vec4Dot(vec4Sub(verts[i], camPos), ov);
+        m_timeOverDot += clock() - tG;  tG = clock();
 
-        // 收集交线�?
+        // 收集交线
         struct Seg2 { Vec4 a, b; int faceIdx; };
         Seg2 segs[24]; int sc = 0;
         for (int f = 0; f < 24; ++f)
@@ -288,15 +322,16 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
                 int a = face[e], b = face[(e + 1) & 3];
                 double da = od[a], db = od[b];
                 if ((da > 0 && db > 0) || (da < 0 && db < 0)) continue;
-                double t = (std::abs(da - db) > 1e-12) ? da / (da - db) : 0.5;
-                hits[hc++] = vec4Add(verts[a], vec4Scale(vec4Sub(verts[b], verts[a]), t));
+                double t2 = (std::abs(da - db) > 1e-12) ? da / (da - db) : 0.5;
+                hits[hc++] = vec4Add(verts[a], vec4Scale(vec4Sub(verts[b], verts[a]), t2));
             }
             if (hc == 2) segs[sc++] = { hits[0], hits[1], f };
         }
-        if (sc == 0) continue;
+        if (sc == 0) { m_time24Face += clock() - tG; continue; }
         ++m_diagGeom;
+        m_time24Face += clock() - tG;  tG = clock();
 
-        // 8 个胞�?
+        // 8 个胞腔
         struct Cell { int bit, val; };
         const Cell cells[8] = { {0,0},{0,1},{1,0},{1,1},{2,0},{2,1},{3,0},{3,1} };
         auto faceBits = [](const int *f) -> std::pair<int, int>
@@ -326,9 +361,10 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
             }
             if (csc < 3) continue;
 
+            m_timeCellGrp += clock() - tG;  tG = clock();
+
             // ---- 通过线段端点匹配构建正确的多边形顶点顺序 ----
-            // 收集此胞腔所有线段的端点（世界坐标）
-            struct EP { Vec4 pos; int segIdx; };  // 端点：位�?+ 所属线�?
+            struct EP { Vec4 pos; int segIdx; };
             EP eps[12]; int epCount = 0;
             for (int i = 0; i < csc; ++i)
             {
@@ -337,18 +373,16 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
                 eps[epCount++] = { segs[si].b, i };
             }
 
-            // 匹配共享端点（同位置、不同线�?�?相邻顶点�?
-            int next[12];  // next[i] = �?eps[i] 共享位置的另一个端点的索引
+            int next[12];
             for (int i = 0; i < epCount; ++i)
             {
                 next[i] = -1;
                 for (int j = 0; j < epCount; ++j)
                 {
                     if (i == j) continue;
-                    if (eps[i].segIdx == eps[j].segIdx) continue;  // 同线段不是邻�?
+                    if (eps[i].segIdx == eps[j].segIdx) continue;
                     if (vec4DistSq(eps[i].pos, eps[j].pos) < 1e-6)
                     {
-                        // j �?i 同位置但不同线段 �?i 的搭档是 j 所在线段的另一端点
                         int other = -1;
                         for (int k = 0; k < epCount; ++k)
                             if (k != j && eps[k].segIdx == eps[j].segIdx) { other = k; break; }
@@ -357,8 +391,8 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
                     }
                 }
             }
+            m_timeEpiMatch += clock() - tG;  tG = clock();
 
-            // 按顺序追踪链（从第一个有效的端点开始）
             POINT orderedPts[12]; double orderedDepths[12]; int orderedN = 0;
             bool used[12] = {};
             int cur = 0;
@@ -373,6 +407,7 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
                 ++orderedN;
                 cur = next[cur];
             }
+            m_timeChain += clock() - tG;  tG = clock();
 
             if (orderedN < 3) continue;
 
@@ -386,6 +421,9 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
             allFaces.push_back(fd);
         }
     }
+
+    // 累加哈希表路径的遮挡检测耗时
+    m_timeSurfChk += tOcclAcc;
 
     // ---- 超方块：16 分法递归遍历 ----
     for (const auto &sb : m_superBlocks)
@@ -792,23 +830,43 @@ void Renderer::drawHUD(const Camera4D &cam) const
     // FPS + 诊断（右上角）
     // ========================================
     double invCLK = 1000.0 / CLOCKS_PER_SEC;
-    auto ms = [&](clock_t t) { return (m_timeSamples > 0) ? (t * invCLK / m_timeSamples) : 0.0; };
-    double mZBuf = ms(m_timeZBuf);
-    double mDIB = ms(m_timeDIB);
-    double mCellT = ms(m_timeCellTest);
-    double mSurf = ms(m_timeSurfChk);
-    double mVertG = ms(m_timeVertGen);
-    double mOverD = ms(m_timeOverDot);
-    double m24F = ms(m_time24Face);
-    double mCellG = ms(m_timeCellGrp);
-    double mEpiM = ms(m_timeEpiMatch);
-    double mChain = ms(m_timeChain);
-    double mDSort = ms(m_timeDSort);    double mSort = ms(m_timeSort);    double mBBOX = ms(m_timeBBOX);
-    double mEdges = ms(m_timeEdges);
-    double mPixWr = ms(m_timePixWr);
-    double mBlt = ms(m_timeBitBlt);
-    double mWorld = ms(m_timeWorld);
-    double mElapsed = ms(m_timeElapsed);
+
+    // 汇总所有切片 + 当前累加器
+    clock_t sumZBuf = m_timeZBuf, sumDIB = m_timeDIB, sumCellT = m_timeCellTest;
+    clock_t sumSurf = m_timeSurfChk, sumVertG = m_timeVertGen, sumOverD = m_timeOverDot;
+    clock_t sum24F = m_time24Face, sumCellG = m_timeCellGrp, sumEpiM = m_timeEpiMatch;
+    clock_t sumChain = m_timeChain, sumDSort = m_timeDSort, sumSort = m_timeSort;
+    clock_t sumBBOX = m_timeBBOX, sumEdges = m_timeEdges, sumPixWr = m_timePixWr;
+    clock_t sumBlt = m_timeBitBlt, sumWorld = m_timeWorld, sumElapsed = m_timeElapsed;
+    int totalSamples = m_timeSamples;
+    for (const auto &ts : m_timeSlices)
+    {
+        sumZBuf += ts.zBuf;   sumDIB += ts.dib;     sumCellT += ts.cellTest;
+        sumSurf += ts.surfChk; sumVertG += ts.vertGen; sumOverD += ts.overDot;
+        sum24F += ts.f24;     sumCellG += ts.cellGrp; sumEpiM += ts.epiMatch;
+        sumChain += ts.chain; sumDSort += ts.dsort;   sumSort += ts.sort_;
+        sumBBOX += ts.bbox;   sumEdges += ts.edges;   sumPixWr += ts.pixWr;
+        sumBlt += ts.bitBlt;  sumWorld += ts.world;   sumElapsed += ts.elapsed;
+        totalSamples += ts.samples;
+    }
+
+    auto ms = [&](clock_t t) { return (totalSamples > 0) ? (t * invCLK / totalSamples) : 0.0; };
+    double mZBuf = ms(sumZBuf);
+    double mDIB = ms(sumDIB);
+    double mCellT = ms(sumCellT);
+    double mSurf = ms(sumSurf);
+    double mVertG = ms(sumVertG);
+    double mOverD = ms(sumOverD);
+    double m24F = ms(sum24F);
+    double mCellG = ms(sumCellG);
+    double mEpiM = ms(sumEpiM);
+    double mChain = ms(sumChain);
+    double mDSort = ms(sumDSort);    double mSort = ms(sumSort);    double mBBOX = ms(sumBBOX);
+    double mEdges = ms(sumEdges);
+    double mPixWr = ms(sumPixWr);
+    double mBlt = ms(sumBlt);
+    double mWorld = ms(sumWorld);
+    double mElapsed = ms(sumElapsed);
     double mGeom = mVertG + mOverD + m24F + mCellG + mEpiM + mChain;
     double mRast = mDSort + mSort + mBBOX + mEdges + mPixWr;
     double mTotal = mZBuf + mDIB + mCellT + mSurf + mGeom + mRast + mBlt;
