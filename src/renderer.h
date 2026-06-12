@@ -5,6 +5,7 @@
 #include "linalg.h"
 #include <graphics.h>
 #include <vector>
+#include <ctime>
 
 /**
  * @brief 4D 切片渲染器
@@ -38,6 +39,11 @@ private:
     int m_frameCount;
     std::vector<double> m_zbuf;
     DWORD *m_pBits;
+
+    // FPS
+    int m_fpsFrames;
+    clock_t m_fpsTime;
+    int m_fps;
 
     COLORREF m_tex[16][16][16][16];  // 纹理颜色表
     bool m_texLoaded;

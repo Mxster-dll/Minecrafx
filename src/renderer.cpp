@@ -56,6 +56,9 @@ Renderer::Renderer(int screenWidth, int screenHeight, double scale)
     , m_offsetY(screenHeight / 2.0)
     , m_blockHalf(0.5 / 16.0)
     , m_frameCount(0)
+    , m_fpsFrames(0)
+    , m_fpsTime(0)
+    , m_fps(0)
     , m_texLoaded(false)
 {
     m_zbuf.resize(m_screenWidth * m_screenHeight);
@@ -165,6 +168,17 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
     SelectObject(memDC, oldBmp);
     DeleteDC(memDC);
     DeleteObject(hBmp);
+
+    // FPS 统计
+    ++m_fpsFrames;
+    clock_t now = clock();
+    double elapsed = static_cast<double>(now - m_fpsTime) / CLOCKS_PER_SEC;
+    if (elapsed >= 1.0)
+    {
+        m_fps = static_cast<int>(m_fpsFrames / elapsed);
+        m_fpsFrames = 0;
+        m_fpsTime = now;
+    }
 }
 
 // 快速判断方块是否可能与切片相交
@@ -576,6 +590,10 @@ void Renderer::drawHUD(const Camera4D &cam) const
 
     wchar_t buf[256];
     HDC hdc = GetImageHDC();
+
+    // 帧率（右上角）
+    swprintf(buf, 256, L"FPS: %d", m_fps);
+    TextOutW(hdc, m_screenWidth - 100, 10, buf, (int) wcslen(buf));
 
     // 坐标
     swprintf(buf, 256, L"Pos: (%.1f, %.1f, %.1f, %.1f)",
