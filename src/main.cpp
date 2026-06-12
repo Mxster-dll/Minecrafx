@@ -16,6 +16,7 @@
 #include "camera.h"
 #include "renderer.h"
 #include "input/input_handler.h"
+#include "superblock.h"
 
  // ============================================================================
  // 常量
@@ -46,12 +47,7 @@ int main()
 
     // ---- 创建核心对象 ----
     World world;
-    // 16³ 超立方体，w 索引 -88..-73 → 实际 w=-5.5..-4.56，切片 w=-5 穿过中间
-    for (int x = 0; x < 16; ++x)
-        for (int y = 0; y < 16; ++y)
-            for (int z = 0; z < 16; ++z)
-                for (int w = -88; w <= -73; ++w)
-                    world.set(IVec4(x, y, z, w), 1);
+    SuperBlock(IVec4(0, 0, 0, 0)).generate(world);
 
     Camera4D camera;
     Renderer renderer(SCREEN_WIDTH, SCREEN_HEIGHT, SCALE);
