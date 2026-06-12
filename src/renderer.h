@@ -3,6 +3,7 @@
 #include "world.h"
 #include "camera.h"
 #include "linalg.h"
+#include "superblock.h"
 #include <graphics.h>
 #include <vector>
 #include <ctime>
@@ -24,6 +25,9 @@ public:
 
     /** @brief 从 assert/texture/grass_block/ 加载纹理颜色 */
     void loadTextures(const wchar_t *basePath);
+
+    /** @brief 添加超方块（不展开，渲染时 16 分法遍历） */
+    void addSuperBlock(const SuperBlock &sb) { m_superBlocks.push_back(sb); }
 
 private:
     void drawFacesStep(const World &world, const Camera4D &cam);
@@ -50,14 +54,18 @@ private:
     int m_diagFaces;
 
     // 耗时累加器（clock 滴答）
+    clock_t m_timeClear;    // resetBuffers + DIB背景填充
     clock_t m_timeIter;     // 遍历+切片过滤
     clock_t m_timeOccl;     // 遮挡检测
     clock_t m_timeGeom;     // 几何计算
     clock_t m_timeRast;     // 深度排序+光栅化
+    clock_t m_timeHUD;      // BitBlt + 十字 + HUD
     int m_timeSamples;      // 采样帧数
 
-    COLORREF m_tex[16][16][16][16];  // 纹理颜色表
+    COLORREF m_tex[16][16][16][16];
     bool m_texLoaded;
+
+    std::vector<SuperBlock> m_superBlocks;
 
     void resetBuffers();
     void fillPolygonZ(const POINT *pts, int n, const double *depths, COLORREF color);

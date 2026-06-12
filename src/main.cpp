@@ -47,15 +47,14 @@ int main()
 
     // ---- 创建核心对象 ----
     World world;
+    Camera4D camera;
+    Renderer renderer(SCREEN_WIDTH, SCREEN_HEIGHT, SCALE);
     // 2×1×3×4 平台
     for (int x = 0; x < 2; ++x)
         for (int y = 0; y < 1; ++y)
             for (int z = 0; z < 3; ++z)
                 for (int w = 0; w < 4; ++w)
-                    SuperBlock(IVec4(x, y, z, w)).generate(world);
-
-    Camera4D camera;
-    Renderer renderer(SCREEN_WIDTH, SCREEN_HEIGHT, SCALE);
+                    renderer.addSuperBlock(SuperBlock(IVec4(x, y, z, w)));
     renderer.loadTextures(L"D:/Project/Ongoing/Minecrafx/assert/texture/grass_block");
     InputHandler input(hwnd);
 

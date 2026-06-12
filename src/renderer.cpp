@@ -4,6 +4,7 @@
 #include <utility>
 #include <cstdio>
 #include <cwchar>
+#include <functional>
 #include <iostream>
 #include <windows.h>
 
@@ -64,6 +65,7 @@ Renderer::Renderer(int screenWidth, int screenHeight, double scale)
     , m_diagOccl(0)
     , m_diagGeom(0)
     , m_diagFaces(0)
+    , m_timeClear(0)
     , m_timeIter(0)
     , m_timeOccl(0)
     , m_timeGeom(0)
@@ -205,16 +207,19 @@ static bool mayIntersectSlice(int bx, int by, int bz, int bw,
 void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
 {
     const auto &blocks = world.getAllBlocks();
-    if (blocks.empty()) return;
 
     Vec4 camPos = cam.getPos();
     const Vec4 &ov = cam.getOver();
 
-    m_diagTotal = static_cast<int>(blocks.size());
+    m_diagTotal = static_cast<int>(blocks.size())
+        + static_cast<int>(m_superBlocks.size()) * SuperBlock::SIZE * SuperBlock::SIZE
+        * SuperBlock::SIZE * SuperBlock::SIZE;
+    if (m_diagTotal == 0) return;
     m_diagSlice = 0;
     m_diagOccl = 0;
     m_diagGeom = 0;
     m_diagFaces = 0;
+    double sp = m_blockHalf * 2.0;
 
     clock_t t0 = clock();
 
@@ -362,6 +367,128 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
             allFaces.push_back(fd);
         }
         tGeomAcc += (clock() - tGeom0);
+    }
+
+    // ---- 超方块：16 分法递归遍历 ----
+    for (const auto &sb : m_superBlocks)
+    {
+        int baseX = sb.pos().x * SuperBlock::SIZE;
+        int baseY = sb.pos().y * SuperBlock::SIZE;
+        int baseZ = sb.pos().z * SuperBlock::SIZE;
+        int baseW = sb.pos().w * SuperBlock::SIZE;
+
+        std::function<void(int, int, int, int, int)> traverse =
+            [&](int bx, int by, int bz, int bw, int size)
+        {
+            // 胞腔-切片相交测试
+            double cs = size * sp;
+            double cx = (bx + size * 0.5) * sp;
+            double cy = (by + size * 0.5) * sp;
+            double cz = (bz + size * 0.5) * sp;
+            double cw = (bw + size * 0.5) * sp;
+            double cod = ov.x * (cx - camPos.x) + ov.y * (cy - camPos.y) + ov.z * (cz - camPos.z) + ov.w * (cw - camPos.w);
+            double ext = cs * (std::abs(ov.x) + std::abs(ov.y) + std::abs(ov.z) + std::abs(ov.w));
+            if (std::abs(cod) > ext + 1e-9) return;
+
+            ++m_diagSlice;
+
+            if (size == 1)
+            {
+                int lx = bx - baseX, ly = by - baseY, lz = bz - baseZ, lw = bw - baseW;
+                if (lx > 0 && lx < SuperBlock::SIZE - 1 && ly>0 && ly < SuperBlock::SIZE - 1 &&
+                    lz>0 && lz < SuperBlock::SIZE - 1 && lw>0 && lw < SuperBlock::SIZE - 1) return;
+                ++m_diagOccl;
+
+                clock_t tGeom0 = clock();
+                COLORREF col = getBlockColor(bx, by, bz, bw);
+                Vec4 verts[16]; hypercubeVertices(bx, by, bz, bw, verts, m_blockHalf);
+                double od[16];
+                for (int i = 0; i < 16; ++i) od[i] = vec4Dot(vec4Sub(verts[i], camPos), ov);
+
+                struct Seg2 { Vec4 a, b; int fi; };
+                Seg2 segs[24]; int sc = 0;
+                for (int f = 0; f < 24; ++f)
+                {
+                    const int *fc = FACES[f]; Vec4 h[4]; int hc = 0;
+                    for (int e = 0; e < 4 && hc < 4; ++e)
+                    {
+                        int a = fc[e], b = fc[(e + 1) & 3];
+                        double da = od[a], db = od[b];
+                        if ((da > 0 && db > 0) || (da < 0 && db < 0)) continue;
+                        double t = (std::abs(da - db) > 1e-12) ? da / (da - db) : 0.5;
+                        h[hc++] = vec4Add(verts[a], vec4Scale(vec4Sub(verts[b], verts[a]), t));
+                    }
+                    if (hc == 2) segs[sc++] = { h[0],h[1],f };
+                }
+                if (sc == 0) { tGeomAcc += (clock() - tGeom0); return; }
+                ++m_diagGeom;
+
+                struct Cell { int bit, val; };
+                const Cell cells[8] = { {0,0},{0,1},{1,0},{1,1},{2,0},{2,1},{3,0},{3,1} };
+                auto fb = [](const int *f)->std::pair<int, int>
+                {
+                    int v = f[0], b0 = -1, b1 = -1;
+                    for (int bit = 0; bit < 4; ++bit)
+                    {
+                        int m = 1 << bit; bool same = true;
+                        for (int i = 1; i < 4; ++i) if ((f[i] & m) != (v & m)) { same = false; break; }
+                        if (same) { if (b0 < 0)b0 = bit; else b1 = bit; }
+                    }
+                    return { b0,b1 };
+                };
+                for (int ci = 0; ci < 8; ++ci)
+                {
+                    int cb = cells[ci].bit, cv = cells[ci].val;
+                    int cSegs[6]; int csc = 0;
+                    for (int s = 0; s < sc; ++s)
+                    {
+                        const int *f = FACES[segs[s].fi];
+                        auto [b0, b1] = fb(f);
+                        if ((b0 == cb && ((f[0] >> cb) & 1) == cv) || (b1 == cb && ((f[0] >> cb) & 1) == cv))
+                            if (csc < 6) cSegs[csc++] = s;
+                    }
+                    if (csc < 3) continue;
+                    struct EP { Vec4 pos; int si; int pt; };
+                    EP eps[12]; int epc = 0;
+                    for (int i = 0; i < csc; ++i)
+                    {
+                        int si = cSegs[i]; int ai = epc;
+                        eps[epc++] = { segs[si].a,i,ai + 1 }; eps[epc++] = { segs[si].b,i,ai };
+                    }
+                    int next[12];
+                    for (int i = 0; i < epc; ++i)
+                    {
+                        next[i] = -1;
+                        for (int j = 0; j < epc; ++j)
+                        {
+                            if (eps[i].si == eps[j].si) continue;
+                            if (vec4DistSq(eps[i].pos, eps[j].pos) < 1e-6) { next[i] = eps[j].pt; break; }
+                        }
+                    }
+                    POINT oPt[12]; double oDp[12]; int oN = 0; bool used[12] = {}; int cur = 0;
+                    while (cur >= 0 && !used[cur] && oN < 12)
+                    {
+                        used[cur] = true;
+                        ProjResult pr = project(eps[cur].pos, cam, m_scale, m_offsetX, m_offsetY, cam.getPitch());
+                        if (!pr.valid) break;
+                        oPt[oN] = { (int) pr.screenPos.x,(int) pr.screenPos.y };
+                        oDp[oN] = vec4Dot(vec4Sub(eps[cur].pos, camPos), cam.getForward());
+                        ++oN; cur = next[cur];
+                    }
+                    if (oN < 3) continue;
+                    FaceData fd = { bx,by,bz,bw,col,{},{},0 };
+                    for (int i = 0; i < oN && fd.n < 12; ++i) { fd.pts[fd.n] = oPt[i]; fd.depths[fd.n] = oDp[i]; ++fd.n; }
+                    allFaces.push_back(fd);
+                }
+                tGeomAcc += (clock() - tGeom0);
+                return;
+            }
+            int h = size / 2;
+            for (int dx = 0; dx < 2; ++dx) for (int dy = 0; dy < 2; ++dy)
+                for (int dz = 0; dz < 2; ++dz) for (int dw = 0; dw < 2; ++dw)
+                    traverse(bx + dx * h, by + dy * h, bz + dz * h, bw + dw * h, h);
+        };
+        traverse(baseX, baseY, baseZ, baseW, SuperBlock::SIZE);
     }
 
     // 各阶段耗时累计
