@@ -100,16 +100,6 @@ int main()
                 camera.move(moveDir);
         }
 
-        // ---- 2. 键盘旋转 ----
-        {
-            if (input.isKeyDown(Key::I)) camera.rotateXY(ROTATE_ANGLE);
-            if (input.isKeyDown(Key::J)) camera.rotateXZ(ROTATE_ANGLE);
-            if (input.isKeyDown(Key::K)) camera.rotateYZ(ROTATE_ANGLE);
-            if (input.isKeyDown(Key::L)) camera.rotateXW(ROTATE_ANGLE);
-            if (input.isKeyDown(Key::U)) camera.rotateYW(ROTATE_ANGLE);
-            if (input.isKeyDown(Key::O)) camera.rotateZW(ROTATE_ANGLE);
-        }
-
         // ---- 3. 鼠标视角旋转 ----
         //   水平 → rotateAroundUp（yaw：i,j 在切片平面内旋转，不动 i,j,n 的 XZW 方向）
         //   垂直 → addPitch（俯仰角：仅改变视角与 XZW 平面的夹角，不动 i,j,n）
