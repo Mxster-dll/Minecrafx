@@ -785,7 +785,7 @@ void Renderer::drawHUD(const Camera4D &cam) const
     settextcolor(RGB(255, 255, 255));
 
     // ========================================
-    // 坐标信息（左侧，坐标系下方）
+    // 坐标 + 俯仰角（左侧，坐标系下方）
     // ========================================
     int infoY = vpY + vpH + 5;
     swprintf(buf, 256, L"Pos: (%.1f, %.1f, %.1f, %.1f)",
@@ -793,18 +793,9 @@ void Renderer::drawHUD(const Camera4D &cam) const
     TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
     infoY += 18;
 
-    swprintf(buf, 256, L"Fwd(i): (%.2f, %.2f, %.2f, %.2f)", f.x, f.y, f.z, f.w);
+    double pitchDeg = cam.getPitch() * 180.0 / 3.1415926535;
+    swprintf(buf, 256, L"俯仰: %+.0f°", pitchDeg);
     TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
-    infoY += 18;
 
-    swprintf(buf, 256, L"Rgt(j): (%.2f, %.2f, %.2f, %.2f)", r.x, r.y, r.z, r.w);
-    TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
-    infoY += 18;
-
-    swprintf(buf, 256, L"Ovr(n): (%.2f, %.2f, %.2f, %.2f)", o.x, o.y, o.z, o.w);
-    TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
-    infoY += 18;
-
-    swprintf(buf, 256, L"Up:    (%.2f, %.2f, %.2f, %.2f)", cam.getUp().x, cam.getUp().y, cam.getUp().z, cam.getUp().w);
-    TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
+    m_timeHUD += (clock() - t0);
 }
