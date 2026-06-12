@@ -527,15 +527,4 @@ void Renderer::drawHUD(const Camera4D &cam) const
     TextOutW(hdc, 10, 135, buf, (int) wcslen(buf));
     swprintf(buf, 256, L"n(ovr_XZW): (%.2f, 0, %.2f, %.2f)", o.x, o.z, o.w);
     TextOutW(hdc, 10, 155, buf, (int) wcslen(buf));
-
-    // 操作提示
-    settextcolor(RGB(200, 200, 200));
-
-    const wchar_t *help1 = L"W/S: Fwd/Back  |  A/D: Strafe  |  Space/Shift: Up/Down(Y)";
-    const wchar_t *help2 = L"Mouse H: Yaw  |  Mouse V: Pitch  |  Q/E+Wheel: Slice";
-    const wchar_t *help3 = L"I/J/K/L/U/O: PlaneRot  |  LMB: Break  |  RMB: Place  |  R: Reset  |  ESC";
-
-    TextOutW(hdc, 10, m_screenHeight - 80, help1, (int) wcslen(help1));
-    TextOutW(hdc, 10, m_screenHeight - 60, help2, (int) wcslen(help2));
-    TextOutW(hdc, 10, m_screenHeight - 40, help3, (int) wcslen(help3));
 }
