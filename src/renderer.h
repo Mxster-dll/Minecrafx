@@ -26,9 +26,6 @@ public:
     void loadTextures(const wchar_t *basePath);
 
 private:
-    void drawBlockWire(int bx, int by, int bz, int bw,
-        const Camera4D &cam, const World &world);
-    void drawAllWires(const World &world, const Camera4D &cam);
     void drawFacesStep(const World &world, const Camera4D &cam);
 
     COLORREF getBlockColor(int x, int y, int z, int w) const;
