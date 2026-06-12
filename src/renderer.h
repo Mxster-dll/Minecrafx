@@ -53,14 +53,16 @@ private:
     int m_diagGeom;
     int m_diagFaces;
 
-    // 耗时累加器（clock 滴答）
-    clock_t m_timeClear;    // resetBuffers + DIB背景填充
-    clock_t m_timeIter;     // 遍历+切片过滤
-    clock_t m_timeOccl;     // 遮挡检测
-    clock_t m_timeGeom;     // 几何计算
-    clock_t m_timeRast;     // 深度排序+光栅化
-    clock_t m_timeHUD;      // BitBlt + 十字 + HUD
-    int m_timeSamples;      // 采样帧数
+    // 耗时累加器（mutable 允许 const 函数中更新）
+    mutable clock_t m_timeClear;
+    mutable clock_t m_timeIter;
+    mutable clock_t m_timeOccl;
+    mutable clock_t m_timeGeom;
+    mutable clock_t m_timeRast;
+    mutable clock_t m_timeWorld;   // renderWorld 总耗时
+    mutable clock_t m_timeElapsed; // 实际帧间耗时
+    mutable clock_t m_tPrev;       // 上一帧 clock
+    int m_timeSamples;
 
     COLORREF m_tex[16][16][16][16];
     bool m_texLoaded;

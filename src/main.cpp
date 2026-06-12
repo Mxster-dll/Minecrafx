@@ -48,12 +48,25 @@ int main()
     World world;
     Camera4D camera;
     Renderer renderer(SCREEN_WIDTH, SCREEN_HEIGHT, SCALE);
-    // 2×1×3×4 平台
-    for (int x = 0; x < 2; ++x)
-        for (int y = 0; y < 1; ++y)
-            for (int z = 0; z < 3; ++z)
-                for (int w = 0; w < 4; ++w)
-                    renderer.addSuperBlock(SuperBlock(IVec4(x, y, z, w)));
+
+    // 四维山：SuperBlock 为最小单元，8×4×8×5 范围
+    int scx = 4, scy = 2, scz = 4, scw = 2;
+    for (int sx = 0; sx < 8; ++sx)
+        for (int sy = 0; sy < 4; ++sy)
+            for (int sz = 0; sz < 8; ++sz)
+                for (int sw = 0; sw < 5; ++sw)
+                {
+                    double dx = (sx - scx) / 2.8;
+                    double dy = (sy - scy) / 1.8;
+                    double dz = (sz - scz) / 2.8;
+                    double dw = (sw - scw) / 2.2;
+                    double d2 = dx * dx + dy * dy + dz * dz + dw * dw;
+                    double noise = 0.45 * std::sin(sx * 1.2 + sw * 0.8) * std::cos(sz * 1.1)
+                        + 0.35 * std::sin(sy * 1.5) * std::cos(sx * 0.7 + sz * 0.7);
+                    if (d2 < 1.5 + noise)
+                        renderer.addSuperBlock(SuperBlock(IVec4(sx, sy, sz, sw)));
+                }
+
     renderer.loadTextures(L"D:/Project/Ongoing/Minecrafx/assert/texture/grass_block");
     InputHandler input(hwnd);
 

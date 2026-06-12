@@ -70,6 +70,9 @@ Renderer::Renderer(int screenWidth, int screenHeight, double scale)
     , m_timeOccl(0)
     , m_timeGeom(0)
     , m_timeRast(0)
+    , m_timeWorld(0)
+    , m_timeElapsed(0)
+    , m_tPrev(0)
     , m_timeSamples(0)
     , m_texLoaded(false)
 {
@@ -142,7 +145,10 @@ void Renderer::loadTextures(const wchar_t *basePath)
 
 void Renderer::renderWorld(const World &world, const Camera4D &cam)
 {
+    clock_t tw0 = clock();
     ++m_frameCount;
+
+    clock_t t = clock();
     resetBuffers();
 
     // 创建 32-bit DIB 位图
@@ -150,7 +156,7 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
     BITMAPINFO bmi = {};
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
     bmi.bmiHeader.biWidth = m_screenWidth;
-    bmi.bmiHeader.biHeight = -m_screenHeight;  // 负�?= 自上而下
+    bmi.bmiHeader.biHeight = -m_screenHeight;
     bmi.bmiHeader.biPlanes = 1;
     bmi.bmiHeader.biBitCount = 32;
     bmi.bmiHeader.biCompression = BI_RGB;
@@ -164,11 +170,11 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
     HBITMAP oldBmp = (HBITMAP) SelectObject(memDC, hBmp);
 
     // 填充背景
-    DWORD bg = 0x001E0A0A;  // RGB(10,10,30)
+    DWORD bg = 0x001E0A0A;
     int total = m_screenWidth * m_screenHeight;
     for (int i = 0; i < total; ++i) bits[i] = bg;
+    m_timeClear += clock() - t;  t = clock();
 
-    // 使用临时帧缓冲指针绘�?
     m_pBits = bits;
     drawFacesStep(world, cam);
     m_pBits = nullptr;
@@ -190,6 +196,13 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
         m_fpsFrames = 0;
         m_fpsTime = now;
     }
+
+    m_timeWorld += clock() - tw0;
+
+    // 帧间实际耗时
+    if (m_tPrev != 0)
+        m_timeElapsed += clock() - m_tPrev;
+    m_tPrev = clock();
 }
 
 // 快速判断方块是否可能与切片相交
@@ -614,10 +627,8 @@ void Renderer::drawCrosshair() const
     int len = 10;
 
     setlinecolor(RGB(255, 255, 255));
-    // 水平�?
     line(cx - len, cy, cx - gap, cy);
     line(cx + gap, cy, cx + len, cy);
-    // 垂直�?
     line(cx, cy - len, cx, cy - gap);
     line(cx, cy + gap, cx, cy + len);
 }
@@ -740,46 +751,69 @@ void Renderer::drawHUD(const Camera4D &cam) const
     // FPS + 诊断（右上角）
     // ========================================
     double invCLK = 1000.0 / CLOCKS_PER_SEC;
+    double msClear = (m_timeSamples > 0) ? (m_timeClear * invCLK / m_timeSamples) : 0.0;
     double msIter = (m_timeSamples > 0) ? (m_timeIter * invCLK / m_timeSamples) : 0.0;
     double msOccl = (m_timeSamples > 0) ? (m_timeOccl * invCLK / m_timeSamples) : 0.0;
     double msGeom = (m_timeSamples > 0) ? (m_timeGeom * invCLK / m_timeSamples) : 0.0;
     double msRast = (m_timeSamples > 0) ? (m_timeRast * invCLK / m_timeSamples) : 0.0;
-    double msTotal = msIter + msOccl + msGeom + msRast;
+    double msWorld = (m_timeSamples > 0) ? (m_timeWorld * invCLK / m_timeSamples) : 0.0;
+    double msElapsed = (m_timeSamples > 0) ? (m_timeElapsed * invCLK / m_timeSamples) : 0.0;
+    double msTotal = msClear + msIter + msOccl + msGeom + msRast;
+    double msOther = msElapsed - msWorld;
+    if (msOther < 0.0) msOther = 0.0;
 
     int xLeft = 530;
     int xRight = m_screenWidth - 12;
 
     settextcolor(RGB(255, 255, 255));
     SetTextAlign(hdc, TA_LEFT);
-    swprintf(buf, 256, L"FPS: %d", m_fps);
+    swprintf(buf, 256, L"FPS: %d (%.0fms)", m_fps, msElapsed);
     TextOutW(hdc, xLeft, 10, buf, (int) wcslen(buf));
     SetTextAlign(hdc, TA_RIGHT);
-    swprintf(buf, 256, L"合计: %5.1fms", msTotal);
+    swprintf(buf, 256, L"子项计: %5.1fms", msTotal);
     TextOutW(hdc, xRight, 10, buf, (int) wcslen(buf));
 
     settextcolor(RGB(255, 255, 100));
     SetTextAlign(hdc, TA_LEFT);
-    swprintf(buf, 256, L"方块总数: %-8d", m_diagTotal); TextOutW(hdc, xLeft, 30, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"清理填充: %-8s", "");           TextOutW(hdc, xLeft, 30, buf, (int) wcslen(buf));
     SetTextAlign(hdc, TA_RIGHT);
-    swprintf(buf, 256, L"%5.1fms", msIter);              TextOutW(hdc, xRight, 30, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"%5.1fms", msClear);              TextOutW(hdc, xRight, 30, buf, (int) wcslen(buf));
 
     SetTextAlign(hdc, TA_LEFT);
-    swprintf(buf, 256, L"切片通过: %-8d", m_diagSlice); TextOutW(hdc, xLeft, 50, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"遍历过滤: %-8s", "");           TextOutW(hdc, xLeft, 50, buf, (int) wcslen(buf));
     SetTextAlign(hdc, TA_RIGHT);
-    swprintf(buf, 256, L"%5.1fms", msOccl);              TextOutW(hdc, xRight, 50, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"%5.1fms", msIter);               TextOutW(hdc, xRight, 50, buf, (int) wcslen(buf));
 
     SetTextAlign(hdc, TA_LEFT);
-    swprintf(buf, 256, L"遮挡通过: %-8d", m_diagOccl); TextOutW(hdc, xLeft, 70, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"遮挡检测: %-8s", "");           TextOutW(hdc, xLeft, 70, buf, (int) wcslen(buf));
     SetTextAlign(hdc, TA_RIGHT);
-    swprintf(buf, 256, L"%5.1fms", msGeom);              TextOutW(hdc, xRight, 70, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"%5.1fms", msOccl);               TextOutW(hdc, xRight, 70, buf, (int) wcslen(buf));
 
     SetTextAlign(hdc, TA_LEFT);
-    swprintf(buf, 256, L"几何生成: %-8d", m_diagGeom); TextOutW(hdc, xLeft, 90, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"几何计算: %-8s", "");           TextOutW(hdc, xLeft, 90, buf, (int) wcslen(buf));
     SetTextAlign(hdc, TA_RIGHT);
-    swprintf(buf, 256, L"%5.1fms", msRast);              TextOutW(hdc, xRight, 90, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"%5.1fms", msGeom);               TextOutW(hdc, xRight, 90, buf, (int) wcslen(buf));
 
     SetTextAlign(hdc, TA_LEFT);
-    swprintf(buf, 256, L"渲染面数: %-8d", m_diagFaces); TextOutW(hdc, xLeft, 110, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"光栅化:   %-8s", "");           TextOutW(hdc, xLeft, 110, buf, (int) wcslen(buf));
+    SetTextAlign(hdc, TA_RIGHT);
+    swprintf(buf, 256, L"%5.1fms", msRast);               TextOutW(hdc, xRight, 110, buf, (int) wcslen(buf));
+
+    SetTextAlign(hdc, TA_LEFT);
+    swprintf(buf, 256, L"渲染总计: %-8s", "");           TextOutW(hdc, xLeft, 130, buf, (int) wcslen(buf));
+    SetTextAlign(hdc, TA_RIGHT);
+    swprintf(buf, 256, L"%5.1fms", msWorld);              TextOutW(hdc, xRight, 130, buf, (int) wcslen(buf));
+
+    settextcolor(RGB(255, 150, 100));
+    SetTextAlign(hdc, TA_LEFT);
+    swprintf(buf, 256, L"其他:     %-8s", "");           TextOutW(hdc, xLeft, 150, buf, (int) wcslen(buf));
+    SetTextAlign(hdc, TA_RIGHT);
+    swprintf(buf, 256, L"%5.1fms", msOther);              TextOutW(hdc, xRight, 150, buf, (int) wcslen(buf));
+
+    SetTextAlign(hdc, TA_LEFT);
+    swprintf(buf, 256, L"方块总数: %-8d", m_diagTotal);  TextOutW(hdc, xLeft, 170, buf, (int) wcslen(buf));
+    SetTextAlign(hdc, TA_RIGHT);
+    swprintf(buf, 256, L"面:%d", m_diagFaces);            TextOutW(hdc, xRight, 170, buf, (int) wcslen(buf));
 
     SetTextAlign(hdc, TA_LEFT);
     settextcolor(RGB(255, 255, 255));
@@ -796,6 +830,4 @@ void Renderer::drawHUD(const Camera4D &cam) const
     double pitchDeg = cam.getPitch() * 180.0 / 3.1415926535;
     swprintf(buf, 256, L"俯仰: %+.0f°", pitchDeg);
     TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
-
-    m_timeHUD += (clock() - t0);
 }
