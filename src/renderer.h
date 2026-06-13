@@ -67,6 +67,7 @@ private:
     mutable clock_t m_timeCellGrp; // 胞腔分组(交线段归入8胞腔)
     mutable clock_t m_timeEpiMatch;// 端点匹配(next[]链)
     mutable clock_t m_timeChain;   // 链追踪+投影
+    mutable clock_t m_timeHashGeo; // 哈希表并行几何收集
     mutable clock_t m_timeDSort;   // 面深度汇总
     mutable clock_t m_timeSort;    // 深度排序
     mutable clock_t m_timeBBOX;    // 多边形包围盒
@@ -86,6 +87,7 @@ private:
         clock_t zBuf, dib, cellTest, surfChk, vertGen, overDot;
         clock_t f24, cellGrp, epiMatch, chain, dsort, sort_;
         clock_t bbox, edges, pixWr, bitBlt, world, elapsed;
+        clock_t hashGeo;
         int samples;
     };
     mutable std::deque<TimeSlice> m_timeSlices;
@@ -98,4 +100,7 @@ private:
 
     void resetBuffers();
     void fillPolygonZ(const POINT *pts, int n, const double *depths, COLORREF color);
+    void fillPolygonZTile(const POINT *pts, int n, const double *depths, COLORREF color,
+        int tileY0, int tileY1);
+    static const int TILE_THREADS = 16;
 };

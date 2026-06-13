@@ -7,6 +7,7 @@
 #include <functional>
 #include <iostream>
 #include <windows.h>
+#include <thread>
 
 // ============================================================================
 // 超立方体 24 个二维面（每个面 4 个顶点，构成一个正方形�?
@@ -94,6 +95,7 @@ Renderer::Renderer(int screenWidth, int screenHeight, double scale)
     , m_timeCellGrp(0)
     , m_timeEpiMatch(0)
     , m_timeChain(0)
+    , m_timeHashGeo(0)
     , m_timeDSort(0)
     , m_timeSort(0)
     , m_timeBBOX(0)
@@ -249,6 +251,7 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
         ts.bbox = m_timeBBOX;         ts.edges = m_timeEdges;
         ts.pixWr = m_timePixWr;       ts.bitBlt = m_timeBitBlt;
         ts.world = m_timeWorld;       ts.elapsed = m_timeElapsed;
+        ts.hashGeo = m_timeHashGeo;
         ts.samples = m_timeSamples;
         m_timeSlices.push_back(ts);
         if (static_cast<int>(m_timeSlices.size()) > TIME_SLICES)
@@ -260,6 +263,7 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
         m_timeChain = 0;   m_timeDSort = 0;    m_timeSort = 0;
         m_timeBBOX = 0;    m_timeEdges = 0;    m_timePixWr = 0;
         m_timeBitBlt = 0;  m_timeWorld = 0;    m_timeElapsed = 0;
+        m_timeHashGeo = 0;
         m_timeSamples = 0;
         m_sliceStart = clock();
     }
@@ -297,142 +301,176 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
     struct FaceData { int bx, by, bz, bw; COLORREF col; POINT pts[12]; double depths[12]; int n; };
     std::vector<FaceData> allFaces;
 
-    clock_t tOcclAcc = 0;
+    // ---- 哈希表路径：多线程并行收集面 ----
+    clock_t tHash0 = clock();
 
+    // 收集方块坐标到向量以便分块
+    std::vector<IVec4> positions;
+    positions.reserve(blocks.size());
     for (const auto &pair : blocks)
+        positions.push_back(pair.first);
+
+    size_t totalPos = positions.size();
+    int numT = TILE_THREADS;
+    size_t chunk = (totalPos + numT - 1) / numT;
+
+    struct ThreadLocal
     {
-        int bx = pair.first.x, by = pair.first.y, bz = pair.first.z, bw = pair.first.w;
-        if (!mayIntersectSlice(bx, by, bz, bw, camPos, ov, m_blockHalf, m_blockHalf * 2.0))
-            continue;
-        ++m_diagSlice;
+        std::vector<FaceData> faces;
+        int slice, occl, geom;
+        clock_t occlAcc;
+    };
+    std::vector<ThreadLocal> locals(numT);
+    std::vector<std::thread> hthreads;
 
-        clock_t tOccl0 = clock();
-        if (world.get(IVec4(bx + 1, by, bz, bw)) && world.get(IVec4(bx - 1, by, bz, bw)) &&
-            world.get(IVec4(bx, by + 1, bz, bw)) && world.get(IVec4(bx, by - 1, bz, bw)) &&
-            world.get(IVec4(bx, by, bz + 1, bw)) && world.get(IVec4(bx, by, bz - 1, bw)) &&
-            world.get(IVec4(bx, by, bz, bw + 1)) && world.get(IVec4(bx, by, bz, bw - 1)))
+    for (int ti = 0; ti < numT; ++ti)
+    {
+        size_t s = ti * chunk;
+        size_t e = (s + chunk < totalPos) ? s + chunk : totalPos;
+        if (s >= e) break;
+
+        hthreads.emplace_back([&, ti, s, e]()
         {
-            tOcclAcc += (clock() - tOccl0);
-            continue;
-        }
-        tOcclAcc += (clock() - tOccl0);
-        ++m_diagOccl;
+            auto &loc = locals[ti];
+            loc.slice = 0; loc.occl = 0; loc.geom = 0;
+            clock_t occAcc = 0;
 
-        clock_t tG = clock();
-        COLORREF col = getBlockColor(bx, by, bz, bw);
-
-        Vec4 verts[16]; hypercubeVertices(bx, by, bz, bw, verts, m_blockHalf);
-        m_timeVertGen += clock() - tG;  tG = clock();
-
-        double od[16];
-        for (int i = 0; i < 16; ++i)
-            od[i] = vec4Dot(vec4Sub(verts[i], camPos), ov);
-        m_timeOverDot += clock() - tG;  tG = clock();
-
-        // 收集交线
-        struct Seg2 { Vec4 a, b; int faceIdx; };
-        Seg2 segs[24]; int sc = 0;
-        for (int f = 0; f < 24; ++f)
-        {
-            const int *face = FACES[f];
-            Vec4 hits[4]; int hc = 0;
-            for (int e = 0; e < 4 && hc < 4; ++e)
+            for (size_t pi = s; pi < e; ++pi)
             {
-                int a = face[e], b = face[(e + 1) & 3];
-                double da = od[a], db = od[b];
-                if ((da > 0 && db > 0) || (da < 0 && db < 0)) continue;
-                double t2 = (std::abs(da - db) > 1e-12) ? da / (da - db) : 0.5;
-                hits[hc++] = vec4Add(verts[a], vec4Scale(vec4Sub(verts[b], verts[a]), t2));
-            }
-            if (hc == 2) segs[sc++] = { hits[0], hits[1], f };
-        }
-        if (sc == 0) { m_time24Face += clock() - tG; continue; }
-        ++m_diagGeom;
-        m_time24Face += clock() - tG;  tG = clock();
+                int bx = positions[pi].x, by = positions[pi].y;
+                int bz = positions[pi].z, bw = positions[pi].w;
 
-        // 8 个胞腔
-        struct Cell { int bit, val; };
-        const Cell cells[8] = { {0,0},{0,1},{1,0},{1,1},{2,0},{2,1},{3,0},{3,1} };
+                if (!mayIntersectSlice(bx, by, bz, bw, camPos, ov, m_blockHalf, sp))
+                    continue;
+                ++loc.slice;
 
-        for (int ci = 0; ci < 8; ++ci)
-        {
-            int cb = cells[ci].bit, cv = cells[ci].val;
-            int cSegs[6]; int csc = 0;
-            for (int s = 0; s < sc; ++s)
-            {
-                int fi = segs[s].faceIdx;
-                int bm = s_fix.bits[fi];
-                if ((bm >> cb) & 1)
-                {  // bit cb 在此面中固定
-                    if (((s_fix.vals[fi] >> cb) & 1) == cv)  // 固定值等于胞腔值
-                        if (csc < 6) cSegs[csc++] = s;
-                }
-            }
-            if (csc < 3) continue;
-
-            m_timeCellGrp += clock() - tG;  tG = clock();
-
-            // ---- 通过线段端点匹配构建正确的多边形顶点顺序 ----
-            struct EP { Vec4 pos; int segIdx; };
-            EP eps[12]; int epCount = 0;
-            for (int i = 0; i < csc; ++i)
-            {
-                int si = cSegs[i];
-                eps[epCount++] = { segs[si].a, i };
-                eps[epCount++] = { segs[si].b, i };
-            }
-
-            int next[12];
-            for (int i = 0; i < epCount; ++i)
-            {
-                next[i] = -1;
-                for (int j = 0; j < epCount; ++j)
+                clock_t tOccl0 = clock();
+                if (world.get(IVec4(bx + 1, by, bz, bw)) && world.get(IVec4(bx - 1, by, bz, bw)) &&
+                    world.get(IVec4(bx, by + 1, bz, bw)) && world.get(IVec4(bx, by - 1, bz, bw)) &&
+                    world.get(IVec4(bx, by, bz + 1, bw)) && world.get(IVec4(bx, by, bz - 1, bw)) &&
+                    world.get(IVec4(bx, by, bz, bw + 1)) && world.get(IVec4(bx, by, bz, bw - 1)))
                 {
-                    if (i == j) continue;
-                    if (eps[i].segIdx == eps[j].segIdx) continue;
-                    if (vec4DistSq(eps[i].pos, eps[j].pos) < 1e-6)
+                    occAcc += (clock() - tOccl0);
+                    continue;
+                }
+                occAcc += (clock() - tOccl0);
+                ++loc.occl;
+
+                COLORREF col = getBlockColor(bx, by, bz, bw);
+
+                Vec4 verts[16]; hypercubeVertices(bx, by, bz, bw, verts, m_blockHalf);
+                double od[16];
+                for (int i = 0; i < 16; ++i) od[i] = vec4Dot(vec4Sub(verts[i], camPos), ov);
+
+                struct Seg2 { Vec4 a, b; int faceIdx; };
+                Seg2 segs[24]; int sc = 0;
+                for (int f = 0; f < 24; ++f)
+                {
+                    const int *face = FACES[f];
+                    Vec4 hits[4]; int hc = 0;
+                    for (int e = 0; e < 4 && hc < 4; ++e)
                     {
-                        int other = -1;
-                        for (int k = 0; k < epCount; ++k)
-                            if (k != j && eps[k].segIdx == eps[j].segIdx) { other = k; break; }
-                        next[i] = other;
-                        break;
+                        int a = face[e], b = face[(e + 1) & 3];
+                        double da = od[a], db = od[b];
+                        if ((da > 0 && db > 0) || (da < 0 && db < 0)) continue;
+                        double t2 = (std::abs(da - db) > 1e-12) ? da / (da - db) : 0.5;
+                        hits[hc++] = vec4Add(verts[a], vec4Scale(vec4Sub(verts[b], verts[a]), t2));
                     }
+                    if (hc == 2) segs[sc++] = { hits[0], hits[1], f };
+                }
+                if (sc == 0) continue;
+                ++loc.geom;
+
+                struct Cell { int bit, val; };
+                const Cell cells[8] = { {0,0},{0,1},{1,0},{1,1},{2,0},{2,1},{3,0},{3,1} };
+
+                for (int ci = 0; ci < 8; ++ci)
+                {
+                    int cb = cells[ci].bit, cv = cells[ci].val;
+                    int cSegs[6]; int csc = 0;
+                    for (int s2 = 0; s2 < sc; ++s2)
+                    {
+                        int fi = segs[s2].faceIdx;
+                        int bm = s_fix.bits[fi];
+                        if ((bm >> cb) & 1)
+                        {
+                            if (((s_fix.vals[fi] >> cb) & 1) == cv)
+                                if (csc < 6) cSegs[csc++] = s2;
+                        }
+                    }
+                    if (csc < 3) continue;
+
+                    struct EP { Vec4 pos; int segIdx; };
+                    EP eps[12]; int epCount = 0;
+                    for (int i = 0; i < csc; ++i)
+                    {
+                        int si = cSegs[i];
+                        eps[epCount++] = { segs[si].a, i };
+                        eps[epCount++] = { segs[si].b, i };
+                    }
+
+                    int next[12];
+                    for (int i = 0; i < epCount; ++i)
+                    {
+                        next[i] = -1;
+                        for (int j = 0; j < epCount; ++j)
+                        {
+                            if (i == j) continue;
+                            if (eps[i].segIdx == eps[j].segIdx) continue;
+                            if (vec4DistSq(eps[i].pos, eps[j].pos) < 1e-6)
+                            {
+                                int other = -1;
+                                for (int k = 0; k < epCount; ++k)
+                                    if (k != j && eps[k].segIdx == eps[j].segIdx) { other = k; break; }
+                                next[i] = other;
+                                break;
+                            }
+                        }
+                    }
+
+                    POINT orderedPts[12]; double orderedDepths[12]; int orderedN = 0;
+                    bool used[12] = {};
+                    int cur = 0;
+                    while (cur >= 0 && !used[cur] && orderedN < 12)
+                    {
+                        used[cur] = true;
+                        ProjResult pr = project(eps[cur].pos, cam, m_scale, m_offsetX, m_offsetY, cam.getPitch());
+                        if (!pr.valid) break;
+                        orderedPts[orderedN] = { static_cast<int>(pr.screenPos.x), static_cast<int>(pr.screenPos.y) };
+                        orderedDepths[orderedN] = vec4Dot(vec4Sub(eps[cur].pos, camPos), cam.getForward());
+                        ++orderedN; cur = next[cur];
+                    }
+                    if (orderedN < 3) continue;
+
+                    FaceData fd = { bx,by,bz,bw, col, {}, {}, 0 };
+                    for (int i = 0; i < orderedN && fd.n < 12; ++i)
+                    {
+                        fd.pts[fd.n] = orderedPts[i];
+                        fd.depths[fd.n] = orderedDepths[i];
+                        ++fd.n;
+                    }
+                    loc.faces.push_back(fd);
                 }
             }
-            m_timeEpiMatch += clock() - tG;  tG = clock();
-
-            POINT orderedPts[12]; double orderedDepths[12]; int orderedN = 0;
-            bool used[12] = {};
-            int cur = 0;
-            while (cur >= 0 && !used[cur] && orderedN < 12)
-            {
-                used[cur] = true;
-                ProjResult pr = project(eps[cur].pos, cam, m_scale, m_offsetX, m_offsetY, cam.getPitch());
-                if (!pr.valid) break;
-                orderedPts[orderedN] = { static_cast<int>(pr.screenPos.x), static_cast<int>(pr.screenPos.y) };
-                Vec4 dv = vec4Sub(eps[cur].pos, cam.getPos());
-                orderedDepths[orderedN] = vec4Dot(dv, cam.getForward());
-                ++orderedN;
-                cur = next[cur];
-            }
-            m_timeChain += clock() - tG;  tG = clock();
-
-            if (orderedN < 3) continue;
-
-            FaceData fd = { bx,by,bz,bw, col, {}, {}, 0 };
-            for (int i = 0; i < orderedN && fd.n < 12; ++i)
-            {
-                fd.pts[fd.n] = orderedPts[i];
-                fd.depths[fd.n] = orderedDepths[i];
-                ++fd.n;
-            }
-            allFaces.push_back(fd);
-        }
+            loc.occlAcc = occAcc;
+        });
     }
+    for (auto &th : hthreads) th.join();
 
-    // 累加哈希表路径的遮挡检测耗时
+    // 合并各线程结果
+    clock_t tOcclAcc = 0;
+    for (int ti = 0; ti < static_cast<int>(hthreads.size()); ++ti)
+    {
+        auto &loc = locals[ti];
+        m_diagSlice += loc.slice;
+        m_diagOccl += loc.occl;
+        m_diagGeom += loc.geom;
+        tOcclAcc += loc.occlAcc;
+        allFaces.insert(allFaces.end(), loc.faces.begin(), loc.faces.end());
+    }
     m_timeSurfChk += tOcclAcc;
+
+    m_timeHashGeo += clock() - tHash0;
 
     // ---- 超方块：16 分法递归遍历 ----
     for (const auto &sb : m_superBlocks)
@@ -579,15 +617,33 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
     // });
     // m_timeSort += clock() - tSort;
 
-    // 扫描线填充（不排序，直接按收集顺序绘制）
+    // 多线程 Tile 填充
     clock_t tFill0 = clock();
-    int showCount = static_cast<int>(allFaces.size());
-    for (int i = 0; i < static_cast<int>(allFaces.size()) && i < showCount; ++i)
+    int totalFaces = static_cast<int>(allFaces.size());
+    int screenH = m_screenHeight;
+    int rowsPer = (screenH + TILE_THREADS - 1) / TILE_THREADS;
+
+    std::vector<std::thread> threads;
+    for (int ti = 0; ti < TILE_THREADS; ++ti)
     {
-        const FaceData &fd = allFaces[i];
-        int r = GetRValue(fd.col), g = GetGValue(fd.col), b = GetBValue(fd.col);
-        fillPolygonZ(fd.pts, fd.n, fd.depths, RGB(r, g, b));
+        int y0 = ti * rowsPer;
+        int y1 = y0 + rowsPer;
+        if (y0 >= screenH) break;
+        if (y1 > screenH) y1 = screenH;
+
+        threads.emplace_back([this, &allFaces, y0, y1, totalFaces]()
+        {
+            for (int i = 0; i < totalFaces; ++i)
+            {
+                const FaceData &fd = allFaces[i];
+                fillPolygonZTile(fd.pts, fd.n, fd.depths,
+                    RGB(GetRValue(fd.col), GetGValue(fd.col), GetBValue(fd.col)),
+                    y0, y1);
+            }
+        });
     }
+    for (auto &th : threads) th.join();
+
     m_timePixWr += clock() - tFill0;
     ++m_timeSamples;
 }
@@ -684,6 +740,89 @@ void Renderer::fillPolygonZ(const POINT *pts, int n, const double *depths, COLOR
         if (x1 >= sw) x1 = sw - 1;
         if (x0 > x1) continue;
 
+        double dz = (x1 > x0) ? (zR - zL) / (x1 - x0) : 0;
+        double z = zL;
+        double *zptr = zbuf + y * sw + x0;
+        DWORD *bptr = bits + y * sw + x0;
+        for (int x = x0; x <= x1; ++x, z += dz, ++zptr, ++bptr)
+        {
+            if (z < *zptr) { *zptr = z; *bptr = color; }
+        }
+    }
+}
+
+// 多线程 Tile 变体：仅处理 [tileY0, tileY1) 扫描线
+void Renderer::fillPolygonZTile(const POINT *pts, int n, const double *depths,
+    COLORREF color, int tileY0, int tileY1)
+{
+    if (n < 3) return;
+
+    int polyMinY = pts[0].y, polyMaxY = pts[0].y;
+    for (int i = 1; i < n; ++i)
+    {
+        if (pts[i].y < polyMinY) polyMinY = pts[i].y;
+        if (pts[i].y > polyMaxY) polyMaxY = pts[i].y;
+    }
+    if (polyMinY < 0) polyMinY = 0;
+    if (polyMaxY >= m_screenHeight) polyMaxY = m_screenHeight - 1;
+
+    int minY = polyMinY, maxY = polyMaxY;
+    if (minY < tileY0) minY = tileY0;
+    if (maxY >= tileY1) maxY = tileY1 - 1;
+    if (minY > maxY) return;
+
+    struct EdgePre { double x, z; double dxdy, dzdy; int yStart; int yEnd; };
+    EdgePre epre[12]; int ec = 0;
+    double *zbuf = m_zbuf.data();
+    DWORD *bits = m_pBits;
+    int sw = m_screenWidth;
+
+    for (int i = 0; i < n; ++i)
+    {
+        int j = (i + 1) % n;
+        int y0 = pts[i].y, y1 = pts[j].y;
+        if (y0 == y1) continue;
+        int topY, botY, topIdx;
+        if (y0 < y1) { topY = y0; botY = y1; topIdx = i; }
+        else { topY = y1; botY = y0; topIdx = j; }
+        int otherIdx = (topIdx == i) ? j : i;
+        double invDy = 1.0 / (botY - topY);
+        double xTop = pts[topIdx].x, zTop = depths[topIdx];
+        double dx = pts[otherIdx].x - xTop;
+        double dz = depths[otherIdx] - zTop;
+        double dxdy = dx * invDy, dzdy = dz * invDy;
+        int startY = topY;
+        if (startY < minY)
+        {
+            double adv = static_cast<double>(minY - topY);
+            xTop += dxdy * adv; zTop += dzdy * adv;
+            startY = minY;
+        }
+        if (startY > maxY) continue;
+        int yEnd = botY;
+        if (yEnd > maxY + 1) yEnd = maxY + 1;
+        epre[ec++] = { xTop, zTop, dxdy, dzdy, startY, yEnd };
+    }
+
+    for (int y = minY; y <= maxY; ++y)
+    {
+        double xL = 1e9, xR = -1e9, zL = 0, zR = 0;
+        int hit = 0;
+        for (int e = 0; e < ec; ++e)
+        {
+            if (y < epre[e].yStart || y >= epre[e].yEnd) continue;
+            double cx = epre[e].x, cz = epre[e].z;
+            if (cx < xL) { xL = cx; zL = cz; }
+            if (cx > xR) { xR = cx; zR = cz; }
+            ++hit;
+            epre[e].x += epre[e].dxdy;
+            epre[e].z += epre[e].dzdy;
+        }
+        if (hit < 2) continue;
+        int x0 = static_cast<int>(xL), x1 = static_cast<int>(xR);
+        if (x0 < 0) x0 = 0;
+        if (x1 >= sw) x1 = sw - 1;
+        if (x0 > x1) continue;
         double dz = (x1 > x0) ? (zR - zL) / (x1 - x0) : 0;
         double z = zL;
         double *zptr = zbuf + y * sw + x0;
@@ -839,6 +978,7 @@ void Renderer::drawHUD(const Camera4D &cam) const
     clock_t sumChain = m_timeChain, sumDSort = m_timeDSort, sumSort = m_timeSort;
     clock_t sumBBOX = m_timeBBOX, sumEdges = m_timeEdges, sumPixWr = m_timePixWr;
     clock_t sumBlt = m_timeBitBlt, sumWorld = m_timeWorld, sumElapsed = m_timeElapsed;
+    clock_t sumHashGeo = m_timeHashGeo;
     int totalSamples = m_timeSamples;
     for (const auto &ts : m_timeSlices)
     {
@@ -848,6 +988,7 @@ void Renderer::drawHUD(const Camera4D &cam) const
         sumChain += ts.chain; sumDSort += ts.dsort;   sumSort += ts.sort_;
         sumBBOX += ts.bbox;   sumEdges += ts.edges;   sumPixWr += ts.pixWr;
         sumBlt += ts.bitBlt;  sumWorld += ts.world;   sumElapsed += ts.elapsed;
+        sumHashGeo += ts.hashGeo;
         totalSamples += ts.samples;
     }
 
@@ -868,7 +1009,8 @@ void Renderer::drawHUD(const Camera4D &cam) const
     double mBlt = ms(sumBlt);
     double mWorld = ms(sumWorld);
     double mElapsed = ms(sumElapsed);
-    double mGeom = mVertG + mOverD + m24F + mCellG + mEpiM + mChain;
+    double mHashGeo = ms(sumHashGeo);
+    double mGeom = mVertG + mOverD + m24F + mCellG + mEpiM + mChain + mHashGeo;
     double mRast = mDSort + mSort + mBBOX + mEdges + mPixWr;
     double mTotal = mZBuf + mDIB + mCellT + mSurf + mGeom + mRast + mBlt;
     double mOther = mElapsed - mWorld;
@@ -905,21 +1047,22 @@ void Renderer::drawHUD(const Camera4D &cam) const
     drawRow(150, L"胞腔分组:", mCellG, D);
     drawRow(166, L"端点匹配(next[]):", mEpiM, D);
     drawRow(182, L"链追踪+投影:", mChain, D);
-    // drawRow(200, L"深度汇总:", mDSort, Y);
-    // drawRow(218, L"排序:", mSort, Y);
-    drawRow(236, L"填充-逐像素写:", mPixWr, Y);
-    drawRow(254, L"BitBlt刷屏:", mBlt, Y);
-    drawRow(272, L"渲染总计:", mWorld, Y);
-    drawRow(290, L"其他:", mOther, RGB(255, 150, 100));
+    drawRow(200, L"哈希表并行几何:", mHashGeo, Y);
+    // drawRow(218, L"深度汇总:", mDSort, Y);
+    // drawRow(236, L"排序:", mSort, Y);
+    drawRow(254, L"填充-逐像素写:", mPixWr, Y);
+    drawRow(272, L"BitBlt刷屏:", mBlt, Y);
+    drawRow(290, L"渲染总计:", mWorld, Y);
+    drawRow(308, L"其他:", mOther, RGB(255, 150, 100));
 
     // 方块总数 + 面数
     settextcolor(Y);
     SetTextAlign(hdc, TA_LEFT);
     swprintf(buf, 256, L"方块总数: %d", m_diagTotal);
-    TextOutW(hdc, xLeft, 320, buf, (int) wcslen(buf));
+    TextOutW(hdc, xLeft, 326, buf, (int) wcslen(buf));
     SetTextAlign(hdc, TA_RIGHT);
     swprintf(buf, 256, L"面:%d", m_diagFaces);
-    TextOutW(hdc, xRight, 320, buf, (int) wcslen(buf));
+    TextOutW(hdc, xRight, 326, buf, (int) wcslen(buf));
 
     SetTextAlign(hdc, TA_LEFT);
     settextcolor(RGB(255, 255, 255));
