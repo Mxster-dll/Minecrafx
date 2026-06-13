@@ -77,6 +77,10 @@ Renderer::Renderer(int screenWidth, int screenHeight, double scale)
     , m_offsetY(screenHeight / 2.0)
     , m_blockHalf(0.5 / 16.0)
     , m_frameCount(0)
+    , m_hBmp(nullptr)
+    , m_memDC(nullptr)
+    , m_oldBmp(nullptr)
+    , m_dibReady(false)
     , m_fpsFrames(0)
     , m_fpsTime(0)
     , m_fps(0)
@@ -111,6 +115,26 @@ Renderer::Renderer(int screenWidth, int screenHeight, double scale)
 {
     m_zbuf.resize(m_screenWidth * m_screenHeight);
     memset(m_tex, 0, sizeof(m_tex));
+
+    // 预创建 DIB（复用整个生命周期）
+    HDC hdc = GetImageHDC();
+    BITMAPINFO bmi = {};
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = m_screenWidth;
+    bmi.bmiHeader.biHeight = -m_screenHeight;
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+    DWORD *bits = nullptr;
+    m_hBmp = CreateDIBSection(hdc, &bmi, DIB_RGB_COLORS,
+        reinterpret_cast<void **>(&bits), nullptr, 0);
+    if (m_hBmp && bits)
+    {
+        m_memDC = CreateCompatibleDC(hdc);
+        m_oldBmp = (HBITMAP) SelectObject(m_memDC, m_hBmp);
+        m_pBits = bits;
+        m_dibReady = true;
+    }
 }
 
 // 从方块坐标生成伪随机颜色（纹理未加载时使用）
@@ -126,7 +150,14 @@ static COLORREF blockColor(int x, int y, int z, int w)
 }
 
 Renderer::~Renderer()
-{}
+{
+    if (m_dibReady)
+    {
+        SelectObject(m_memDC, m_oldBmp);
+        DeleteDC(m_memDC);
+        DeleteObject(m_hBmp);
+    }
+}
 
 COLORREF Renderer::getBlockColor(int x, int y, int z, int w) const
 {
@@ -181,43 +212,25 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
     clock_t tw0 = clock();
     ++m_frameCount;
 
+    if (!m_dibReady) return;
+
     clock_t t = clock();
     resetBuffers();
     m_timeZBuf += clock() - t;  t = clock();
 
     HDC hdc = GetImageHDC();
-    BITMAPINFO bmi = {};
-    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bmi.bmiHeader.biWidth = m_screenWidth;
-    bmi.bmiHeader.biHeight = -m_screenHeight;
-    bmi.bmiHeader.biPlanes = 1;
-    bmi.bmiHeader.biBitCount = 32;
-    bmi.bmiHeader.biCompression = BI_RGB;
-
-    DWORD *bits = nullptr;
-    HBITMAP hBmp = CreateDIBSection(hdc, &bmi, DIB_RGB_COLORS,
-        reinterpret_cast<void **>(&bits), nullptr, 0);
-    if (!hBmp || !bits) return;
-
-    HDC memDC = CreateCompatibleDC(hdc);
-    HBITMAP oldBmp = (HBITMAP) SelectObject(memDC, hBmp);
 
     DWORD bg = 0x001E0A0A;
     int total = m_screenWidth * m_screenHeight;
+    DWORD *bits = m_pBits;
     for (int i = 0; i < total; ++i) bits[i] = bg;
     m_timeDIB += clock() - t;  t = clock();
 
-    m_pBits = bits;
     drawFacesStep(world, cam);
-    m_pBits = nullptr;
 
     clock_t tBlt = clock();
-    BitBlt(hdc, 0, 0, m_screenWidth, m_screenHeight, memDC, 0, 0, SRCCOPY);
+    BitBlt(hdc, 0, 0, m_screenWidth, m_screenHeight, m_memDC, 0, 0, SRCCOPY);
     m_timeBitBlt += clock() - tBlt;
-
-    SelectObject(memDC, oldBmp);
-    DeleteDC(memDC);
-    DeleteObject(hBmp);
 
     // FPS 统计
     ++m_fpsFrames;
@@ -300,6 +313,7 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
 
     struct FaceData { int bx, by, bz, bw; COLORREF col; POINT pts[12]; double depths[12]; int n; };
     std::vector<FaceData> allFaces;
+    allFaces.reserve(m_superBlocks.size() * 1500);  // 预估面数
 
     // ---- 哈希表路径：多线程并行收集面 ----
     clock_t tHash0 = clock();
@@ -434,7 +448,7 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
                     while (cur >= 0 && !used[cur] && orderedN < 12)
                     {
                         used[cur] = true;
-                        ProjResult pr = project(eps[cur].pos, cam, m_scale, m_offsetX, m_offsetY, cam.getPitch());
+                        ProjResult pr = project(eps[cur].pos, cam, m_scale, m_offsetX, m_offsetY);
                         if (!pr.valid) break;
                         orderedPts[orderedN] = { static_cast<int>(pr.screenPos.x), static_cast<int>(pr.screenPos.y) };
                         orderedDepths[orderedN] = vec4Dot(vec4Sub(eps[cur].pos, camPos), cam.getForward());
@@ -473,6 +487,9 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
     m_timeHashGeo += clock() - tHash0;
 
     // ---- 超方块：16 分法递归遍历 ----
+    double overAbsSum = std::abs(ov.x) + std::abs(ov.y) + std::abs(ov.z) + std::abs(ov.w);
+    clock_t tSB0 = clock();
+
     for (const auto &sb : m_superBlocks)
     {
         int baseX = sb.pos().x * SuperBlock::SIZE;
@@ -483,34 +500,52 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
         std::function<void(int, int, int, int, int)> traverse =
             [&](int bx, int by, int bz, int bw, int size)
         {
-            clock_t t = clock();
-            // 胞腔-切片相交测试
             double cs = size * sp;
             double cx = (bx + size * 0.5) * sp;
             double cy = (by + size * 0.5) * sp;
             double cz = (bz + size * 0.5) * sp;
             double cw = (bw + size * 0.5) * sp;
-            double cod = ov.x * (cx - camPos.x) + ov.y * (cy - camPos.y) + ov.z * (cz - camPos.z) + ov.w * (cw - camPos.w);
-            double ext = cs * (std::abs(ov.x) + std::abs(ov.y) + std::abs(ov.z) + std::abs(ov.w));
-            if (std::abs(cod) > ext + 1e-9) return;
+            double cod = ov.x * (cx - camPos.x) + ov.y * (cy - camPos.y)
+                + ov.z * (cz - camPos.z) + ov.w * (cw - camPos.w);
+            if (std::abs(cod) > cs * overAbsSum + 1e-9) return;
             ++m_diagSlice;
-            m_timeCellTest += clock() - t;  t = clock();
 
             if (size == 1)
             {
                 int lx = bx - baseX, ly = by - baseY, lz = bz - baseZ, lw = bw - baseW;
                 if (lx > 0 && lx < SuperBlock::SIZE - 1 && ly>0 && ly < SuperBlock::SIZE - 1 &&
                     lz>0 && lz < SuperBlock::SIZE - 1 && lw>0 && lw < SuperBlock::SIZE - 1) return;
+
+                // 边界方块：检查外部邻居
+                auto exists = [&](int nx, int ny, int nz, int nw) -> bool
+                {
+                    int lx2 = nx - baseX, ly2 = ny - baseY, lz2 = nz - baseZ, lw2 = nw - baseW;
+                    if (lx2 >= 0 && lx2 < SuperBlock::SIZE && ly2 >= 0 && ly2 < SuperBlock::SIZE &&
+                        lz2 >= 0 && lz2 < SuperBlock::SIZE && lw2 >= 0 && lw2 < SuperBlock::SIZE)
+                        return true;
+                    // 检查相邻 SuperBlock 网格
+                    if (m_sbGrid.count(IVec4(nx / SuperBlock::SIZE, ny / SuperBlock::SIZE,
+                        nz / SuperBlock::SIZE, nw / SuperBlock::SIZE)))
+                        return true;
+                    return world.get(IVec4(nx, ny, nz, nw));
+                };
+                bool occluded = true;
+                if (lx == 0) { if (!exists(bx - 1, by, bz, bw)) occluded = false; }
+                if (lx == SuperBlock::SIZE - 1) { if (!exists(bx + 1, by, bz, bw)) occluded = false; }
+                if (ly == 0) { if (!exists(bx, by - 1, bz, bw)) occluded = false; }
+                if (ly == SuperBlock::SIZE - 1) { if (!exists(bx, by + 1, bz, bw)) occluded = false; }
+                if (lz == 0) { if (!exists(bx, by, bz - 1, bw)) occluded = false; }
+                if (lz == SuperBlock::SIZE - 1) { if (!exists(bx, by, bz + 1, bw)) occluded = false; }
+                if (lw == 0) { if (!exists(bx, by, bz, bw - 1)) occluded = false; }
+                if (lw == SuperBlock::SIZE - 1) { if (!exists(bx, by, bz, bw + 1)) occluded = false; }
+                if (occluded) return;
+
                 ++m_diagOccl;
-                m_timeSurfChk += clock() - t;  t = clock();
-
                 COLORREF col = getBlockColor(bx, by, bz, bw);
-                Vec4 verts[16]; hypercubeVertices(bx, by, bz, bw, verts, m_blockHalf);
-                m_timeVertGen += clock() - t;  t = clock();
 
+                Vec4 verts[16]; hypercubeVertices(bx, by, bz, bw, verts, m_blockHalf);
                 double od[16];
                 for (int i = 0; i < 16; ++i) od[i] = vec4Dot(vec4Sub(verts[i], camPos), ov);
-                m_timeOverDot += clock() - t;  t = clock();
 
                 struct Seg2 { Vec4 a, b; int fi; };
                 Seg2 segs[24]; int sc = 0;
@@ -529,7 +564,6 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
                 }
                 if (sc == 0) return;
                 ++m_diagGeom;
-                m_time24Face += clock() - t;  t = clock();
 
                 struct Cell { int bit, val; };
                 const Cell cells[8] = { {0,0},{0,1},{1,0},{1,1},{2,0},{2,1},{3,0},{3,1} };
@@ -537,14 +571,14 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
                 {
                     int cb = cells[ci].bit, cv = cells[ci].val;
                     int cSegs[6]; int csc = 0;
-                    for (int s = 0; s < sc; ++s)
+                    for (int s2 = 0; s2 < sc; ++s2)
                     {
-                        int fi = segs[s].fi;
+                        int fi = segs[s2].fi;
                         int bm = s_fix.bits[fi];
                         if ((bm >> cb) & 1)
                         {
                             if (((s_fix.vals[fi] >> cb) & 1) == cv)
-                                if (csc < 6) cSegs[csc++] = s;
+                                if (csc < 6) cSegs[csc++] = s2;
                         }
                     }
                     if (csc < 3) continue;
@@ -555,8 +589,6 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
                         int si = cSegs[i]; int ai = epc;
                         eps[epc++] = { segs[si].a,i,ai + 1 }; eps[epc++] = { segs[si].b,i,ai };
                     }
-                    m_timeCellGrp += clock() - t;  t = clock();
-
                     int next[12];
                     for (int i = 0; i < epc; ++i)
                     {
@@ -567,19 +599,16 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
                             if (vec4DistSq(eps[i].pos, eps[j].pos) < 1e-6) { next[i] = eps[j].pt; break; }
                         }
                     }
-                    m_timeEpiMatch += clock() - t;  t = clock();
-
                     POINT oPt[12]; double oDp[12]; int oN = 0; bool used[12] = {}; int cur = 0;
                     while (cur >= 0 && !used[cur] && oN < 12)
                     {
                         used[cur] = true;
-                        ProjResult pr = project(eps[cur].pos, cam, m_scale, m_offsetX, m_offsetY, cam.getPitch());
+                        ProjResult pr = project(eps[cur].pos, cam, m_scale, m_offsetX, m_offsetY);
                         if (!pr.valid) break;
                         oPt[oN] = { (int) pr.screenPos.x,(int) pr.screenPos.y };
                         oDp[oN] = vec4Dot(vec4Sub(eps[cur].pos, camPos), cam.getForward());
                         ++oN; cur = next[cur];
                     }
-                    m_timeChain += clock() - t;  t = clock();
                     if (oN < 3) continue;
                     FaceData fd = { bx,by,bz,bw,col,{},{},0 };
                     for (int i = 0; i < oN && fd.n < 12; ++i) { fd.pts[fd.n] = oPt[i]; fd.depths[fd.n] = oDp[i]; ++fd.n; }
@@ -594,6 +623,8 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
         };
         traverse(baseX, baseY, baseZ, baseW, SuperBlock::SIZE);
     }
+
+    m_timeCellTest += clock() - tSB0;  // SuperBlock 遍历总计（替代逐步骤计时）
 
     m_diagFaces = static_cast<int>(allFaces.size());
 
@@ -636,9 +667,7 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
             for (int i = 0; i < totalFaces; ++i)
             {
                 const FaceData &fd = allFaces[i];
-                fillPolygonZTile(fd.pts, fd.n, fd.depths,
-                    RGB(GetRValue(fd.col), GetGValue(fd.col), GetBValue(fd.col)),
-                    y0, y1);
+                fillPolygonZTile(fd.pts, fd.n, fd.depths, fd.col, y0, y1);
             }
         });
     }
@@ -654,7 +683,7 @@ void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
 
 void Renderer::resetBuffers()
 {
-    std::fill(m_zbuf.begin(), m_zbuf.end(), 1e100);
+    std::fill(m_zbuf.begin(), m_zbuf.end(), 1e30f);
 }
 
 void Renderer::fillPolygonZ(const POINT *pts, int n, const double *depths, COLORREF color)
@@ -675,7 +704,7 @@ void Renderer::fillPolygonZ(const POINT *pts, int n, const double *depths, COLOR
     // ---- 预计算每条边的斜率（除法只做一次） ----
     struct EdgePre { double x, z; double dxdy, dzdy; int yStart; int yEnd; };
     EdgePre epre[12]; int ec = 0;
-    double *zbuf = m_zbuf.data();
+    float *zbuf = m_zbuf.data();
     DWORD *bits = m_pBits;
     int sw = m_screenWidth;
 
@@ -742,11 +771,11 @@ void Renderer::fillPolygonZ(const POINT *pts, int n, const double *depths, COLOR
 
         double dz = (x1 > x0) ? (zR - zL) / (x1 - x0) : 0;
         double z = zL;
-        double *zptr = zbuf + y * sw + x0;
+        float *zptr = zbuf + y * sw + x0;
         DWORD *bptr = bits + y * sw + x0;
         for (int x = x0; x <= x1; ++x, z += dz, ++zptr, ++bptr)
         {
-            if (z < *zptr) { *zptr = z; *bptr = color; }
+            if (z < *zptr) { *zptr = static_cast<float>(z); *bptr = color; }
         }
     }
 }
@@ -773,7 +802,7 @@ void Renderer::fillPolygonZTile(const POINT *pts, int n, const double *depths,
 
     struct EdgePre { double x, z; double dxdy, dzdy; int yStart; int yEnd; };
     EdgePre epre[12]; int ec = 0;
-    double *zbuf = m_zbuf.data();
+    float *zbuf = m_zbuf.data();
     DWORD *bits = m_pBits;
     int sw = m_screenWidth;
 
@@ -825,11 +854,11 @@ void Renderer::fillPolygonZTile(const POINT *pts, int n, const double *depths,
         if (x0 > x1) continue;
         double dz = (x1 > x0) ? (zR - zL) / (x1 - x0) : 0;
         double z = zL;
-        double *zptr = zbuf + y * sw + x0;
+        float *zptr = zbuf + y * sw + x0;
         DWORD *bptr = bits + y * sw + x0;
         for (int x = x0; x <= x1; ++x, z += dz, ++zptr, ++bptr)
         {
-            if (z < *zptr) { *zptr = z; *bptr = color; }
+            if (z < *zptr) { *zptr = static_cast<float>(z); *bptr = color; }
         }
     }
 }

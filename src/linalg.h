@@ -131,7 +131,7 @@ Mat4 rotateZW(double angle);
  * @return ProjResult，包含有效性、屏幕坐标和 camW 深度
  */
 ProjResult project(const Vec4 &worldPos, const Camera4D &cam,
-    double scale, double offsetX, double offsetY, double pitch = 0.0);
+    double scale, double offsetX, double offsetY);
 
 // ============================================================================
 // Gram-Schmidt 正交化

@@ -7,6 +7,7 @@
 #include <graphics.h>
 #include <vector>
 #include <deque>
+#include <unordered_set>
 #include <ctime>
 
 /**
@@ -28,7 +29,11 @@ public:
     void loadTextures(const wchar_t *basePath);
 
     /** @brief 添加超方块（不展开，渲染时 16 分法遍历） */
-    void addSuperBlock(const SuperBlock &sb) { m_superBlocks.push_back(sb); }
+    void addSuperBlock(const SuperBlock &sb)
+    {
+        m_superBlocks.push_back(sb);
+        m_sbGrid.insert(sb.pos());
+    }
 
     static const int FACES[24][4];  // 24个二维面的顶点索引（公开供预计算用）
 
@@ -41,8 +46,14 @@ private:
     double m_scale, m_offsetX, m_offsetY;
     double m_blockHalf;
     int m_frameCount;
-    std::vector<double> m_zbuf;
+    std::vector<float> m_zbuf;
     DWORD *m_pBits;
+
+    // 复用 DIB 避免逐帧创建
+    HBITMAP m_hBmp;
+    HDC m_memDC;
+    HBITMAP m_oldBmp;
+    bool m_dibReady;
 
     // FPS
     int m_fpsFrames;
@@ -97,6 +108,7 @@ private:
     bool m_texLoaded;
 
     std::vector<SuperBlock> m_superBlocks;
+    std::unordered_set<IVec4> m_sbGrid;  // SuperBlock 网格占位（用于遮挡剔除）
 
     void resetBuffers();
     void fillPolygonZ(const POINT *pts, int n, const double *depths, COLORREF color);

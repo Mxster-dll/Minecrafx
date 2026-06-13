@@ -188,7 +188,7 @@ Mat4 rotateZW(double angle)
 // ============================================================================
 
 ProjResult project(const Vec4 &worldPos, const Camera4D &cam,
-    double scale, double offsetX, double offsetY, double pitch)
+    double scale, double offsetX, double offsetY)
 {
     Vec4 v = vec4Sub(worldPos, cam.getPos());
     double camX = vec4Dot(v, cam.getRight());
@@ -197,8 +197,8 @@ ProjResult project(const Vec4 &worldPos, const Camera4D &cam,
     double camW = vec4Dot(v, cam.getOver());
 
     // 俯仰：旋转 (camY, camZ)，视角抬头时远处物体下移
-    double cp = std::cos(pitch);
-    double sp = std::sin(pitch);
+    double cp = cam.getCosPitch();
+    double sp = cam.getSinPitch();
     double camYpitched = camY * cp - camZ * sp;
 
     constexpr double FORWARD_DEPTH_WEIGHT = 0.25;

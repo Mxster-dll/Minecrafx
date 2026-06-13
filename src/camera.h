@@ -51,11 +51,14 @@ public:
     // ---- 俯仰 ----
 
     /** @brief 设置俯仰角（视角向量与 XZW 平面的夹角，弧度） */
-    void setPitch(double angle) { m_pitch = angle; }
+    void setPitch(double angle);
     /** @brief 调整俯仰角 */
     void addPitch(double delta);
     /** @brief 获取俯仰角 */
     double getPitch() const { return m_pitch; }
+    /** @brief 获取缓存的三角函数（避免热路径重复计算） */
+    double getCosPitch() const { return m_cosPitch; }
+    double getSinPitch() const { return m_sinPitch; }
 
     // ---- 正交化 ----
 
@@ -81,5 +84,7 @@ private:
     Vec4 m_up;
     Vec4 m_forward;
     Vec4 m_over;
-    double m_pitch;  // 俯仰角（弧度），限幅 [-1.2, 1.2]
+    double m_pitch;       // 俯仰角（弧度），限幅 [-1.2, 1.2]
+    mutable double m_cosPitch;  // 缓存 cos(pitch)
+    mutable double m_sinPitch;  // 缓存 sin(pitch)
 };

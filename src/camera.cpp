@@ -7,6 +7,8 @@ Camera4D::Camera4D()
     , m_forward(0.0, 0.0, 1.0, 0.0)
     , m_over(0.0, 0.0, 0.0, 1.0)
     , m_pitch(0.0)
+    , m_cosPitch(1.0)
+    , m_sinPitch(0.0)
 {}
 
 void Camera4D::move(const Vec4 &direction)
@@ -228,11 +230,20 @@ void Camera4D::rotateSlice(double angle)
     orthonormalize();
 }
 
+void Camera4D::setPitch(double angle)
+{
+    m_pitch = angle;
+    m_cosPitch = std::cos(m_pitch);
+    m_sinPitch = std::sin(m_pitch);
+}
+
 void Camera4D::addPitch(double delta)
 {
     m_pitch += delta;
     if (m_pitch > 1.2) m_pitch = 1.2;
     if (m_pitch < -1.2) m_pitch = -1.2;
+    m_cosPitch = std::cos(m_pitch);
+    m_sinPitch = std::sin(m_pitch);
 }
 
 void Camera4D::orthonormalize()
