@@ -51,28 +51,14 @@ int main()
     renderer.addSuperBlock(SuperBlock(IVec4(0, 1, -3, 0)));
     renderer.loadTextures(L"D:/Project/Ongoing/Minecrafx/assert/texture/grass_block");
 
-    InputHandler input(hwnd);
-
     // 切片旋转平滑变量（无回弹：速度直接追踪瞬时输入）
     double sliceVelocity = 0.0;  // 当前旋转速度
 
     SetWindowText(hwnd, L"4D Miner — 四维体素沙盒");
 
-    // ---- 主循环 ----
-    bool running = true;
-    while (running)
+    for (InputHandler input(hwnd); !input.isPressed(Key::Esc); input.update())
     {
-        // 1. 更新输入状态
-        input.update();
-
-        // 退出
-        if (input.isPressed(Key::Esc))
-        {
-            running = false;
-            break;
-        }
-
-        // ---- 1. 键盘移动 ----
+        // 键盘控制移动
         {
             Vec4 moveDir;
 
@@ -84,6 +70,7 @@ int main()
                 moveDir = vec4Add(moveDir, vec4Scale(camera.getRight(), MOVE_SPEED));
             if (input.isKeyDown(Key::A))
                 moveDir = vec4Add(moveDir, vec4Scale(camera.getRight(), -MOVE_SPEED));
+
             // 上下始终沿世界高度轴 Y
             if (input.isKeyDown(Key::Space))
                 moveDir = vec4Add(moveDir, Vec4(0.0, MOVE_SPEED, 0.0, 0.0));
@@ -94,7 +81,7 @@ int main()
                 camera.move(moveDir);
         }
 
-        // ---- 3. 鼠标视角旋转 ----
+        // 鼠标控制视角旋转
         //   水平 → rotateAroundUp（yaw：i,j 在切片平面内旋转，不动 i,j,n 的 XZW 方向）
         //   垂直 → addPitch（俯仰角：仅改变视角与 XZW 平面的夹角，不动 i,j,n）
         {
