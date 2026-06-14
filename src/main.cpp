@@ -47,8 +47,12 @@ int main()
     Camera4D camera;
     Renderer renderer(SCREEN_WIDTH, SCREEN_HEIGHT);
 
-    // 放置一个超方块（16×16×16×16 子方块），贴图着色
-    renderer.addSuperBlock(SuperBlock(IVec4(0, 1, -3, 0)));
+    // 放置多个超方块测试渲染压力
+    for (int sx = 0; sx < 3; ++sx)
+        for (int sy = 0; sy < 3; ++sy)
+            for (int sz = 0; sz < 3; ++sz)
+                for (int sw = 0; sw < 3; ++sw)
+                    renderer.addSuperBlock(SuperBlock(IVec4(sx, sy, sz - 3, sw)));
     renderer.loadTextures(L"D:/Project/Ongoing/Minecrafx/assert/texture/grass_block");
 
     // 切片旋转平滑变量（无回弹：速度直接追踪瞬时输入）
