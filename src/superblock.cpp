@@ -41,7 +41,7 @@ static bool blockIntersectsPlane(int bx, int bz, int bw,
 }
 
 void SuperBlock::collectVisible(const Vec4 &camPos, const Plane2D &plane,
-    double blockHalf, std::vector<IVec4> &out) const
+    double blockHalf, std::vector<IVec4> &out, int &outPreOccl) const
 {
     int baseX = m_pos.x * SIZE;
     int baseY = m_pos.y * SIZE;
@@ -63,6 +63,10 @@ void SuperBlock::collectVisible(const Vec4 &camPos, const Plane2D &plane,
 
         if (size == 1)
         {
+            if (!blockIntersectsPlane(bx, bz, bw, camPos, plane, blockHalf, sp))
+                return;
+            ++outPreOccl;
+
             // 内部方块（8 个方向都在超方块内）不可见
             int lx = bx - baseX, ly = by - baseY;
             int lz = bz - baseZ, lw = bw - baseW;
@@ -72,8 +76,7 @@ void SuperBlock::collectVisible(const Vec4 &camPos, const Plane2D &plane,
                 lw > 0 && lw < SIZE - 1)
                 return;
 
-            if (blockIntersectsPlane(bx, bz, bw, camPos, plane, blockHalf, sp))
-                out.push_back(IVec4(bx, by, bz, bw));
+            out.push_back(IVec4(bx, by, bz, bw));
             return;
         }
 

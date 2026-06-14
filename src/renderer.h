@@ -93,7 +93,7 @@ private:
      * @return (bx, by, bz, bw) 列表
      */
     std::vector<IVec4> collectVisibleBlocks(const World &world, const Camera4D &cam,
-        const Plane2D &plane);
+        const Plane2D &plane, int &outPreOccl);
 
     /**
      * @brief 4D→3D：单方块 → 三角形列表

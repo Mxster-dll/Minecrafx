@@ -154,9 +154,10 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
     m_diagFaces = 0;
 
     // 4. 收集可见方块（含统计）
-    std::vector<IVec4> visibleBlocks = collectVisibleBlocks(world, cam, plane);
-    m_diagSlice = static_cast<int>(visibleBlocks.size());
-    m_diagOccl = m_diagSlice;
+    int preOccl = 0;
+    std::vector<IVec4> visibleBlocks = collectVisibleBlocks(world, cam, plane, preOccl);
+    m_diagSlice = preOccl;
+    m_diagOccl = preOccl - static_cast<int>(visibleBlocks.size());
 
     if (!visibleBlocks.empty())
     {
@@ -438,9 +439,11 @@ static bool blockIntersectsPlane(int bx, int /*by*/, int bz, int bw,
 }
 
 std::vector<IVec4> Renderer::collectVisibleBlocks(const World &world,
-    const Camera4D &cam, const Plane2D &plane)
+    const Camera4D &cam, const Plane2D &plane,
+    int &outPreOccl)
 {
     std::vector<IVec4> result;
+    outPreOccl = 0;
 
     const Vec4 &camPos = cam.getPos();
     double sp = m_blockHalf * 2.0;
@@ -451,6 +454,10 @@ std::vector<IVec4> Renderer::collectVisibleBlocks(const World &world,
     {
         int bx = pair.first.x, by = pair.first.y;
         int bz = pair.first.z, bw = pair.first.w;
+
+        if (!blockIntersectsPlane(bx, by, bz, bw, camPos, plane, m_blockHalf, sp))
+            continue;
+        ++outPreOccl;
 
         // 遮挡剔除：8 个方向都有相邻方块则不可见
         if (world.get(IVec4(bx + 1, by, bz, bw)) &&
@@ -463,13 +470,12 @@ std::vector<IVec4> Renderer::collectVisibleBlocks(const World &world,
             world.get(IVec4(bx, by, bz, bw - 1)))
             continue;
 
-        if (blockIntersectsPlane(bx, by, bz, bw, camPos, plane, m_blockHalf, sp))
-            result.push_back(IVec4(bx, by, bz, bw));
+        result.push_back(IVec4(bx, by, bz, bw));
     }
 
     // ---- 超方块：十六分法递归遍历 ----
     for (const auto &sb : m_superBlocks)
-        sb.collectVisible(camPos, plane, m_blockHalf, result);
+        sb.collectVisible(camPos, plane, m_blockHalf, result, outPreOccl);
 
     return result;
 }

@@ -34,7 +34,7 @@ public:
      * @param out       输出：可见子方块坐标列表
      */
     void collectVisible(const Vec4 &camPos, const Plane2D &plane,
-        double blockHalf, std::vector<IVec4> &out) const;
+        double blockHalf, std::vector<IVec4> &out, int &outPreOccl) const;
 
 private:
     IVec4 m_pos;
