@@ -375,28 +375,13 @@ void Renderer::drawHUD(const Camera4D &cam)
     // 坐标信息（左侧，坐标系下方）
     // ========================================
     int infoY = vpY + vpH + 5;
-    swprintf(buf, 256, L"Pos: (%.1f, %.1f, %.1f, %.1f)",
+    swprintf(buf, 256, L"%.1f,  %.1f,  %.1f,  %.1f",
         pos.x, pos.y, pos.z, pos.w);
     TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
     infoY += 18;
 
-    swprintf(buf, 256, L"Fwd(i): (%.2f, %.2f, %.2f, %.2f)", f.x, f.y, f.z, f.w);
-    TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
-    infoY += 18;
-
-    swprintf(buf, 256, L"Rgt(j): (%.2f, %.2f, %.2f, %.2f)", r.x, r.y, r.z, r.w);
-    TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
-    infoY += 18;
-
-    swprintf(buf, 256, L"Ovr(n): (%.2f, %.2f, %.2f, %.2f)", o.x, o.y, o.z, o.w);
-    TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
-    infoY += 18;
-
-    swprintf(buf, 256, L"Up:    (%.2f, %.2f, %.2f, %.2f)", cam.getUp().x, cam.getUp().y, cam.getUp().z, cam.getUp().w);
-    TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
-    infoY += 18;
-
-    swprintf(buf, 256, L"Yaw: %+.2f  Pitch: %+.2f", cam.getYaw(), cam.getPitch());
+    const double rad2deg = 180.0 / 3.1415926535;
+    swprintf(buf, 256, L"俯仰角: %+.1f°", cam.getPitch() * rad2deg);
     TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
 }
 
