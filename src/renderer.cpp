@@ -146,7 +146,8 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
     Plane2D plane = cam.getViewPlane();
 
     // 3. 诊断计数初始化
-    m_diagTotal = static_cast<int>(world.getAllBlocks().size());
+    m_diagTotal = static_cast<int>(world.getAllBlocks().size())
+        + static_cast<int>(m_superBlocks.size()) * SuperBlock::SIZE * SuperBlock::SIZE * SuperBlock::SIZE * SuperBlock::SIZE;
     m_diagSlice = 0;
     m_diagOccl = 0;
     m_diagGeom = 0;
