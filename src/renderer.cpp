@@ -11,12 +11,9 @@
 // 构造 / 析构
 // ============================================================================
 
-Renderer::Renderer(int screenWidth, int screenHeight, double scale)
+Renderer::Renderer(int screenWidth, int screenHeight)
     : m_screenWidth(screenWidth)
     , m_screenHeight(screenHeight)
-    , m_scale(scale)
-    , m_offsetX(screenWidth / 2.0)
-    , m_offsetY(screenHeight / 2.0)
     , m_blockHalf(0.5)
     , m_frameCount(0)
     , m_hBmp(nullptr)
@@ -26,9 +23,11 @@ Renderer::Renderer(int screenWidth, int screenHeight, double scale)
     , m_fpsFrames(0)
     , m_fpsTime(0)
     , m_fps(0)
-    , m_diagBlocks(0)
-    , m_diagVisible(0)
-    , m_diagTriangles(0)
+    , m_diagTotal(0)
+    , m_diagSlice(0)
+    , m_diagOccl(0)
+    , m_diagGeom(0)
+    , m_diagFaces(0)
     , m_texLoaded(false)
 {
     m_zbuf.resize(m_screenWidth * m_screenHeight);
@@ -139,17 +138,21 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
     // 2. 获取观察平面
     Plane2D plane = cam.getViewPlane();
 
-    // 3. 收集可见方块
-    m_diagBlocks = 0;
-    m_diagVisible = 0;
-    m_diagTriangles = 0;
+    // 3. 诊断计数初始化
+    m_diagTotal = static_cast<int>(world.getAllBlocks().size());
+    m_diagSlice = 0;
+    m_diagOccl = 0;
+    m_diagGeom = 0;
+    m_diagFaces = 0;
 
+    // 4. 收集可见方块（含统计）
     std::vector<IVec4> visibleBlocks = collectVisibleBlocks(world, cam, plane);
-    m_diagVisible = static_cast<int>(visibleBlocks.size());
+    m_diagSlice = static_cast<int>(visibleBlocks.size());
+    m_diagOccl = m_diagSlice;
 
-    if (visibleBlocks.empty()) goto blit;
+    if (visibleBlocks.empty()) goto hud;
 
-    // 4. 4D→3D：方块 → 三角形
+    // 5. 4D→3D：方块 → 三角形
     {
         std::vector<Tri3D> allTris;
         allTris.reserve(visibleBlocks.size() * 12);
@@ -157,55 +160,54 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
         for (const auto &blk : visibleBlocks)
         {
             COLORREF col = getBlockColor(blk.x, blk.y, blk.z, blk.w);
+            size_t before = allTris.size();
             blockToTriangles(blk.x, blk.y, blk.z, blk.w, cam, plane, col, allTris);
+            if (allTris.size() > before) ++m_diagGeom;
         }
 
-        m_diagTriangles = static_cast<int>(allTris.size());
+        m_diagFaces = static_cast<int>(allTris.size());
 
-        if (allTris.empty()) goto blit;
-
-        // 5. 设置 3D 相机（自适应场景）
-        Camera3D cam3d;
+        if (!allTris.empty())
         {
-            double uMin, uMax, vMin, vMax, yMin, yMax;
-            computeBounds(allTris, uMin, uMax, vMin, vMax, yMin, yMax);
+            // 6. 设置 3D 相机（第一人称）
+            Camera3D cam3d;
+            {
+                // 4D 摄像机在观察平面上的 (u,v) 坐标
+                Vec3 camXZW = Vec3::fromVec4(cam.getPos());
+                double camU = vec3Dot(camXZW, plane.p);
+                double camV = vec3Dot(camXZW, plane.q);
 
-            double cU = (uMin + uMax) * 0.5;
-            double cV = (vMin + vMax) * 0.5;
-            double cY = (yMin + yMax) * 0.5;
+                double yaw = cam.getYaw();
+                double pitch = cam.getPitch();
 
-            double spanUV = std::max(uMax - uMin, vMax - vMin);
-            double spanY = yMax - yMin;
-            double dist = std::max(spanUV, spanY) * 2.5;
-            if (dist < 1.0) dist = 10.0;
+                double sY = std::sin(yaw), cY = std::cos(yaw);
+                double sP = std::sin(pitch), cP = std::cos(pitch);
 
-            cam3d.lookU = cU;
-            cam3d.lookV = cV;
-            cam3d.lookY = cY;
-            cam3d.posU = cU + dist * 0.3;
-            cam3d.posV = cV - dist * 0.6;
-            cam3d.posY = cY + dist * 0.8;
+                cam3d.posU = camU;
+                cam3d.posV = camV;
+                cam3d.posY = cam.getPos().y;
+
+                // 视线方向 = (yaw, pitch) 合成的单位向量
+                cam3d.dirU = sY * cP;
+                cam3d.dirV = cY * cP;
+                cam3d.dirY = sP;
+            }
+
+            // 7. 光栅化
+            rasterizeTriangles(allTris, cam3d);
         }
-
-        // 6. 深度预排序
-        std::sort(allTris.begin(), allTris.end(),
-            [](const Tri3D &a, const Tri3D &b)
-        {
-            double da = (a.y[0] + a.y[1] + a.y[2]) / 3.0;
-            double db = (b.y[0] + b.y[1] + b.y[2]) / 3.0;
-            return da < db;
-        });
-
-        // 7. 光栅化
-        rasterizeTriangles(allTris, cam3d);
     }
 
-blit:
-    // 8. 输出到屏幕
+hud:
+    // 8. 输出 DIB 到屏幕
     HDC hdc = GetImageHDC();
     BitBlt(hdc, 0, 0, m_screenWidth, m_screenHeight, m_memDC, 0, 0, SRCCOPY);
 
-    // 9. FPS 统计
+    // 9. 绘制 HUD 和准星
+    drawHUD(cam);
+    drawCrosshair();
+
+    // 10. FPS 统计
     ++m_fpsFrames;
     clock_t now = clock();
     double elapsed = static_cast<double>(now - m_fpsTime) / CLOCKS_PER_SEC;
@@ -221,38 +223,174 @@ blit:
 // 准星
 // ============================================================================
 
-void Renderer::drawCrosshair() const
+void Renderer::drawCrosshair()
 {
     int cx = m_screenWidth / 2;
     int cy = m_screenHeight / 2;
+    int gap = 6;
+    int len = 10;
+
     setlinecolor(RGB(255, 255, 255));
-    line(cx - 10, cy, cx + 10, cy);
-    line(cx, cy - 10, cx, cy + 10);
+    line(cx - len, cy, cx - gap, cy);
+    line(cx + gap, cy, cx + len, cy);
+    line(cx, cy - len, cx, cy - gap);
+    line(cx, cy + gap, cx, cy + len);
 }
 
 // ============================================================================
 // HUD
 // ============================================================================
 
-void Renderer::drawHUD(const Camera4D &cam) const
+void Renderer::drawHUD(const Camera4D &cam)
 {
+    const Vec4 &pos = cam.getPos();
+    const Vec4 &r = cam.getRight();
+    const Vec4 &f = cam.getForward();
+    const Vec4 &o = cam.getOver();
+
     wchar_t buf[256];
-    settextcolor(RGB(200, 200, 200));
-    setbkmode(TRANSPARENT);
+    HDC hdc = GetImageHDC();
+    SetBkMode(hdc, TRANSPARENT);
 
-    const Vec4 &p = cam.getPos();
-    swprintf(buf, 256, L"Pos: (%.2f, %.2f, %.2f, %.2f)", p.x, p.y, p.z, p.w);
-    outtextxy(10, 10, buf);
+    // ========================================
+    // 左上角：XZW 三维坐标系可视化
+    // ========================================
+    const int vpX = 10, vpY = 10, vpW = 150, vpH = 140;
+    const int ox = vpX + vpW / 2, oy = vpY + vpH / 2 + 5;
+    const double vs = 45.0;
 
-    swprintf(buf, 256, L"Over: (%.2f, %.2f, %.2f, %.2f)",
-        cam.getOver().x, cam.getOver().y, cam.getOver().z, cam.getOver().w);
-    outtextxy(10, 30, buf);
+    // 黑底
+    setfillcolor(BLACK);
+    solidrectangle(vpX, vpY, vpX + vpW, vpY + vpH);
 
-    swprintf(buf, 256, L"Pitch: %.2f  FPS: %d", cam.getPitch(), m_fps);
-    outtextxy(10, 50, buf);
+    auto proj3 = [&](double vx, double vz, double vw) -> POINT
+    {
+        const double k = 0.35355339;
+        return {
+            static_cast<int>(ox + vz * vs - vx * vs * k),
+            static_cast<int>(oy - vw * vs + vx * vs * k)
+        };
+    };
 
-    swprintf(buf, 256, L"Blocks: %d vis / %d tri", m_diagVisible, m_diagTriangles);
-    outtextxy(10, 70, buf);
+    POINT oPt = proj3(0, 0, 0);
+
+    // ---- n 的垂直平面（半透明粉色四边形） ----
+    Vec4 n3 = Vec4(o.x, 0.0, o.z, o.w);
+    double nLen = vec4Length(n3);
+    if (nLen > 1e-9) { n3 = vec4Scale(n3, 1.0 / nLen); }
+
+    Vec4 u3, v3;
+    if (std::abs(n3.x) < 0.9)      u3 = Vec4(1.0, 0.0, 0.0, 0.0);
+    else if (std::abs(n3.z) < 0.9) u3 = Vec4(0.0, 0.0, 1.0, 0.0);
+    else                           u3 = Vec4(0.0, 0.0, 0.0, 1.0);
+    double dotUN = u3.x * n3.x + u3.z * n3.z + u3.w * n3.w;
+    u3 = Vec4(u3.x - dotUN * n3.x, 0.0, u3.z - dotUN * n3.z, u3.w - dotUN * n3.w);
+    double uLen = std::sqrt(u3.x * u3.x + u3.z * u3.z + u3.w * u3.w);
+    if (uLen > 1e-9) { u3.x /= uLen; u3.z /= uLen; u3.w /= uLen; }
+    v3.x = n3.z * u3.w - n3.w * u3.z;
+    v3.z = n3.w * u3.x - n3.x * u3.w;
+    v3.w = n3.x * u3.z - n3.z * u3.x;
+
+    const double pHalf = 1.1;
+    POINT pCorners[4] = {
+        proj3(u3.x * pHalf + v3.x * pHalf,  u3.z * pHalf + v3.z * pHalf,  u3.w * pHalf + v3.w * pHalf),
+        proj3(u3.x * pHalf - v3.x * pHalf,  u3.z * pHalf - v3.z * pHalf,  u3.w * pHalf - v3.w * pHalf),
+        proj3(-u3.x * pHalf - v3.x * pHalf, -u3.z * pHalf - v3.z * pHalf, -u3.w * pHalf - v3.w * pHalf),
+        proj3(-u3.x * pHalf + v3.x * pHalf, -u3.z * pHalf + v3.z * pHalf, -u3.w * pHalf + v3.w * pHalf)
+    };
+    setfillcolor(RGB(80, 60, 90));
+    setlinecolor(RGB(150, 100, 180));
+    fillpolygon(pCorners, 4);
+
+    // ---- 坐标轴 ----
+    auto drawArrow2 = [](POINT from, POINT to, COLORREF clr)
+    {
+        setlinecolor(clr);
+        line(from.x, from.y, to.x, to.y);
+    };
+
+    POINT xPt = proj3(1.2, 0, 0);
+    POINT zPt = proj3(0, 1.2, 0);
+    POINT wPt = proj3(0, 0, 1.2);
+    drawArrow2(oPt, xPt, RGB(255, 100, 100));
+    drawArrow2(oPt, zPt, RGB(100, 255, 100));
+    drawArrow2(oPt, wPt, RGB(100, 150, 255));
+
+    settextcolor(RGB(255, 100, 100)); TextOutW(hdc, xPt.x - 20, xPt.y + 2, L"X", 1);
+    settextcolor(RGB(100, 255, 100)); TextOutW(hdc, zPt.x + 2, zPt.y - 8, L"Z", 1);
+    settextcolor(RGB(100, 150, 255)); TextOutW(hdc, wPt.x - 8, wPt.y - 18, L"W", 1);
+
+    // i（forward，黄色）
+    Vec4 i3 = Vec4(f.x, 0.0, f.z, f.w);
+    double iLen = vec4Length(i3);
+    if (iLen > 1e-9) { i3 = vec4Scale(i3, 1.0 / iLen); }
+    POINT iP = proj3(i3.x, i3.z, i3.w);
+    drawArrow2(oPt, iP, RGB(255, 220, 50));
+    settextcolor(RGB(255, 220, 50)); TextOutW(hdc, iP.x + 3, iP.y - 10, L"i", 1);
+
+    // j（right，青色）
+    Vec4 j3 = Vec4(r.x, 0.0, r.z, r.w);
+    double jLen = vec4Length(j3);
+    if (jLen > 1e-9) { j3 = vec4Scale(j3, 1.0 / jLen); }
+    POINT jP = proj3(j3.x, j3.z, j3.w);
+    drawArrow2(oPt, jP, RGB(50, 220, 220));
+    settextcolor(RGB(50, 220, 220)); TextOutW(hdc, jP.x + 3, jP.y - 10, L"j", 1);
+
+    // n（over，粉色法向）
+    n3 = Vec4(o.x, 0.0, o.z, o.w);
+    nLen = vec4Length(n3);
+    if (nLen > 1e-9) { n3 = vec4Scale(n3, 1.0 / nLen); }
+    POINT nP = proj3(n3.x, n3.z, n3.w);
+    drawArrow2(oPt, nP, RGB(255, 120, 255));
+    settextcolor(RGB(255, 120, 255)); TextOutW(hdc, nP.x + 3, nP.y - 10, L"n", 1);
+
+    // ========================================
+    // FPS + 诊断（右上角）
+    // ========================================
+    settextcolor(RGB(255, 255, 255));
+    swprintf(buf, 256, L"FPS: %d", m_fps);
+    TextOutW(hdc, m_screenWidth - 100, 10, buf, (int) wcslen(buf));
+
+    settextcolor(RGB(255, 255, 100));
+    swprintf(buf, 256, L"方块总数: %d", m_diagTotal);
+    TextOutW(hdc, m_screenWidth - 200, 30, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"切片通过: %d", m_diagSlice);
+    TextOutW(hdc, m_screenWidth - 200, 48, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"遮挡通过: %d", m_diagOccl);
+    TextOutW(hdc, m_screenWidth - 200, 66, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"几何生成: %d", m_diagGeom);
+    TextOutW(hdc, m_screenWidth - 200, 84, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"渲染面数: %d", m_diagFaces);
+    TextOutW(hdc, m_screenWidth - 200, 102, buf, (int) wcslen(buf));
+    settextcolor(RGB(255, 255, 255));
+
+    // ========================================
+    // 坐标信息（左侧，坐标系下方）
+    // ========================================
+    int infoY = vpY + vpH + 5;
+    swprintf(buf, 256, L"Pos: (%.1f, %.1f, %.1f, %.1f)",
+        pos.x, pos.y, pos.z, pos.w);
+    TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
+    infoY += 18;
+
+    swprintf(buf, 256, L"Fwd(i): (%.2f, %.2f, %.2f, %.2f)", f.x, f.y, f.z, f.w);
+    TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
+    infoY += 18;
+
+    swprintf(buf, 256, L"Rgt(j): (%.2f, %.2f, %.2f, %.2f)", r.x, r.y, r.z, r.w);
+    TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
+    infoY += 18;
+
+    swprintf(buf, 256, L"Ovr(n): (%.2f, %.2f, %.2f, %.2f)", o.x, o.y, o.z, o.w);
+    TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
+    infoY += 18;
+
+    swprintf(buf, 256, L"Up:    (%.2f, %.2f, %.2f, %.2f)", cam.getUp().x, cam.getUp().y, cam.getUp().z, cam.getUp().w);
+    TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
+    infoY += 18;
+
+    swprintf(buf, 256, L"Yaw: %+.2f  Pitch: %+.2f", cam.getYaw(), cam.getPitch());
+    TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
 }
 
 // ============================================================================
@@ -313,7 +451,6 @@ std::vector<IVec4> Renderer::collectVisibleBlocks(const World &world,
             result.push_back(IVec4(bx, by, bz, bw));
     }
 
-    m_diagBlocks = static_cast<int>(result.size());
     return result;
 }
 
@@ -421,8 +558,8 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
     PolyOnPlane poly = intersectCubePlane(x0, x1, z0, z1, w0, w1, camPlane);
     if (!poly.valid()) return;
 
-    double yLow = by * sp - half;
-    double yHigh = by * sp + half;
+    double yLow = by * sp - camPos.y - half;
+    double yHigh = by * sp - camPos.y + half;
 
     int n = poly.n;
     const auto &pu = poly.u;

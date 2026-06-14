@@ -240,9 +240,10 @@ void Camera4D::setPitch(double angle)
 
 void Camera4D::addPitch(double delta)
 {
+    const double halfPi = 1.55;
     m_pitch += delta;
-    if (m_pitch > 1.2) m_pitch = 1.2;
-    if (m_pitch < -1.2) m_pitch = -1.2;
+    if (m_pitch > halfPi) m_pitch = halfPi;
+    if (m_pitch < -halfPi) m_pitch = -halfPi;
     m_cosPitch = std::cos(m_pitch);
     m_sinPitch = std::sin(m_pitch);
 }

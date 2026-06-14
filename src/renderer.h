@@ -22,17 +22,17 @@
 class Renderer
 {
 public:
-    Renderer(int screenWidth, int screenHeight, double scale = 400.0);
+    Renderer(int screenWidth, int screenHeight);
     ~Renderer();
 
     /** @brief 主渲染入口 */
     void renderWorld(const World &world, const Camera4D &cam);
 
     /** @brief 绘制准星 */
-    void drawCrosshair() const;
+    void drawCrosshair();
 
     /** @brief 绘制 HUD 信息 */
-    void drawHUD(const Camera4D &cam) const;
+    void drawHUD(const Camera4D &cam);
 
     /** @brief 从 assert/texture/grass_block/ 加载纹理颜色 */
     void loadTextures(const wchar_t *basePath);
@@ -47,8 +47,6 @@ public:
 private:
     // ---- 屏幕参数 ----
     int m_screenWidth, m_screenHeight;
-    double m_scale;
-    double m_offsetX, m_offsetY;
     double m_blockHalf;
     int m_frameCount;
 
@@ -68,9 +66,11 @@ private:
     int m_fps;
 
     // ---- 诊断 ----
-    int m_diagBlocks;
-    int m_diagVisible;
-    int m_diagTriangles;
+    int m_diagTotal;
+    int m_diagSlice;
+    int m_diagOccl;
+    int m_diagGeom;
+    int m_diagFaces;
 
     // ---- 纹理 ----
     COLORREF m_tex[16][16][16][16];

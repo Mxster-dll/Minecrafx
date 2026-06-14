@@ -116,12 +116,11 @@ struct Tri3D
  * @brief 3D 透视投影相机
  *
  * 将 (u, v, y) 3D 空间投影到屏幕。
- * 相机位于 3D 空间中，看向场景中心。
  */
 struct Camera3D
 {
     double posU, posV, posY;   // 相机位置
-    double lookU, lookV, lookY; // 注视点
+    double dirU, dirV, dirY;   // 视线方向（单位向量）
     double fov;                 // 视场角（弧度）
     double nearPlane, farPlane;
 
@@ -142,10 +141,4 @@ bool project3D(double u, double v, double y,
     int sw, int sh,
     int &sx, int &sy, double &depth);
 
-/**
- * @brief 计算一组 3D 三角形的包围盒，用于自适应相机位置
- */
-void computeBounds(const std::vector<Tri3D> &tris,
-    double &uMin, double &uMax,
-    double &vMin, double &vMax,
-    double &yMin, double &yMax);
+

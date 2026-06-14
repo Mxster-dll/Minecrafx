@@ -24,8 +24,6 @@ constexpr int    SCREEN_WIDTH = 800;
 constexpr int    SCREEN_HEIGHT = 600;
 constexpr double MOVE_SPEED = 0.1;           // 键盘移动速度（单位/帧）
 constexpr double MOUSE_SENSITIVITY = 0.003;  // 鼠标视角灵敏度（弧度/像素）
-constexpr double ROTATE_ANGLE = 0.03;        // 键盘旋转角度（弧度/帧）
-constexpr double SCALE = 400.0;              // 投影缩放因子
 constexpr double SLICE_STEP = 0.03;         // 切片旋转每格步长（弧度），滚轮/Q/E 统一
 constexpr double SLICE_SMOOTH = 0.28;       // 速度平滑系数（0~1，越大越快）
 
@@ -46,7 +44,7 @@ int main()
     // ---- 创建核心对象 ----
     World world;
     Camera4D camera;
-    Renderer renderer(SCREEN_WIDTH, SCREEN_HEIGHT, SCALE);
+    Renderer renderer(SCREEN_WIDTH, SCREEN_HEIGHT);
 
     // 直接放置单个方块：方块大小为 1×1×1×1 单位
     // w 范围覆盖摄像机初始位置 (w≈0.5)，使初始即可见

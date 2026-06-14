@@ -239,7 +239,7 @@ PolyOnPlane intersectCubePlane(
 
 Camera3D::Camera3D()
     : posU(0.0), posV(0.0), posY(10.0)
-    , lookU(0.0), lookV(0.0), lookY(0.0)
+    , dirU(0.0), dirV(0.0), dirY(-1.0)
     , fov(1.0472)       // 60°
     , nearPlane(0.1)
     , farPlane(1000.0)
@@ -254,27 +254,19 @@ bool project3D(double u, double v, double y,
     int sw, int sh,
     int &sx, int &sy, double &depth)
 {
-    // 相机空间：相机看向 (lookU, lookV, lookY)，上方为 (0,0,1) 即 y 轴
-    // 构建相机坐标系
-    // forward = normalize(look - pos)
-    double fU = cam.lookU - cam.posU;
-    double fV = cam.lookV - cam.posV;
-    double fY = cam.lookY - cam.posY;
-    double fLen = std::sqrt(fU * fU + fV * fV + fY * fY);
-    if (fLen < 1e-12) return false;
-    fU /= fLen; fV /= fLen; fY /= fLen;
+    // 视线方向（调用方保证已归一化）
+    double fU = cam.dirU, fV = cam.dirV, fY = cam.dirY;
 
     // right = forward × worldUp (worldUp = (0,0,1))
-    double rU = fV * 1.0 - fY * 0.0;   // cross x: fy*1 - fz*0 = fy
-    double rV = fY * 0.0 - fU * 1.0;   // cross y: fz*0 - fx*1 = -fx
-    double rY = fU * 0.0 - fV * 0.0;   // cross z: fx*0 - fy*0 = 0
-    double rLen = std::sqrt(rU * rU + rV * rV + rY * rY);
-    if (rLen < 1e-12) { rU = 1; rV = 0; rY = 0; rLen = 1; }
-    rU /= rLen; rV /= rLen; rY /= rLen;
+    double rU = fV;
+    double rV = -fU;
+    double rLen = std::sqrt(rU * rU + rV * rV);
+    if (rLen < 1e-12) { rU = 1; rV = 0; }
+    else { rU /= rLen; rV /= rLen; }
 
     // up = right × forward
-    double upU = rV * fY - rY * fV;
-    double upV = rY * fU - rU * fY;
+    double upU = rV * fY;
+    double upV = -rU * fY;
     double upY = rU * fV - rV * fU;
 
     // 物体到相机的向量
@@ -283,7 +275,7 @@ bool project3D(double u, double v, double y,
     double dY = y - cam.posY;
 
     // 相机空间坐标
-    double camX = rU * dU + rV * dV + rY * dY;
+    double camX = rU * dU + rV * dV;
     double camY = upU * dU + upV * dV + upY * dY;
     double camZ = fU * dU + fV * dV + fY * dY;
 
@@ -303,35 +295,4 @@ bool project3D(double u, double v, double y,
     return (sx >= -sw && sx < sw * 2 && sy >= -sh && sy < sh * 2);
 }
 
-// ============================================================================
-// 包围盒计算
-// ============================================================================
 
-void computeBounds(const std::vector<Tri3D> &tris,
-    double &uMin, double &uMax,
-    double &vMin, double &vMax,
-    double &yMin, double &yMax)
-{
-    if (tris.empty())
-    {
-        uMin = uMax = vMin = vMax = yMin = yMax = 0.0;
-        return;
-    }
-
-    uMin = uMax = tris[0].u[0];
-    vMin = vMax = tris[0].v[0];
-    yMin = yMax = tris[0].y[0];
-
-    for (const auto &t : tris)
-    {
-        for (int i = 0; i < 3; ++i)
-        {
-            if (t.u[i] < uMin) uMin = t.u[i];
-            if (t.u[i] > uMax) uMax = t.u[i];
-            if (t.v[i] < vMin) vMin = t.v[i];
-            if (t.v[i] > vMax) vMax = t.v[i];
-            if (t.y[i] < yMin) yMin = t.y[i];
-            if (t.y[i] > yMax) yMax = t.y[i];
-        }
-    }
-}
