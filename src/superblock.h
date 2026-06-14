@@ -1,6 +1,9 @@
 #pragma once
 
 #include "world.h"
+#include "project4d.h"
+#include "linalg.h"
+#include <vector>
 
 /**
  * @brief 超方块 — 世界构建最小单位，由 16⁴ 个子方块组成
@@ -22,6 +25,16 @@ public:
     void generate(World &world) const;
 
     const IVec4 &pos() const { return m_pos; }
+
+    /**
+     * @brief 十六分法收集与观察平面相交的子方块
+     * @param camPos    4D 摄像机位置
+     * @param plane     观察平面（相机空间 offset=0）
+     * @param blockHalf 子方块半边长
+     * @param out       输出：可见子方块坐标列表
+     */
+    void collectVisible(const Vec4 &camPos, const Plane2D &plane,
+        double blockHalf, std::vector<IVec4> &out) const;
 
 private:
     IVec4 m_pos;

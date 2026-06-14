@@ -16,6 +16,7 @@
 #include "camera.h"
 #include "renderer.h"
 #include "input/input_handler.h"
+#include "superblock.h"
 
  // ============================================================================
  // 常量
@@ -46,13 +47,9 @@ int main()
     Camera4D camera;
     Renderer renderer(SCREEN_WIDTH, SCREEN_HEIGHT);
 
-    // 直接放置单个方块：方块大小为 1×1×1×1 单位
-    // w 范围覆盖摄像机初始位置 (w≈0.5)，使初始即可见
-    for (int x = -3; x <= 3; ++x)
-        for (int y = -1; y <= 2; ++y)
-            for (int z = -3; z <= 3; ++z)
-                for (int w = -1; w <= 2; ++w)
-                    world.set(IVec4(x, y, z, w), 1);
+    // 放置一个超方块（16×16×16×16 子方块），贴图着色
+    renderer.addSuperBlock(SuperBlock(IVec4(0, 1, -3, 0)));
+    renderer.loadTextures(L"D:/Project/Ongoing/Minecrafx/assert/texture/grass_block");
 
     InputHandler input(hwnd);
 

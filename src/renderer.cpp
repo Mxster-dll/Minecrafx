@@ -14,7 +14,7 @@
 Renderer::Renderer(int screenWidth, int screenHeight)
     : m_screenWidth(screenWidth)
     , m_screenHeight(screenHeight)
-    , m_blockHalf(0.5)
+    , m_blockHalf(0.5 / 16.0)
     , m_frameCount(0)
     , m_hBmp(nullptr)
     , m_memDC(nullptr)
@@ -81,7 +81,14 @@ static COLORREF blockColor(int x, int y, int z, int w)
 
 COLORREF Renderer::getBlockColor(int x, int y, int z, int w) const
 {
-    // 始终使用随机着色
+    if (m_texLoaded)
+    {
+        int tx = (x % 16 + 16) % 16;
+        int ty = (y % 16 + 16) % 16;
+        int tz = (z % 16 + 16) % 16;
+        int tw = (w % 16 + 16) % 16;
+        return m_tex[tx][ty][tz][tw];
+    }
     return blockColor(x, y, z, w);
 }
 
@@ -434,102 +441,15 @@ std::vector<IVec4> Renderer::collectVisibleBlocks(const World &world,
     {
         int bx = pair.first.x, by = pair.first.y;
         int bz = pair.first.z, bw = pair.first.w;
-
-        // 遮挡剔除
-        bool occluded = true;
-        if (!world.get(IVec4(bx + 1, by, bz, bw))) occluded = false;
-        else if (!world.get(IVec4(bx - 1, by, bz, bw))) occluded = false;
-        else if (!world.get(IVec4(bx, by + 1, bz, bw))) occluded = false;
-        else if (!world.get(IVec4(bx, by - 1, bz, bw))) occluded = false;
-        else if (!world.get(IVec4(bx, by, bz + 1, bw))) occluded = false;
-        else if (!world.get(IVec4(bx, by, bz - 1, bw))) occluded = false;
-        else if (!world.get(IVec4(bx, by, bz, bw + 1))) occluded = false;
-        else if (!world.get(IVec4(bx, by, bz, bw - 1))) occluded = false;
-        if (occluded) continue;
-
         if (blockIntersectsPlane(bx, by, bz, bw, camPos, plane, m_blockHalf, sp))
             result.push_back(IVec4(bx, by, bz, bw));
     }
 
+    // ---- 超方块：十六分法递归遍历 ----
+    for (const auto &sb : m_superBlocks)
+        sb.collectVisible(camPos, plane, m_blockHalf, result);
+
     return result;
-}
-
-void Renderer::traverseSuperBlock(const SuperBlock &sb, const Camera4D &cam,
-    const Plane2D &plane, const World &world,
-    std::vector<IVec4> &outBlocks)
-{
-    int baseX = sb.pos().x * SuperBlock::SIZE;
-    int baseY = sb.pos().y * SuperBlock::SIZE;
-    int baseZ = sb.pos().z * SuperBlock::SIZE;
-    int baseW = sb.pos().w * SuperBlock::SIZE;
-
-    const Vec4 &camPos = cam.getPos();
-    double sp = m_blockHalf * 2.0;
-    double overAbsSum = std::abs(plane.n.x) + std::abs(plane.n.z) + std::abs(plane.n.w);
-
-    std::function<void(int, int, int, int, int)> traverse =
-        [&](int bx, int by, int bz, int bw, int size)
-    {
-        double cs = size * sp;
-        double cx = (bx + size * 0.5) * sp - camPos.x;
-        double cz = (bz + size * 0.5) * sp - camPos.z;
-        double cw = (bw + size * 0.5) * sp - camPos.w;
-        double cod = plane.n.x * cx + plane.n.z * cz + plane.n.w * cw;
-        if (std::abs(cod) > cs * overAbsSum + 1e-9) return;
-
-        if (size == 1)
-        {
-            int lx = bx - baseX, ly = by - baseY;
-            int lz = bz - baseZ, lw = bw - baseW;
-
-            // 内部方块剔除
-            if (lx > 0 && lx < SuperBlock::SIZE - 1 &&
-                ly > 0 && ly < SuperBlock::SIZE - 1 &&
-                lz > 0 && lz < SuperBlock::SIZE - 1 &&
-                lw > 0 && lw < SuperBlock::SIZE - 1) return;
-
-            // 边界方块遮挡检查
-            auto exists = [&](int nx, int ny, int nz, int nw) -> bool
-            {
-                int lx2 = nx - baseX, ly2 = ny - baseY;
-                int lz2 = nz - baseZ, lw2 = nw - baseW;
-                if (lx2 >= 0 && lx2 < SuperBlock::SIZE &&
-                    ly2 >= 0 && ly2 < SuperBlock::SIZE &&
-                    lz2 >= 0 && lz2 < SuperBlock::SIZE &&
-                    lw2 >= 0 && lw2 < SuperBlock::SIZE)
-                    return true;
-                if (m_sbGrid.count(IVec4(nx / SuperBlock::SIZE, ny / SuperBlock::SIZE,
-                    nz / SuperBlock::SIZE, nw / SuperBlock::SIZE)))
-                    return true;
-                return world.get(IVec4(nx, ny, nz, nw)) != 0;
-            };
-
-            bool occluded = true;
-            if (lx == 0) { if (!exists(bx - 1, by, bz, bw)) occluded = false; }
-            if (lx == SuperBlock::SIZE - 1) { if (!exists(bx + 1, by, bz, bw)) occluded = false; }
-            if (ly == 0) { if (!exists(bx, by - 1, bz, bw)) occluded = false; }
-            if (ly == SuperBlock::SIZE - 1) { if (!exists(bx, by + 1, bz, bw)) occluded = false; }
-            if (lz == 0) { if (!exists(bx, by, bz - 1, bw)) occluded = false; }
-            if (lz == SuperBlock::SIZE - 1) { if (!exists(bx, by, bz + 1, bw)) occluded = false; }
-            if (lw == 0) { if (!exists(bx, by, bz, bw - 1)) occluded = false; }
-            if (lw == SuperBlock::SIZE - 1) { if (!exists(bx, by, bz, bw + 1)) occluded = false; }
-            if (occluded) return;
-
-            if (blockIntersectsPlane(bx, by, bz, bw, camPos, plane, m_blockHalf, sp))
-                outBlocks.push_back(IVec4(bx, by, bz, bw));
-            return;
-        }
-
-        int half = size / 2;
-        for (int dx = 0; dx < 2; ++dx)
-            for (int dy = 0; dy < 2; ++dy)
-                for (int dz = 0; dz < 2; ++dz)
-                    for (int dw = 0; dw < 2; ++dw)
-                        traverse(bx + dx * half, by + dy * half,
-                            bz + dz * half, bw + dw * half, half);
-    };
-
-    traverse(baseX, baseY, baseZ, baseW, SuperBlock::SIZE);
 }
 
 // ============================================================================
@@ -582,10 +502,7 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
         b.u[0] = pu[0];     b.v[0] = pv[0];     b.y[0] = yLow;
         b.u[2] = pu[i];     b.v[2] = pv[i];     b.y[2] = yLow;
         b.u[1] = pu[i + 1]; b.v[1] = pv[i + 1]; b.y[1] = yLow;
-        b.color = RGB(
-            (GetRValue(color) * 2) / 3,
-            (GetGValue(color) * 2) / 3,
-            (GetBValue(color) * 2) / 3);
+        b.color = color;
         b.depth = yLow;
         outTris.push_back(b);
     }
@@ -594,17 +511,12 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
     for (int i = 0; i < n; ++i)
     {
         int j = (i + 1) % n;
-        double shade = 0.75;
-        COLORREF sideCol = RGB(
-            static_cast<int>(GetRValue(color) * shade),
-            static_cast<int>(GetGValue(color) * shade),
-            static_cast<int>(GetBValue(color) * shade));
 
         Tri3D t1;
         t1.u[0] = pu[i]; t1.v[0] = pv[i]; t1.y[0] = yLow;
         t1.u[1] = pu[j]; t1.v[1] = pv[j]; t1.y[1] = yLow;
         t1.u[2] = pu[i]; t1.v[2] = pv[i]; t1.y[2] = yHigh;
-        t1.color = sideCol;
+        t1.color = color;
         t1.depth = (yLow + yHigh) * 0.5;
         outTris.push_back(t1);
 
@@ -612,7 +524,7 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
         t2.u[0] = pu[j]; t2.v[0] = pv[j]; t2.y[0] = yLow;
         t2.u[1] = pu[j]; t2.v[1] = pv[j]; t2.y[1] = yHigh;
         t2.u[2] = pu[i]; t2.v[2] = pv[i]; t2.y[2] = yHigh;
-        t2.color = sideCol;
+        t2.color = color;
         t2.depth = (yLow + yHigh) * 0.5;
         outTris.push_back(t2);
     }

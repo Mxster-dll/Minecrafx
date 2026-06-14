@@ -241,7 +241,7 @@ Camera3D::Camera3D()
     : posU(0.0), posV(0.0), posY(10.0)
     , dirU(0.0), dirV(0.0), dirY(-1.0)
     , fov(1.0472)       // 60°
-    , nearPlane(0.1)
+    , nearPlane(0.001)
     , farPlane(1000.0)
 {}
 

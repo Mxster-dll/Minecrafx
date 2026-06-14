@@ -96,13 +96,6 @@ private:
         const Plane2D &plane);
 
     /**
-     * @brief 超方块十六分法递归遍历
-     */
-    void traverseSuperBlock(const SuperBlock &sb, const Camera4D &cam,
-        const Plane2D &plane, const World &world,
-        std::vector<IVec4> &outBlocks);
-
-    /**
      * @brief 4D→3D：单方块 → 三角形列表
      */
     void blockToTriangles(int bx, int by, int bz, int bw,
