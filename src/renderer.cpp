@@ -184,19 +184,16 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
                 double camU = vec3Dot(camXZW, plane.p);
                 double camV = vec3Dot(camXZW, plane.q);
 
-                double yaw = cam.getYaw();
                 double pitch = cam.getPitch();
-
-                double sY = std::sin(yaw), cY = std::cos(yaw);
                 double sP = std::sin(pitch), cP = std::cos(pitch);
 
                 cam3d.posU = camU;
                 cam3d.posV = camV;
                 cam3d.posY = cam.getPos().y;
 
-                // 视线方向 = (yaw, pitch) 合成的单位向量
-                cam3d.dirU = sY * cP;
-                cam3d.dirV = cY * cP;
+                // 视线方向：固定朝 +V，俯仰控制 Y 分量
+                cam3d.dirU = 0.0;
+                cam3d.dirV = cP;
                 cam3d.dirY = sP;
             }
 

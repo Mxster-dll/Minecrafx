@@ -94,9 +94,6 @@ public:
      */
     Plane2D getViewPlane() const;
 
-    /** @brief 获取偏航角（弧度） */
-    double getYaw() const { return m_yaw; }
-
 private:
     Vec4 m_pos;
     Vec4 m_right;
@@ -104,7 +101,6 @@ private:
     Vec4 m_forward;
     Vec4 m_over;
     double m_pitch;       // 俯仰角（弧度）
-    double m_yaw;         // 偏航角（弧度）
     mutable double m_cosPitch;  // 缓存 cos(pitch)
     mutable double m_sinPitch;  // 缓存 sin(pitch)
 };
