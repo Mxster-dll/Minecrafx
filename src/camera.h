@@ -1,12 +1,17 @@
 #pragma once
 
 #include "linalg.h"
+#include "project4d.h"
 
 /**
  * @brief 4D 摄像机类
  *
  * 维护位置和四个正交基向量（right, up, forward, over），
  * 提供六种 4D 旋转平面的旋转和 Gram-Schmidt 正交化。
+ *
+ * 额外维护 xzw 子空间中观察平面的参考基向量 m_planeP，
+ * 该向量始终与 m_over 在 xzw 中的分量正交，
+ * 旋转时随 m_over 一同变换。
  */
 class Camera4D
 {
@@ -77,6 +82,17 @@ public:
     const Vec4 &getUp()      const { return m_up; }
     const Vec4 &getForward() const { return m_forward; }
     const Vec4 &getOver()    const { return m_over; }
+
+    // ---- 投影平面 ----
+
+    /**
+     * @brief 获取 xzw 子空间中的观察平面
+     *
+     * 平面法向量 n = over 的 xzw 分量归一化
+     * 基向量 p = right 的 xzw 分量（始终在平面上且与 n 正交）
+     * 偏移量 offset = n · camPos_xzw（使平面穿过摄像机）
+     */
+    Plane2D getViewPlane() const;
 
 private:
     Vec4 m_pos;

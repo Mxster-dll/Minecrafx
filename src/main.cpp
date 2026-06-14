@@ -16,7 +16,6 @@
 #include "camera.h"
 #include "renderer.h"
 #include "input/input_handler.h"
-#include "superblock.h"
 
  // ============================================================================
  // 常量
@@ -49,25 +48,14 @@ int main()
     Camera4D camera;
     Renderer renderer(SCREEN_WIDTH, SCREEN_HEIGHT, SCALE);
 
-    // 四维山：SuperBlock 为最小单元，8×4×8×5 范围
-    int scx = 4, scy = 2, scz = 4, scw = 2;
-    for (int sx = 0; sx < 8; ++sx)
-        for (int sy = 0; sy < 4; ++sy)
-            for (int sz = 0; sz < 8; ++sz)
-                for (int sw = 0; sw < 5; ++sw)
-                {
-                    double dx = (sx - scx) / 2.8;
-                    double dy = (sy - scy) / 1.8;
-                    double dz = (sz - scz) / 2.8;
-                    double dw = (sw - scw) / 2.2;
-                    double d2 = dx * dx + dy * dy + dz * dz + dw * dw;
-                    double noise = 0.45 * std::sin(sx * 1.2 + sw * 0.8) * std::cos(sz * 1.1)
-                        + 0.35 * std::sin(sy * 1.5) * std::cos(sx * 0.7 + sz * 0.7);
-                    if (d2 < 1.5 + noise)
-                        renderer.addSuperBlock(SuperBlock(IVec4(sx, sy, sz, sw)));
-                }
+    // 直接放置单个方块：方块大小为 1×1×1×1 单位
+    // w 范围覆盖摄像机初始位置 (w≈0.5)，使初始即可见
+    for (int x = -3; x <= 3; ++x)
+        for (int y = -1; y <= 2; ++y)
+            for (int z = -3; z <= 3; ++z)
+                for (int w = -1; w <= 2; ++w)
+                    world.set(IVec4(x, y, z, w), 1);
 
-    renderer.loadTextures(L"D:/Project/Ongoing/Minecrafx/assert/texture/grass_block");
     InputHandler input(hwnd);
 
     // 切片旋转平滑变量（无回弹：速度直接追踪瞬时输入）

@@ -1,72 +1,14 @@
 #include "renderer.h"
 #include <algorithm>
-#include <vector>
-#include <utility>
+#include <cmath>
 #include <cstdio>
 #include <cwchar>
 #include <functional>
 #include <iostream>
 #include <windows.h>
-#include <thread>
 
 // ============================================================================
-// 超立方体 24 个二维面（每个面 4 个顶点，构成一个正方形�?
-// ============================================================================
-const int Renderer::FACES[24][4] = {
-    // XY 面（z,w 固定，变�?bit0,bit1：顺�?0-1-3-2�?
-    {0,1,3,2}, {4,5,7,6}, {8,9,11,10}, {12,13,15,14},
-    // XZ 面（y,w 固定，变�?bit0,bit2：顺�?0-1-5-4�?
-    {0,1,5,4}, {2,3,7,6}, {8,9,13,12}, {10,11,15,14},
-    // XW 面（y,z 固定，变�?bit0,bit3：顺�?0-2-6-4�?
-    {0,2,6,4}, {1,3,7,5}, {8,10,14,12}, {9,11,15,13},
-    // YZ 面（x,w 固定，变�?bit1,bit2：顺�?0-2,3,1  �?0-2-10-8? 不对，变�?bit1,bit2�?
-    // 顶点: 0(0000), 2(0100), 10(1010), 8(1000) �?顺序 0-2-10-8
-    {0,2,10,8}, {1,3,11,9}, {4,6,14,12}, {5,7,15,13},
-    // YW 面（x,z 固定，变�?bit1,bit3：顺�?0-1-9-8�?
-    {0,1,9,8}, {2,3,11,10}, {4,5,13,12}, {6,7,15,14},
-    // ZW 面（x,y 固定，变�?bit2,bit3：顺�?0-4-12-8�?
-    {0,4,12,8}, {1,5,13,9}, {2,6,14,10}, {3,7,15,11}
-};
-
-// 预计算：每个面哪两 bit 固定及其值（位掩码）
-static const auto s_fix = []()
-{
-    struct { int bits[24]; int vals[24]; } r;
-    for (int f = 0; f < 24; ++f)
-    {
-        const int *fc = Renderer::FACES[f];
-        int v0 = fc[0], bm = 0, vm = 0;
-        for (int bit = 0; bit < 4; ++bit)
-        {
-            int m = 1 << bit; bool same = true;
-            for (int i = 1; i < 4; ++i) if ((fc[i] & m) != (v0 & m)) { same = false; break; }
-            if (same) { bm |= m; if (v0 & m) vm |= m; }
-        }
-        r.bits[f] = bm; r.vals[f] = vm;
-    }
-    return r;
-}();
-
-// 生成 16 个顶�?
-static void hypercubeVertices(int bx, int by, int bz, int bw, Vec4 v[16], double half)
-{
-    double sp = half * 2.0;  // 间距 = 2×半边长，保证相邻方块无间�?
-    double cx = static_cast<double>(bx) * sp;
-    double cy = static_cast<double>(by) * sp;
-    double cz = static_cast<double>(bz) * sp;
-    double cw = static_cast<double>(bw) * sp;
-    for (int i = 0; i < 16; ++i)
-    {
-        double sx = (i & 1) ? half : -half;
-        double sy = (i & 2) ? half : -half;
-        double sz = (i & 4) ? half : -half;
-        double sw = (i & 8) ? half : -half;
-        v[i] = Vec4(cx + sx, cy + sy, cz + sz, cw + sw);
-    }
-}
-
-// ============================================================================
-// 构�?
+// 构造 / 析构
 // ============================================================================
 
 Renderer::Renderer(int screenWidth, int screenHeight, double scale)
@@ -75,7 +17,7 @@ Renderer::Renderer(int screenWidth, int screenHeight, double scale)
     , m_scale(scale)
     , m_offsetX(screenWidth / 2.0)
     , m_offsetY(screenHeight / 2.0)
-    , m_blockHalf(0.5 / 16.0)
+    , m_blockHalf(0.5)
     , m_frameCount(0)
     , m_hBmp(nullptr)
     , m_memDC(nullptr)
@@ -84,39 +26,15 @@ Renderer::Renderer(int screenWidth, int screenHeight, double scale)
     , m_fpsFrames(0)
     , m_fpsTime(0)
     , m_fps(0)
-    , m_diagTotal(0)
-    , m_diagSlice(0)
-    , m_diagOccl(0)
-    , m_diagGeom(0)
-    , m_diagFaces(0)
-    , m_timeZBuf(0)
-    , m_timeDIB(0)
-    , m_timeCellTest(0)
-    , m_timeSurfChk(0)
-    , m_timeVertGen(0)
-    , m_timeOverDot(0)
-    , m_time24Face(0)
-    , m_timeCellGrp(0)
-    , m_timeEpiMatch(0)
-    , m_timeChain(0)
-    , m_timeHashGeo(0)
-    , m_timeDSort(0)
-    , m_timeSort(0)
-    , m_timeBBOX(0)
-    , m_timeEdges(0)
-    , m_timePixWr(0)
-    , m_timeBitBlt(0)
-    , m_timeWorld(0)
-    , m_timeElapsed(0)
-    , m_tPrev(0)
-    , m_timeSamples(0)
-    , m_sliceStart(0)
+    , m_diagBlocks(0)
+    , m_diagVisible(0)
+    , m_diagTriangles(0)
     , m_texLoaded(false)
 {
     m_zbuf.resize(m_screenWidth * m_screenHeight);
     memset(m_tex, 0, sizeof(m_tex));
 
-    // 预创建 DIB（复用整个生命周期）
+    // 预创建 DIB
     HDC hdc = GetImageHDC();
     BITMAPINFO bmi = {};
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -137,7 +55,20 @@ Renderer::Renderer(int screenWidth, int screenHeight, double scale)
     }
 }
 
-// 从方块坐标生成伪随机颜色（纹理未加载时使用）
+Renderer::~Renderer()
+{
+    if (m_dibReady)
+    {
+        SelectObject(m_memDC, m_oldBmp);
+        DeleteDC(m_memDC);
+        DeleteObject(m_hBmp);
+    }
+}
+
+// ============================================================================
+// 纹理加载
+// ============================================================================
+
 static COLORREF blockColor(int x, int y, int z, int w)
 {
     unsigned int h = static_cast<unsigned int>(
@@ -149,27 +80,9 @@ static COLORREF blockColor(int x, int y, int z, int w)
     return RGB(r, g, b);
 }
 
-Renderer::~Renderer()
-{
-    if (m_dibReady)
-    {
-        SelectObject(m_memDC, m_oldBmp);
-        DeleteDC(m_memDC);
-        DeleteObject(m_hBmp);
-    }
-}
-
 COLORREF Renderer::getBlockColor(int x, int y, int z, int w) const
 {
-    if (m_texLoaded)
-    {
-        // 纹理坐标取模映射�?[0,15]
-        int tx = (x % 16 + 16) % 16;
-        int ty = (y % 16 + 16) % 16;
-        int tz = (z % 16 + 16) % 16;
-        int tw = (w % 16 + 16) % 16;
-        return m_tex[tx][ty][tz][tw];
-    }
+    // 始终使用随机着色
     return blockColor(x, y, z, w);
 }
 
@@ -181,7 +94,6 @@ void Renderer::loadTextures(const wchar_t *basePath)
         for (int z = 0; z < 16; ++z)
         {
             swprintf(path, 512, L"%ls/x%02d/z%02d.png", basePath, x, z);
-            // std::wcout << path << std::endl;
             IMAGE img;
             loadimage(&img, path);
             DWORD *buf = GetImageBuffer(&img);
@@ -191,12 +103,6 @@ void Renderer::loadTextures(const wchar_t *basePath)
                 for (int y = 0; y < 16 && y < h; ++y)
                     for (int ww = 0; ww < 16 && ww < w; ++ww)
                         m_tex[x][15 - y][z][ww] = buf[y * w + ww];
-                if (x == 0 && z == 0)
-                    std::wcout << L"  loaded color[0][0][0][0]=0x" << std::hex << m_tex[0][0][0][0] << std::dec << L" w=" << w << L" h=" << h << std::endl;
-            }
-            else
-            {
-                std::wcout << L"  FAILED: w=" << img.getwidth() << L" buf=" << (buf ? L"ok" : L"null") << std::endl;
             }
         }
     }
@@ -204,35 +110,102 @@ void Renderer::loadTextures(const wchar_t *basePath)
 }
 
 // ============================================================================
-// 渲染世界：先全部框线，再逐帧填充胞腔�?
+// 缓冲管理
+// ============================================================================
+
+void Renderer::resetBuffers()
+{
+    std::fill(m_zbuf.begin(), m_zbuf.end(), 1e30);
+}
+
+// ============================================================================
+// 主渲染入口
 // ============================================================================
 
 void Renderer::renderWorld(const World &world, const Camera4D &cam)
 {
-    clock_t tw0 = clock();
-    ++m_frameCount;
-
     if (!m_dibReady) return;
 
-    clock_t t = clock();
-    resetBuffers();
-    m_timeZBuf += clock() - t;  t = clock();
+    ++m_frameCount;
 
-    HDC hdc = GetImageHDC();
+    // 1. 清空帧缓冲
+    resetBuffers();
 
     DWORD bg = 0x001E0A0A;
     int total = m_screenWidth * m_screenHeight;
     DWORD *bits = m_pBits;
     for (int i = 0; i < total; ++i) bits[i] = bg;
-    m_timeDIB += clock() - t;  t = clock();
 
-    drawFacesStep(world, cam);
+    // 2. 获取观察平面
+    Plane2D plane = cam.getViewPlane();
 
-    clock_t tBlt = clock();
+    // 3. 收集可见方块
+    m_diagBlocks = 0;
+    m_diagVisible = 0;
+    m_diagTriangles = 0;
+
+    std::vector<IVec4> visibleBlocks = collectVisibleBlocks(world, cam, plane);
+    m_diagVisible = static_cast<int>(visibleBlocks.size());
+
+    if (visibleBlocks.empty()) goto blit;
+
+    // 4. 4D→3D：方块 → 三角形
+    {
+        std::vector<Tri3D> allTris;
+        allTris.reserve(visibleBlocks.size() * 12);
+
+        for (const auto &blk : visibleBlocks)
+        {
+            COLORREF col = getBlockColor(blk.x, blk.y, blk.z, blk.w);
+            blockToTriangles(blk.x, blk.y, blk.z, blk.w, cam, plane, col, allTris);
+        }
+
+        m_diagTriangles = static_cast<int>(allTris.size());
+
+        if (allTris.empty()) goto blit;
+
+        // 5. 设置 3D 相机（自适应场景）
+        Camera3D cam3d;
+        {
+            double uMin, uMax, vMin, vMax, yMin, yMax;
+            computeBounds(allTris, uMin, uMax, vMin, vMax, yMin, yMax);
+
+            double cU = (uMin + uMax) * 0.5;
+            double cV = (vMin + vMax) * 0.5;
+            double cY = (yMin + yMax) * 0.5;
+
+            double spanUV = std::max(uMax - uMin, vMax - vMin);
+            double spanY = yMax - yMin;
+            double dist = std::max(spanUV, spanY) * 2.5;
+            if (dist < 1.0) dist = 10.0;
+
+            cam3d.lookU = cU;
+            cam3d.lookV = cV;
+            cam3d.lookY = cY;
+            cam3d.posU = cU + dist * 0.3;
+            cam3d.posV = cV - dist * 0.6;
+            cam3d.posY = cY + dist * 0.8;
+        }
+
+        // 6. 深度预排序
+        std::sort(allTris.begin(), allTris.end(),
+            [](const Tri3D &a, const Tri3D &b)
+        {
+            double da = (a.y[0] + a.y[1] + a.y[2]) / 3.0;
+            double db = (b.y[0] + b.y[1] + b.y[2]) / 3.0;
+            return da < db;
+        });
+
+        // 7. 光栅化
+        rasterizeTriangles(allTris, cam3d);
+    }
+
+blit:
+    // 8. 输出到屏幕
+    HDC hdc = GetImageHDC();
     BitBlt(hdc, 0, 0, m_screenWidth, m_screenHeight, m_memDC, 0, 0, SRCCOPY);
-    m_timeBitBlt += clock() - tBlt;
 
-    // FPS 统计
+    // 9. FPS 统计
     ++m_fpsFrames;
     clock_t now = clock();
     double elapsed = static_cast<double>(now - m_fpsTime) / CLOCKS_PER_SEC;
@@ -242,870 +215,386 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
         m_fpsFrames = 0;
         m_fpsTime = now;
     }
-
-    m_timeWorld += clock() - tw0;
-
-    // 帧间实际耗时
-    if (m_tPrev != 0)
-        m_timeElapsed += clock() - m_tPrev;
-    m_tPrev = clock();
-
-    // 100ms 时间切片：当前切片满则推入队列，弹出最旧切片
-    if (m_sliceStart == 0) m_sliceStart = clock();  // 首帧初始化
-    if (clock() - m_sliceStart >= SLICE_TICKS)
-    {
-        TimeSlice ts;
-        ts.zBuf = m_timeZBuf;       ts.dib = m_timeDIB;
-        ts.cellTest = m_timeCellTest; ts.surfChk = m_timeSurfChk;
-        ts.vertGen = m_timeVertGen;   ts.overDot = m_timeOverDot;
-        ts.f24 = m_time24Face;        ts.cellGrp = m_timeCellGrp;
-        ts.epiMatch = m_timeEpiMatch; ts.chain = m_timeChain;
-        ts.dsort = m_timeDSort;       ts.sort_ = m_timeSort;
-        ts.bbox = m_timeBBOX;         ts.edges = m_timeEdges;
-        ts.pixWr = m_timePixWr;       ts.bitBlt = m_timeBitBlt;
-        ts.world = m_timeWorld;       ts.elapsed = m_timeElapsed;
-        ts.hashGeo = m_timeHashGeo;
-        ts.samples = m_timeSamples;
-        m_timeSlices.push_back(ts);
-        if (static_cast<int>(m_timeSlices.size()) > TIME_SLICES)
-            m_timeSlices.pop_front();
-        // 重置当前切片
-        m_timeZBuf = 0;   m_timeDIB = 0;      m_timeCellTest = 0;
-        m_timeSurfChk = 0; m_timeVertGen = 0;  m_timeOverDot = 0;
-        m_time24Face = 0;  m_timeCellGrp = 0;  m_timeEpiMatch = 0;
-        m_timeChain = 0;   m_timeDSort = 0;    m_timeSort = 0;
-        m_timeBBOX = 0;    m_timeEdges = 0;    m_timePixWr = 0;
-        m_timeBitBlt = 0;  m_timeWorld = 0;    m_timeElapsed = 0;
-        m_timeHashGeo = 0;
-        m_timeSamples = 0;
-        m_sliceStart = clock();
-    }
-}
-
-// 快速判断方块是否可能与切片相交
-static bool mayIntersectSlice(int bx, int by, int bz, int bw,
-    const Vec4 &camPos, const Vec4 &over, double half, double sp)
-{
-    double cx = bx * sp, cy = by * sp, cz = bz * sp, cw = bw * sp;
-    double centerOD = over.x * (cx - camPos.x) + over.y * (cy - camPos.y)
-        + over.z * (cz - camPos.z) + over.w * (cw - camPos.w);
-    double extent = half * (std::abs(over.x) + std::abs(over.y)
-        + std::abs(over.z) + std::abs(over.w));
-    return std::abs(centerOD) <= extent + 1e-9;
-}
-
-void Renderer::drawFacesStep(const World &world, const Camera4D &cam)
-{
-    const auto &blocks = world.getAllBlocks();
-
-    Vec4 camPos = cam.getPos();
-    const Vec4 &ov = cam.getOver();
-
-    m_diagTotal = static_cast<int>(blocks.size())
-        + static_cast<int>(m_superBlocks.size()) * SuperBlock::SIZE * SuperBlock::SIZE
-        * SuperBlock::SIZE * SuperBlock::SIZE;
-    if (m_diagTotal == 0) return;
-    m_diagSlice = 0;
-    m_diagOccl = 0;
-    m_diagGeom = 0;
-    m_diagFaces = 0;
-    double sp = m_blockHalf * 2.0;
-
-    struct FaceData { int bx, by, bz, bw; COLORREF col; POINT pts[12]; double depths[12]; int n; };
-    std::vector<FaceData> allFaces;
-    allFaces.reserve(m_superBlocks.size() * 1500);  // 预估面数
-
-    // ---- 哈希表路径：多线程并行收集面 ----
-    clock_t tHash0 = clock();
-
-    // 收集方块坐标到向量以便分块
-    std::vector<IVec4> positions;
-    positions.reserve(blocks.size());
-    for (const auto &pair : blocks)
-        positions.push_back(pair.first);
-
-    size_t totalPos = positions.size();
-    int numT = TILE_THREADS;
-    size_t chunk = (totalPos + numT - 1) / numT;
-
-    struct ThreadLocal
-    {
-        std::vector<FaceData> faces;
-        int slice, occl, geom;
-        clock_t occlAcc;
-    };
-    std::vector<ThreadLocal> locals(numT);
-    std::vector<std::thread> hthreads;
-
-    for (int ti = 0; ti < numT; ++ti)
-    {
-        size_t s = ti * chunk;
-        size_t e = (s + chunk < totalPos) ? s + chunk : totalPos;
-        if (s >= e) break;
-
-        hthreads.emplace_back([&, ti, s, e]()
-        {
-            auto &loc = locals[ti];
-            loc.slice = 0; loc.occl = 0; loc.geom = 0;
-            clock_t occAcc = 0;
-
-            for (size_t pi = s; pi < e; ++pi)
-            {
-                int bx = positions[pi].x, by = positions[pi].y;
-                int bz = positions[pi].z, bw = positions[pi].w;
-
-                if (!mayIntersectSlice(bx, by, bz, bw, camPos, ov, m_blockHalf, sp))
-                    continue;
-                ++loc.slice;
-
-                clock_t tOccl0 = clock();
-                if (world.get(IVec4(bx + 1, by, bz, bw)) && world.get(IVec4(bx - 1, by, bz, bw)) &&
-                    world.get(IVec4(bx, by + 1, bz, bw)) && world.get(IVec4(bx, by - 1, bz, bw)) &&
-                    world.get(IVec4(bx, by, bz + 1, bw)) && world.get(IVec4(bx, by, bz - 1, bw)) &&
-                    world.get(IVec4(bx, by, bz, bw + 1)) && world.get(IVec4(bx, by, bz, bw - 1)))
-                {
-                    occAcc += (clock() - tOccl0);
-                    continue;
-                }
-                occAcc += (clock() - tOccl0);
-                ++loc.occl;
-
-                COLORREF col = getBlockColor(bx, by, bz, bw);
-
-                Vec4 verts[16]; hypercubeVertices(bx, by, bz, bw, verts, m_blockHalf);
-                double od[16];
-                for (int i = 0; i < 16; ++i) od[i] = vec4Dot(vec4Sub(verts[i], camPos), ov);
-
-                struct Seg2 { Vec4 a, b; int faceIdx; };
-                Seg2 segs[24]; int sc = 0;
-                for (int f = 0; f < 24; ++f)
-                {
-                    const int *face = FACES[f];
-                    Vec4 hits[4]; int hc = 0;
-                    for (int e = 0; e < 4 && hc < 4; ++e)
-                    {
-                        int a = face[e], b = face[(e + 1) & 3];
-                        double da = od[a], db = od[b];
-                        if ((da > 0 && db > 0) || (da < 0 && db < 0)) continue;
-                        double t2 = (std::abs(da - db) > 1e-12) ? da / (da - db) : 0.5;
-                        hits[hc++] = vec4Add(verts[a], vec4Scale(vec4Sub(verts[b], verts[a]), t2));
-                    }
-                    if (hc == 2) segs[sc++] = { hits[0], hits[1], f };
-                }
-                if (sc == 0) continue;
-                ++loc.geom;
-
-                struct Cell { int bit, val; };
-                const Cell cells[8] = { {0,0},{0,1},{1,0},{1,1},{2,0},{2,1},{3,0},{3,1} };
-
-                for (int ci = 0; ci < 8; ++ci)
-                {
-                    int cb = cells[ci].bit, cv = cells[ci].val;
-                    int cSegs[6]; int csc = 0;
-                    for (int s2 = 0; s2 < sc; ++s2)
-                    {
-                        int fi = segs[s2].faceIdx;
-                        int bm = s_fix.bits[fi];
-                        if ((bm >> cb) & 1)
-                        {
-                            if (((s_fix.vals[fi] >> cb) & 1) == cv)
-                                if (csc < 6) cSegs[csc++] = s2;
-                        }
-                    }
-                    if (csc < 3) continue;
-
-                    struct EP { Vec4 pos; int segIdx; };
-                    EP eps[12]; int epCount = 0;
-                    for (int i = 0; i < csc; ++i)
-                    {
-                        int si = cSegs[i];
-                        eps[epCount++] = { segs[si].a, i };
-                        eps[epCount++] = { segs[si].b, i };
-                    }
-
-                    int next[12];
-                    for (int i = 0; i < epCount; ++i)
-                    {
-                        next[i] = -1;
-                        for (int j = 0; j < epCount; ++j)
-                        {
-                            if (i == j) continue;
-                            if (eps[i].segIdx == eps[j].segIdx) continue;
-                            if (vec4DistSq(eps[i].pos, eps[j].pos) < 1e-6)
-                            {
-                                int other = -1;
-                                for (int k = 0; k < epCount; ++k)
-                                    if (k != j && eps[k].segIdx == eps[j].segIdx) { other = k; break; }
-                                next[i] = other;
-                                break;
-                            }
-                        }
-                    }
-
-                    POINT orderedPts[12]; double orderedDepths[12]; int orderedN = 0;
-                    bool used[12] = {};
-                    int cur = 0;
-                    while (cur >= 0 && !used[cur] && orderedN < 12)
-                    {
-                        used[cur] = true;
-                        ProjResult pr = project(eps[cur].pos, cam, m_scale, m_offsetX, m_offsetY);
-                        if (!pr.valid) break;
-                        orderedPts[orderedN] = { static_cast<int>(pr.screenPos.x), static_cast<int>(pr.screenPos.y) };
-                        orderedDepths[orderedN] = vec4Dot(vec4Sub(eps[cur].pos, camPos), cam.getForward());
-                        ++orderedN; cur = next[cur];
-                    }
-                    if (orderedN < 3) continue;
-
-                    FaceData fd = { bx,by,bz,bw, col, {}, {}, 0 };
-                    for (int i = 0; i < orderedN && fd.n < 12; ++i)
-                    {
-                        fd.pts[fd.n] = orderedPts[i];
-                        fd.depths[fd.n] = orderedDepths[i];
-                        ++fd.n;
-                    }
-                    loc.faces.push_back(fd);
-                }
-            }
-            loc.occlAcc = occAcc;
-        });
-    }
-    for (auto &th : hthreads) th.join();
-
-    // 合并各线程结果
-    clock_t tOcclAcc = 0;
-    for (int ti = 0; ti < static_cast<int>(hthreads.size()); ++ti)
-    {
-        auto &loc = locals[ti];
-        m_diagSlice += loc.slice;
-        m_diagOccl += loc.occl;
-        m_diagGeom += loc.geom;
-        tOcclAcc += loc.occlAcc;
-        allFaces.insert(allFaces.end(), loc.faces.begin(), loc.faces.end());
-    }
-    m_timeSurfChk += tOcclAcc;
-
-    m_timeHashGeo += clock() - tHash0;
-
-    // ---- 超方块：16 分法递归遍历 ----
-    double overAbsSum = std::abs(ov.x) + std::abs(ov.y) + std::abs(ov.z) + std::abs(ov.w);
-    clock_t tSB0 = clock();
-
-    for (const auto &sb : m_superBlocks)
-    {
-        int baseX = sb.pos().x * SuperBlock::SIZE;
-        int baseY = sb.pos().y * SuperBlock::SIZE;
-        int baseZ = sb.pos().z * SuperBlock::SIZE;
-        int baseW = sb.pos().w * SuperBlock::SIZE;
-
-        std::function<void(int, int, int, int, int)> traverse =
-            [&](int bx, int by, int bz, int bw, int size)
-        {
-            double cs = size * sp;
-            double cx = (bx + size * 0.5) * sp;
-            double cy = (by + size * 0.5) * sp;
-            double cz = (bz + size * 0.5) * sp;
-            double cw = (bw + size * 0.5) * sp;
-            double cod = ov.x * (cx - camPos.x) + ov.y * (cy - camPos.y)
-                + ov.z * (cz - camPos.z) + ov.w * (cw - camPos.w);
-            if (std::abs(cod) > cs * overAbsSum + 1e-9) return;
-            ++m_diagSlice;
-
-            if (size == 1)
-            {
-                int lx = bx - baseX, ly = by - baseY, lz = bz - baseZ, lw = bw - baseW;
-                if (lx > 0 && lx < SuperBlock::SIZE - 1 && ly>0 && ly < SuperBlock::SIZE - 1 &&
-                    lz>0 && lz < SuperBlock::SIZE - 1 && lw>0 && lw < SuperBlock::SIZE - 1) return;
-
-                // 边界方块：检查外部邻居
-                auto exists = [&](int nx, int ny, int nz, int nw) -> bool
-                {
-                    int lx2 = nx - baseX, ly2 = ny - baseY, lz2 = nz - baseZ, lw2 = nw - baseW;
-                    if (lx2 >= 0 && lx2 < SuperBlock::SIZE && ly2 >= 0 && ly2 < SuperBlock::SIZE &&
-                        lz2 >= 0 && lz2 < SuperBlock::SIZE && lw2 >= 0 && lw2 < SuperBlock::SIZE)
-                        return true;
-                    // 检查相邻 SuperBlock 网格
-                    if (m_sbGrid.count(IVec4(nx / SuperBlock::SIZE, ny / SuperBlock::SIZE,
-                        nz / SuperBlock::SIZE, nw / SuperBlock::SIZE)))
-                        return true;
-                    return world.get(IVec4(nx, ny, nz, nw));
-                };
-                bool occluded = true;
-                if (lx == 0) { if (!exists(bx - 1, by, bz, bw)) occluded = false; }
-                if (lx == SuperBlock::SIZE - 1) { if (!exists(bx + 1, by, bz, bw)) occluded = false; }
-                if (ly == 0) { if (!exists(bx, by - 1, bz, bw)) occluded = false; }
-                if (ly == SuperBlock::SIZE - 1) { if (!exists(bx, by + 1, bz, bw)) occluded = false; }
-                if (lz == 0) { if (!exists(bx, by, bz - 1, bw)) occluded = false; }
-                if (lz == SuperBlock::SIZE - 1) { if (!exists(bx, by, bz + 1, bw)) occluded = false; }
-                if (lw == 0) { if (!exists(bx, by, bz, bw - 1)) occluded = false; }
-                if (lw == SuperBlock::SIZE - 1) { if (!exists(bx, by, bz, bw + 1)) occluded = false; }
-                if (occluded) return;
-
-                ++m_diagOccl;
-                COLORREF col = getBlockColor(bx, by, bz, bw);
-
-                Vec4 verts[16]; hypercubeVertices(bx, by, bz, bw, verts, m_blockHalf);
-                double od[16];
-                for (int i = 0; i < 16; ++i) od[i] = vec4Dot(vec4Sub(verts[i], camPos), ov);
-
-                struct Seg2 { Vec4 a, b; int fi; };
-                Seg2 segs[24]; int sc = 0;
-                for (int f = 0; f < 24; ++f)
-                {
-                    const int *fc = FACES[f]; Vec4 h[4]; int hc = 0;
-                    for (int e = 0; e < 4 && hc < 4; ++e)
-                    {
-                        int a = fc[e], b = fc[(e + 1) & 3];
-                        double da = od[a], db = od[b];
-                        if ((da > 0 && db > 0) || (da < 0 && db < 0)) continue;
-                        double t2 = (std::abs(da - db) > 1e-12) ? da / (da - db) : 0.5;
-                        h[hc++] = vec4Add(verts[a], vec4Scale(vec4Sub(verts[b], verts[a]), t2));
-                    }
-                    if (hc == 2) segs[sc++] = { h[0],h[1],f };
-                }
-                if (sc == 0) return;
-                ++m_diagGeom;
-
-                struct Cell { int bit, val; };
-                const Cell cells[8] = { {0,0},{0,1},{1,0},{1,1},{2,0},{2,1},{3,0},{3,1} };
-                for (int ci = 0; ci < 8; ++ci)
-                {
-                    int cb = cells[ci].bit, cv = cells[ci].val;
-                    int cSegs[6]; int csc = 0;
-                    for (int s2 = 0; s2 < sc; ++s2)
-                    {
-                        int fi = segs[s2].fi;
-                        int bm = s_fix.bits[fi];
-                        if ((bm >> cb) & 1)
-                        {
-                            if (((s_fix.vals[fi] >> cb) & 1) == cv)
-                                if (csc < 6) cSegs[csc++] = s2;
-                        }
-                    }
-                    if (csc < 3) continue;
-                    struct EP { Vec4 pos; int si; int pt; };
-                    EP eps[12]; int epc = 0;
-                    for (int i = 0; i < csc; ++i)
-                    {
-                        int si = cSegs[i]; int ai = epc;
-                        eps[epc++] = { segs[si].a,i,ai + 1 }; eps[epc++] = { segs[si].b,i,ai };
-                    }
-                    int next[12];
-                    for (int i = 0; i < epc; ++i)
-                    {
-                        next[i] = -1;
-                        for (int j = 0; j < epc; ++j)
-                        {
-                            if (eps[i].si == eps[j].si) continue;
-                            if (vec4DistSq(eps[i].pos, eps[j].pos) < 1e-6) { next[i] = eps[j].pt; break; }
-                        }
-                    }
-                    POINT oPt[12]; double oDp[12]; int oN = 0; bool used[12] = {}; int cur = 0;
-                    while (cur >= 0 && !used[cur] && oN < 12)
-                    {
-                        used[cur] = true;
-                        ProjResult pr = project(eps[cur].pos, cam, m_scale, m_offsetX, m_offsetY);
-                        if (!pr.valid) break;
-                        oPt[oN] = { (int) pr.screenPos.x,(int) pr.screenPos.y };
-                        oDp[oN] = vec4Dot(vec4Sub(eps[cur].pos, camPos), cam.getForward());
-                        ++oN; cur = next[cur];
-                    }
-                    if (oN < 3) continue;
-                    FaceData fd = { bx,by,bz,bw,col,{},{},0 };
-                    for (int i = 0; i < oN && fd.n < 12; ++i) { fd.pts[fd.n] = oPt[i]; fd.depths[fd.n] = oDp[i]; ++fd.n; }
-                    allFaces.push_back(fd);
-                }
-                return;
-            }
-            int h = size / 2;
-            for (int dx = 0; dx < 2; ++dx) for (int dy = 0; dy < 2; ++dy)
-                for (int dz = 0; dz < 2; ++dz) for (int dw = 0; dw < 2; ++dw)
-                    traverse(bx + dx * h, by + dy * h, bz + dz * h, bw + dw * h, h);
-        };
-        traverse(baseX, baseY, baseZ, baseW, SuperBlock::SIZE);
-    }
-
-    m_timeCellTest += clock() - tSB0;  // SuperBlock 遍历总计（替代逐步骤计时）
-
-    m_diagFaces = static_cast<int>(allFaces.size());
-
-    // 深度汇总
-    // clock_t tSumZ = clock();
-    // struct FaceWithDepth { FaceData fd; double avgDepth; };
-    // std::vector<FaceWithDepth> fds;
-    // for (auto &fd : allFaces)
-    // {
-    //     double sumZ = 0;
-    //     for (int i = 0; i < fd.n; ++i) sumZ += fd.depths[i];
-    //     fds.push_back({ fd, sumZ / fd.n });
-    // }
-    // m_timeDSort += clock() - tSumZ;  // 汇总
-
-    // 排序
-    // clock_t tSort = clock();
-    // std::sort(fds.begin(), fds.end(), [](const FaceWithDepth &a, const FaceWithDepth &b)
-    // {
-    //     return a.avgDepth > b.avgDepth;
-    // });
-    // m_timeSort += clock() - tSort;
-
-    // 多线程 Tile 填充
-    clock_t tFill0 = clock();
-    int totalFaces = static_cast<int>(allFaces.size());
-    int screenH = m_screenHeight;
-    int rowsPer = (screenH + TILE_THREADS - 1) / TILE_THREADS;
-
-    std::vector<std::thread> threads;
-    for (int ti = 0; ti < TILE_THREADS; ++ti)
-    {
-        int y0 = ti * rowsPer;
-        int y1 = y0 + rowsPer;
-        if (y0 >= screenH) break;
-        if (y1 > screenH) y1 = screenH;
-
-        threads.emplace_back([this, &allFaces, y0, y1, totalFaces]()
-        {
-            for (int i = 0; i < totalFaces; ++i)
-            {
-                const FaceData &fd = allFaces[i];
-                fillPolygonZTile(fd.pts, fd.n, fd.depths, fd.col, y0, y1);
-            }
-        });
-    }
-    for (auto &th : threads) th.join();
-
-    m_timePixWr += clock() - tFill0;
-    ++m_timeSamples;
 }
 
 // ============================================================================
-// 深度缓冲
-// ============================================================================
-
-void Renderer::resetBuffers()
-{
-    std::fill(m_zbuf.begin(), m_zbuf.end(), 1e30f);
-}
-
-void Renderer::fillPolygonZ(const POINT *pts, int n, const double *depths, COLORREF color)
-{
-    if (n < 3) return;
-
-    // 找多边形在屏幕上的包围盒
-    int minY = pts[0].y, maxY = pts[0].y;
-    for (int i = 1; i < n; ++i)
-    {
-        if (pts[i].y < minY) minY = pts[i].y;
-        if (pts[i].y > maxY) maxY = pts[i].y;
-    }
-    if (minY < 0) minY = 0;
-    if (maxY >= m_screenHeight) maxY = m_screenHeight - 1;
-    if (minY > maxY) return;
-
-    // ---- 预计算每条边的斜率（除法只做一次） ----
-    struct EdgePre { double x, z; double dxdy, dzdy; int yStart; int yEnd; };
-    EdgePre epre[12]; int ec = 0;
-    float *zbuf = m_zbuf.data();
-    DWORD *bits = m_pBits;
-    int sw = m_screenWidth;
-
-    for (int i = 0; i < n; ++i)
-    {
-        int j = (i + 1) % n;
-        int y0 = pts[i].y, y1 = pts[j].y;
-        if (y0 == y1) continue;  // 水平边跳过
-
-        // 确保 y0 < y1（从顶到底）
-        int topY, botY, topIdx;
-        if (y0 < y1) { topY = y0; botY = y1; topIdx = i; }
-        else { topY = y1; botY = y0; topIdx = j; }
-
-        int otherIdx = (topIdx == i) ? j : i;
-        double invDy = 1.0 / (botY - topY);
-        double xTop = pts[topIdx].x;
-        double zTop = depths[topIdx];
-        double dx = pts[otherIdx].x - xTop;
-        double dz = depths[otherIdx] - zTop;
-        double dxdy = dx * invDy;
-        double dzdy = dz * invDy;
-
-        // 推进到第一条有效扫描线
-        int startY = topY;
-        if (startY < minY)
-        {
-            double adv = static_cast<double>(minY - topY);
-            xTop += dxdy * adv;
-            zTop += dzdy * adv;
-            startY = minY;
-        }
-        if (startY > maxY) continue;
-
-        int yEnd = botY;
-        if (yEnd > maxY + 1) yEnd = maxY + 1;
-
-        epre[ec++] = { xTop, zTop, dxdy, dzdy, startY, yEnd };
-    }
-
-    // ---- 扫描线循环（凸多边形：每条线恰有 0/2 交点） ----
-    for (int y = minY; y <= maxY; ++y)
-    {
-        double xL = 1e9, xR = -1e9, zL = 0, zR = 0;
-        int hit = 0;
-
-        for (int e = 0; e < ec; ++e)
-        {
-            if (y < epre[e].yStart || y >= epre[e].yEnd) continue;
-            double cx = epre[e].x, cz = epre[e].z;
-            if (cx < xL) { xL = cx; zL = cz; }
-            if (cx > xR) { xR = cx; zR = cz; }
-            ++hit;
-            epre[e].x += epre[e].dxdy;
-            epre[e].z += epre[e].dzdy;
-        }
-
-        if (hit < 2) continue;
-
-        int x0 = static_cast<int>(xL), x1 = static_cast<int>(xR);
-        if (x0 < 0) x0 = 0;
-        if (x1 >= sw) x1 = sw - 1;
-        if (x0 > x1) continue;
-
-        double dz = (x1 > x0) ? (zR - zL) / (x1 - x0) : 0;
-        double z = zL;
-        float *zptr = zbuf + y * sw + x0;
-        DWORD *bptr = bits + y * sw + x0;
-        for (int x = x0; x <= x1; ++x, z += dz, ++zptr, ++bptr)
-        {
-            if (z < *zptr) { *zptr = static_cast<float>(z); *bptr = color; }
-        }
-    }
-}
-
-// 多线程 Tile 变体：仅处理 [tileY0, tileY1) 扫描线
-void Renderer::fillPolygonZTile(const POINT *pts, int n, const double *depths,
-    COLORREF color, int tileY0, int tileY1)
-{
-    if (n < 3) return;
-
-    int polyMinY = pts[0].y, polyMaxY = pts[0].y;
-    for (int i = 1; i < n; ++i)
-    {
-        if (pts[i].y < polyMinY) polyMinY = pts[i].y;
-        if (pts[i].y > polyMaxY) polyMaxY = pts[i].y;
-    }
-    if (polyMinY < 0) polyMinY = 0;
-    if (polyMaxY >= m_screenHeight) polyMaxY = m_screenHeight - 1;
-
-    int minY = polyMinY, maxY = polyMaxY;
-    if (minY < tileY0) minY = tileY0;
-    if (maxY >= tileY1) maxY = tileY1 - 1;
-    if (minY > maxY) return;
-
-    struct EdgePre { double x, z; double dxdy, dzdy; int yStart; int yEnd; };
-    EdgePre epre[12]; int ec = 0;
-    float *zbuf = m_zbuf.data();
-    DWORD *bits = m_pBits;
-    int sw = m_screenWidth;
-
-    for (int i = 0; i < n; ++i)
-    {
-        int j = (i + 1) % n;
-        int y0 = pts[i].y, y1 = pts[j].y;
-        if (y0 == y1) continue;
-        int topY, botY, topIdx;
-        if (y0 < y1) { topY = y0; botY = y1; topIdx = i; }
-        else { topY = y1; botY = y0; topIdx = j; }
-        int otherIdx = (topIdx == i) ? j : i;
-        double invDy = 1.0 / (botY - topY);
-        double xTop = pts[topIdx].x, zTop = depths[topIdx];
-        double dx = pts[otherIdx].x - xTop;
-        double dz = depths[otherIdx] - zTop;
-        double dxdy = dx * invDy, dzdy = dz * invDy;
-        int startY = topY;
-        if (startY < minY)
-        {
-            double adv = static_cast<double>(minY - topY);
-            xTop += dxdy * adv; zTop += dzdy * adv;
-            startY = minY;
-        }
-        if (startY > maxY) continue;
-        int yEnd = botY;
-        if (yEnd > maxY + 1) yEnd = maxY + 1;
-        epre[ec++] = { xTop, zTop, dxdy, dzdy, startY, yEnd };
-    }
-
-    for (int y = minY; y <= maxY; ++y)
-    {
-        double xL = 1e9, xR = -1e9, zL = 0, zR = 0;
-        int hit = 0;
-        for (int e = 0; e < ec; ++e)
-        {
-            if (y < epre[e].yStart || y >= epre[e].yEnd) continue;
-            double cx = epre[e].x, cz = epre[e].z;
-            if (cx < xL) { xL = cx; zL = cz; }
-            if (cx > xR) { xR = cx; zR = cz; }
-            ++hit;
-            epre[e].x += epre[e].dxdy;
-            epre[e].z += epre[e].dzdy;
-        }
-        if (hit < 2) continue;
-        int x0 = static_cast<int>(xL), x1 = static_cast<int>(xR);
-        if (x0 < 0) x0 = 0;
-        if (x1 >= sw) x1 = sw - 1;
-        if (x0 > x1) continue;
-        double dz = (x1 > x0) ? (zR - zL) / (x1 - x0) : 0;
-        double z = zL;
-        float *zptr = zbuf + y * sw + x0;
-        DWORD *bptr = bits + y * sw + x0;
-        for (int x = x0; x <= x1; ++x, z += dz, ++zptr, ++bptr)
-        {
-            if (z < *zptr) { *zptr = static_cast<float>(z); *bptr = color; }
-        }
-    }
-}
-
-// ============================================================================
-// 十字准星
+// 准星
 // ============================================================================
 
 void Renderer::drawCrosshair() const
 {
     int cx = m_screenWidth / 2;
     int cy = m_screenHeight / 2;
-    int gap = 6;
-    int len = 10;
-
     setlinecolor(RGB(255, 255, 255));
-    line(cx - len, cy, cx - gap, cy);
-    line(cx + gap, cy, cx + len, cy);
-    line(cx, cy - len, cx, cy - gap);
-    line(cx, cy + gap, cx, cy + len);
+    line(cx - 10, cy, cx + 10, cy);
+    line(cx, cy - 10, cx, cy + 10);
 }
 
 // ============================================================================
-// HUD 显示
+// HUD
 // ============================================================================
 
 void Renderer::drawHUD(const Camera4D &cam) const
 {
-    settextcolor(RGB(255, 255, 255));
+    wchar_t buf[256];
+    settextcolor(RGB(200, 200, 200));
     setbkmode(TRANSPARENT);
 
-    const Vec4 &pos = cam.getPos();
-    const Vec4 &r = cam.getRight();
-    const Vec4 &f = cam.getForward();
-    const Vec4 &o = cam.getOver();
+    const Vec4 &p = cam.getPos();
+    swprintf(buf, 256, L"Pos: (%.2f, %.2f, %.2f, %.2f)", p.x, p.y, p.z, p.w);
+    outtextxy(10, 10, buf);
 
-    wchar_t buf[256];
-    HDC hdc = GetImageHDC();
+    swprintf(buf, 256, L"Over: (%.2f, %.2f, %.2f, %.2f)",
+        cam.getOver().x, cam.getOver().y, cam.getOver().z, cam.getOver().w);
+    outtextxy(10, 30, buf);
 
-    // ========================================
-    // 左上角：XZW 三维坐标系可视化
-    // ========================================
-    const int vpX = 10, vpY = 10, vpW = 150, vpH = 140;
-    const int ox = vpX + vpW / 2, oy = vpY + vpH / 2 + 5;
-    const double vs = 45.0;
+    swprintf(buf, 256, L"Pitch: %.2f  FPS: %d", cam.getPitch(), m_fps);
+    outtextxy(10, 50, buf);
 
-    // 黑底
-    setfillcolor(BLACK);
-    solidrectangle(vpX, vpY, vpX + vpW, vpY + vpH);
+    swprintf(buf, 256, L"Blocks: %d vis / %d tri", m_diagVisible, m_diagTriangles);
+    outtextxy(10, 70, buf);
+}
 
-    auto proj3 = [&](double vx, double vz, double vw) -> POINT
+// ============================================================================
+// 方块收集
+// ============================================================================
+
+static bool blockIntersectsPlane(int bx, int /*by*/, int bz, int bw,
+    const Vec4 &camPos, const Plane2D &plane, double half, double sp)
+{
+    double x0 = bx * sp - camPos.x - half;
+    double x1 = bx * sp - camPos.x + half;
+    double z0 = bz * sp - camPos.z - half;
+    double z1 = bz * sp - camPos.z + half;
+    double w0 = bw * sp - camPos.w - half;
+    double w1 = bw * sp - camPos.w + half;
+
+    double minDot = 0.0, maxDot = 0.0;
+    double nx = plane.n.x, nz = plane.n.z, nw = plane.n.w;
+
+    if (nx > 0) { minDot += nx * x0; maxDot += nx * x1; }
+    else { minDot += nx * x1; maxDot += nx * x0; }
+    if (nz > 0) { minDot += nz * z0; maxDot += nz * z1; }
+    else { minDot += nz * z1; maxDot += nz * z0; }
+    if (nw > 0) { minDot += nw * w0; maxDot += nw * w1; }
+    else { minDot += nw * w1; maxDot += nw * w0; }
+
+    return minDot <= 0.0 && maxDot >= 0.0;
+}
+
+std::vector<IVec4> Renderer::collectVisibleBlocks(const World &world,
+    const Camera4D &cam, const Plane2D &plane)
+{
+    std::vector<IVec4> result;
+
+    const Vec4 &camPos = cam.getPos();
+    double sp = m_blockHalf * 2.0;
+
+    // ---- 世界独立方块 ----
+    const auto &blocks = world.getAllBlocks();
+    for (const auto &pair : blocks)
     {
-        // 斜二侧画法：WZ 平面真实比例，X 轴 45° 左下，半深
-        const double k = 0.35355339;  // 0.5 × cos(45°)
-        return {
-            static_cast<int>(ox + vz * vs - vx * vs * k),
-            static_cast<int>(oy - vw * vs + vx * vs * k)
-        };
-    };
+        int bx = pair.first.x, by = pair.first.y;
+        int bz = pair.first.z, bw = pair.first.w;
 
-    POINT oPt = proj3(0, 0, 0);
+        // 遮挡剔除
+        bool occluded = true;
+        if (!world.get(IVec4(bx + 1, by, bz, bw))) occluded = false;
+        else if (!world.get(IVec4(bx - 1, by, bz, bw))) occluded = false;
+        else if (!world.get(IVec4(bx, by + 1, bz, bw))) occluded = false;
+        else if (!world.get(IVec4(bx, by - 1, bz, bw))) occluded = false;
+        else if (!world.get(IVec4(bx, by, bz + 1, bw))) occluded = false;
+        else if (!world.get(IVec4(bx, by, bz - 1, bw))) occluded = false;
+        else if (!world.get(IVec4(bx, by, bz, bw + 1))) occluded = false;
+        else if (!world.get(IVec4(bx, by, bz, bw - 1))) occluded = false;
+        if (occluded) continue;
 
-    // ---- n 的垂直平面（半透明粉色四边形） ----
-    Vec4 n3 = Vec4(o.x, 0.0, o.z, o.w);
-    double nLen = vec4Length(n3);
-    if (nLen > 1e-9) { n3 = vec4Scale(n3, 1.0 / nLen); }
-
-    // 找平面内两个正交方向 u, v（与 n3 垂直）
-    Vec4 u3, v3;
-    // 挑一个不平行于 n3 的向量
-    if (std::abs(n3.x) < 0.9)      u3 = Vec4(1.0, 0.0, 0.0, 0.0);
-    else if (std::abs(n3.z) < 0.9) u3 = Vec4(0.0, 0.0, 1.0, 0.0);
-    else                           u3 = Vec4(0.0, 0.0, 0.0, 1.0);
-    // u = normalize(u3 - (u3·n3)*n3)
-    double dotUN = u3.x * n3.x + u3.z * n3.z + u3.w * n3.w;
-    u3 = Vec4(u3.x - dotUN * n3.x, 0.0, u3.z - dotUN * n3.z, u3.w - dotUN * n3.w);
-    double uLen = std::sqrt(u3.x * u3.x + u3.z * u3.z + u3.w * u3.w);
-    if (uLen > 1e-9) { u3.x /= uLen; u3.z /= uLen; u3.w /= uLen; }
-    // v = n3 × u3（3D 叉积在 XZW 空间）
-    v3.x = n3.z * u3.w - n3.w * u3.z;
-    v3.z = n3.w * u3.x - n3.x * u3.w;
-    v3.w = n3.x * u3.z - n3.z * u3.x;
-
-    const double pHalf = 1.1;
-    POINT pCorners[4] = {
-        proj3(u3.x * pHalf + v3.x * pHalf,  u3.z * pHalf + v3.z * pHalf,  u3.w * pHalf + v3.w * pHalf),
-        proj3(u3.x * pHalf - v3.x * pHalf,  u3.z * pHalf - v3.z * pHalf,  u3.w * pHalf - v3.w * pHalf),
-        proj3(-u3.x * pHalf - v3.x * pHalf, -u3.z * pHalf - v3.z * pHalf, -u3.w * pHalf - v3.w * pHalf),
-        proj3(-u3.x * pHalf + v3.x * pHalf, -u3.z * pHalf + v3.z * pHalf, -u3.w * pHalf + v3.w * pHalf)
-    };
-    setfillcolor(RGB(80, 60, 90));
-    setlinecolor(RGB(150, 100, 180));
-    fillpolygon(pCorners, 4);
-
-    // ---- 坐标轴 ----
-    auto drawArrow2 = [](POINT from, POINT to, COLORREF clr)
-    {
-        setlinecolor(clr);
-        line(from.x, from.y, to.x, to.y);
-    };
-
-    POINT xPt = proj3(1.2, 0, 0);
-    POINT zPt = proj3(0, 1.2, 0);
-    POINT wPt = proj3(0, 0, 1.2);
-    drawArrow2(oPt, xPt, RGB(255, 100, 100));
-    drawArrow2(oPt, zPt, RGB(100, 255, 100));
-    drawArrow2(oPt, wPt, RGB(100, 150, 255));
-
-    settextcolor(RGB(255, 100, 100)); TextOutW(hdc, xPt.x - 20, xPt.y + 2, L"X", 1);
-    settextcolor(RGB(100, 255, 100)); TextOutW(hdc, zPt.x + 2, zPt.y - 8, L"Z", 1);
-    settextcolor(RGB(100, 150, 255)); TextOutW(hdc, wPt.x - 8, wPt.y - 18, L"W", 1);
-
-    // i（forward，黄色）
-    Vec4 i3 = Vec4(f.x, 0.0, f.z, f.w);
-    double iLen = vec4Length(i3);
-    if (iLen > 1e-9) { i3 = vec4Scale(i3, 1.0 / iLen); }
-    POINT iP = proj3(i3.x, i3.z, i3.w);
-    drawArrow2(oPt, iP, RGB(255, 220, 50));
-    settextcolor(RGB(255, 220, 50)); TextOutW(hdc, iP.x + 3, iP.y - 10, L"i", 1);
-
-    // j（right，青色）
-    Vec4 j3 = Vec4(r.x, 0.0, r.z, r.w);
-    double jLen = vec4Length(j3);
-    if (jLen > 1e-9) { j3 = vec4Scale(j3, 1.0 / jLen); }
-    POINT jP = proj3(j3.x, j3.z, j3.w);
-    drawArrow2(oPt, jP, RGB(50, 220, 220));
-    settextcolor(RGB(50, 220, 220)); TextOutW(hdc, jP.x + 3, jP.y - 10, L"j", 1);
-
-    // n（over，粉色法向）
-    n3 = Vec4(o.x, 0.0, o.z, o.w);
-    nLen = vec4Length(n3);
-    if (nLen > 1e-9) { n3 = vec4Scale(n3, 1.0 / nLen); }
-    POINT nP = proj3(n3.x, n3.z, n3.w);
-    drawArrow2(oPt, nP, RGB(255, 120, 255));
-    settextcolor(RGB(255, 120, 255)); TextOutW(hdc, nP.x + 3, nP.y - 10, L"n", 1);
-
-    // ========================================
-    // FPS + 诊断（右上角）
-    // ========================================
-    double invCLK = 1000.0 / CLOCKS_PER_SEC;
-
-    // 汇总所有切片 + 当前累加器
-    clock_t sumZBuf = m_timeZBuf, sumDIB = m_timeDIB, sumCellT = m_timeCellTest;
-    clock_t sumSurf = m_timeSurfChk, sumVertG = m_timeVertGen, sumOverD = m_timeOverDot;
-    clock_t sum24F = m_time24Face, sumCellG = m_timeCellGrp, sumEpiM = m_timeEpiMatch;
-    clock_t sumChain = m_timeChain, sumDSort = m_timeDSort, sumSort = m_timeSort;
-    clock_t sumBBOX = m_timeBBOX, sumEdges = m_timeEdges, sumPixWr = m_timePixWr;
-    clock_t sumBlt = m_timeBitBlt, sumWorld = m_timeWorld, sumElapsed = m_timeElapsed;
-    clock_t sumHashGeo = m_timeHashGeo;
-    int totalSamples = m_timeSamples;
-    for (const auto &ts : m_timeSlices)
-    {
-        sumZBuf += ts.zBuf;   sumDIB += ts.dib;     sumCellT += ts.cellTest;
-        sumSurf += ts.surfChk; sumVertG += ts.vertGen; sumOverD += ts.overDot;
-        sum24F += ts.f24;     sumCellG += ts.cellGrp; sumEpiM += ts.epiMatch;
-        sumChain += ts.chain; sumDSort += ts.dsort;   sumSort += ts.sort_;
-        sumBBOX += ts.bbox;   sumEdges += ts.edges;   sumPixWr += ts.pixWr;
-        sumBlt += ts.bitBlt;  sumWorld += ts.world;   sumElapsed += ts.elapsed;
-        sumHashGeo += ts.hashGeo;
-        totalSamples += ts.samples;
+        if (blockIntersectsPlane(bx, by, bz, bw, camPos, plane, m_blockHalf, sp))
+            result.push_back(IVec4(bx, by, bz, bw));
     }
 
-    auto ms = [&](clock_t t) { return (totalSamples > 0) ? (t * invCLK / totalSamples) : 0.0; };
-    double mZBuf = ms(sumZBuf);
-    double mDIB = ms(sumDIB);
-    double mCellT = ms(sumCellT);
-    double mSurf = ms(sumSurf);
-    double mVertG = ms(sumVertG);
-    double mOverD = ms(sumOverD);
-    double m24F = ms(sum24F);
-    double mCellG = ms(sumCellG);
-    double mEpiM = ms(sumEpiM);
-    double mChain = ms(sumChain);
-    double mDSort = ms(sumDSort);    double mSort = ms(sumSort);    double mBBOX = ms(sumBBOX);
-    double mEdges = ms(sumEdges);
-    double mPixWr = ms(sumPixWr);
-    double mBlt = ms(sumBlt);
-    double mWorld = ms(sumWorld);
-    double mElapsed = ms(sumElapsed);
-    double mHashGeo = ms(sumHashGeo);
-    double mGeom = mVertG + mOverD + m24F + mCellG + mEpiM + mChain + mHashGeo;
-    double mRast = mDSort + mSort + mBBOX + mEdges + mPixWr;
-    double mTotal = mZBuf + mDIB + mCellT + mSurf + mGeom + mRast + mBlt;
-    double mOther = mElapsed - mWorld;
-    if (mOther < 0.0) mOther = 0.0;
+    m_diagBlocks = static_cast<int>(result.size());
+    return result;
+}
 
-    int xLeft = 530;
-    int xRight = m_screenWidth - 12;
+void Renderer::traverseSuperBlock(const SuperBlock &sb, const Camera4D &cam,
+    const Plane2D &plane, const World &world,
+    std::vector<IVec4> &outBlocks)
+{
+    int baseX = sb.pos().x * SuperBlock::SIZE;
+    int baseY = sb.pos().y * SuperBlock::SIZE;
+    int baseZ = sb.pos().z * SuperBlock::SIZE;
+    int baseW = sb.pos().w * SuperBlock::SIZE;
 
-    settextcolor(RGB(255, 255, 255));
-    SetTextAlign(hdc, TA_LEFT);
-    swprintf(buf, 256, L"FPS: %d (%.0fms)", m_fps, mElapsed);
-    TextOutW(hdc, xLeft, 10, buf, (int) wcslen(buf));
-    SetTextAlign(hdc, TA_RIGHT);
-    swprintf(buf, 256, L"子项计: %5.1fms", mTotal);
-    TextOutW(hdc, xRight, 10, buf, (int) wcslen(buf));
+    const Vec4 &camPos = cam.getPos();
+    double sp = m_blockHalf * 2.0;
+    double overAbsSum = std::abs(plane.n.x) + std::abs(plane.n.z) + std::abs(plane.n.w);
 
-    auto drawRow = [&](int y, const wchar_t *label, double val, COLORREF clr)
+    std::function<void(int, int, int, int, int)> traverse =
+        [&](int bx, int by, int bz, int bw, int size)
     {
-        settextcolor(clr);
-        SetTextAlign(hdc, TA_LEFT);
-        swprintf(buf, 256, L"%ls", label);  TextOutW(hdc, xLeft, y, buf, (int) wcslen(buf));
-        SetTextAlign(hdc, TA_RIGHT);
-        swprintf(buf, 256, L"%5.1fms", val); TextOutW(hdc, xRight, y, buf, (int) wcslen(buf));
+        double cs = size * sp;
+        double cx = (bx + size * 0.5) * sp - camPos.x;
+        double cz = (bz + size * 0.5) * sp - camPos.z;
+        double cw = (bw + size * 0.5) * sp - camPos.w;
+        double cod = plane.n.x * cx + plane.n.z * cz + plane.n.w * cw;
+        if (std::abs(cod) > cs * overAbsSum + 1e-9) return;
+
+        if (size == 1)
+        {
+            int lx = bx - baseX, ly = by - baseY;
+            int lz = bz - baseZ, lw = bw - baseW;
+
+            // 内部方块剔除
+            if (lx > 0 && lx < SuperBlock::SIZE - 1 &&
+                ly > 0 && ly < SuperBlock::SIZE - 1 &&
+                lz > 0 && lz < SuperBlock::SIZE - 1 &&
+                lw > 0 && lw < SuperBlock::SIZE - 1) return;
+
+            // 边界方块遮挡检查
+            auto exists = [&](int nx, int ny, int nz, int nw) -> bool
+            {
+                int lx2 = nx - baseX, ly2 = ny - baseY;
+                int lz2 = nz - baseZ, lw2 = nw - baseW;
+                if (lx2 >= 0 && lx2 < SuperBlock::SIZE &&
+                    ly2 >= 0 && ly2 < SuperBlock::SIZE &&
+                    lz2 >= 0 && lz2 < SuperBlock::SIZE &&
+                    lw2 >= 0 && lw2 < SuperBlock::SIZE)
+                    return true;
+                if (m_sbGrid.count(IVec4(nx / SuperBlock::SIZE, ny / SuperBlock::SIZE,
+                    nz / SuperBlock::SIZE, nw / SuperBlock::SIZE)))
+                    return true;
+                return world.get(IVec4(nx, ny, nz, nw)) != 0;
+            };
+
+            bool occluded = true;
+            if (lx == 0) { if (!exists(bx - 1, by, bz, bw)) occluded = false; }
+            if (lx == SuperBlock::SIZE - 1) { if (!exists(bx + 1, by, bz, bw)) occluded = false; }
+            if (ly == 0) { if (!exists(bx, by - 1, bz, bw)) occluded = false; }
+            if (ly == SuperBlock::SIZE - 1) { if (!exists(bx, by + 1, bz, bw)) occluded = false; }
+            if (lz == 0) { if (!exists(bx, by, bz - 1, bw)) occluded = false; }
+            if (lz == SuperBlock::SIZE - 1) { if (!exists(bx, by, bz + 1, bw)) occluded = false; }
+            if (lw == 0) { if (!exists(bx, by, bz, bw - 1)) occluded = false; }
+            if (lw == SuperBlock::SIZE - 1) { if (!exists(bx, by, bz, bw + 1)) occluded = false; }
+            if (occluded) return;
+
+            if (blockIntersectsPlane(bx, by, bz, bw, camPos, plane, m_blockHalf, sp))
+                outBlocks.push_back(IVec4(bx, by, bz, bw));
+            return;
+        }
+
+        int half = size / 2;
+        for (int dx = 0; dx < 2; ++dx)
+            for (int dy = 0; dy < 2; ++dy)
+                for (int dz = 0; dz < 2; ++dz)
+                    for (int dw = 0; dw < 2; ++dw)
+                        traverse(bx + dx * half, by + dy * half,
+                            bz + dz * half, bw + dw * half, half);
     };
 
-    COLORREF Y = RGB(255, 255, 100), D = RGB(200, 200, 120);
-    drawRow(30, L"清空深度缓冲:", mZBuf, Y);
-    drawRow(48, L"创建DIB+背景:", mDIB, Y);
-    drawRow(66, L"16分法相交测试:", mCellT, Y);
-    drawRow(84, L"表面方块判断:", mSurf, Y);
-    drawRow(102, L"生成16顶点:", mVertG, D);
-    drawRow(118, L"16次over点积:", mOverD, D);
-    drawRow(134, L"24面边求交:", m24F, D);
-    drawRow(150, L"胞腔分组:", mCellG, D);
-    drawRow(166, L"端点匹配(next[]):", mEpiM, D);
-    drawRow(182, L"链追踪+投影:", mChain, D);
-    drawRow(200, L"哈希表并行几何:", mHashGeo, Y);
-    // drawRow(218, L"深度汇总:", mDSort, Y);
-    // drawRow(236, L"排序:", mSort, Y);
-    drawRow(254, L"填充-逐像素写:", mPixWr, Y);
-    drawRow(272, L"BitBlt刷屏:", mBlt, Y);
-    drawRow(290, L"渲染总计:", mWorld, Y);
-    drawRow(308, L"其他:", mOther, RGB(255, 150, 100));
+    traverse(baseX, baseY, baseZ, baseW, SuperBlock::SIZE);
+}
 
-    // 方块总数 + 面数
-    settextcolor(Y);
-    SetTextAlign(hdc, TA_LEFT);
-    swprintf(buf, 256, L"方块总数: %d", m_diagTotal);
-    TextOutW(hdc, xLeft, 326, buf, (int) wcslen(buf));
-    SetTextAlign(hdc, TA_RIGHT);
-    swprintf(buf, 256, L"面:%d", m_diagFaces);
-    TextOutW(hdc, xRight, 326, buf, (int) wcslen(buf));
+// ============================================================================
+// 4D→3D：方块 → 三角形
+// ============================================================================
 
-    SetTextAlign(hdc, TA_LEFT);
-    settextcolor(RGB(255, 255, 255));
+void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
+    const Camera4D &cam, const Plane2D &plane,
+    COLORREF color, std::vector<Tri3D> &outTris)
+{
+    const Vec4 &camPos = cam.getPos();
+    double half = m_blockHalf;
+    double sp = half * 2.0;
 
-    // ========================================
-    // 坐标 + 俯仰角（左侧，坐标系下方）
-    // ========================================
-    int infoY = vpY + vpH + 5;
-    swprintf(buf, 256, L"Pos: (%.1f, %.1f, %.1f, %.1f)",
-        pos.x, pos.y, pos.z, pos.w);
-    TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
-    infoY += 18;
+    double x0 = bx * sp - camPos.x - half;
+    double x1 = bx * sp - camPos.x + half;
+    double z0 = bz * sp - camPos.z - half;
+    double z1 = bz * sp - camPos.z + half;
+    double w0 = bw * sp - camPos.w - half;
+    double w1 = bw * sp - camPos.w + half;
 
-    double pitchDeg = cam.getPitch() * 180.0 / 3.1415926535;
-    swprintf(buf, 256, L"俯仰: %+.0f°", pitchDeg);
-    TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
+    // 相机空间平面（过原点，offset=0）
+    Plane2D camPlane = plane;
+    camPlane.offset = 0.0;
+
+    PolyOnPlane poly = intersectCubePlane(x0, x1, z0, z1, w0, w1, camPlane);
+    if (!poly.valid()) return;
+
+    double yLow = by * sp - half;
+    double yHigh = by * sp + half;
+
+    int n = poly.n;
+    const auto &pu = poly.u;
+    const auto &pv = poly.v;
+
+    // 顶面和底面：扇形三角剖分（各 n-2 个三角形）
+    for (int i = 1; i < n - 1; ++i)
+    {
+        // 顶面
+        Tri3D t;
+        t.u[0] = pu[0];     t.v[0] = pv[0];     t.y[0] = yHigh;
+        t.u[1] = pu[i];     t.v[1] = pv[i];     t.y[1] = yHigh;
+        t.u[2] = pu[i + 1]; t.v[2] = pv[i + 1]; t.y[2] = yHigh;
+        t.color = color;
+        t.depth = yHigh;
+        outTris.push_back(t);
+
+        // 底面（反转绕序使法线朝下）
+        Tri3D b;
+        b.u[0] = pu[0];     b.v[0] = pv[0];     b.y[0] = yLow;
+        b.u[2] = pu[i];     b.v[2] = pv[i];     b.y[2] = yLow;
+        b.u[1] = pu[i + 1]; b.v[1] = pv[i + 1]; b.y[1] = yLow;
+        b.color = RGB(
+            (GetRValue(color) * 2) / 3,
+            (GetGValue(color) * 2) / 3,
+            (GetBValue(color) * 2) / 3);
+        b.depth = yLow;
+        outTris.push_back(b);
+    }
+
+    // 侧面：n 条边，每条边 2 个三角形
+    for (int i = 0; i < n; ++i)
+    {
+        int j = (i + 1) % n;
+        double shade = 0.75;
+        COLORREF sideCol = RGB(
+            static_cast<int>(GetRValue(color) * shade),
+            static_cast<int>(GetGValue(color) * shade),
+            static_cast<int>(GetBValue(color) * shade));
+
+        Tri3D t1;
+        t1.u[0] = pu[i]; t1.v[0] = pv[i]; t1.y[0] = yLow;
+        t1.u[1] = pu[j]; t1.v[1] = pv[j]; t1.y[1] = yLow;
+        t1.u[2] = pu[i]; t1.v[2] = pv[i]; t1.y[2] = yHigh;
+        t1.color = sideCol;
+        t1.depth = (yLow + yHigh) * 0.5;
+        outTris.push_back(t1);
+
+        Tri3D t2;
+        t2.u[0] = pu[j]; t2.v[0] = pv[j]; t2.y[0] = yLow;
+        t2.u[1] = pu[j]; t2.v[1] = pv[j]; t2.y[1] = yHigh;
+        t2.u[2] = pu[i]; t2.v[2] = pv[i]; t2.y[2] = yHigh;
+        t2.color = sideCol;
+        t2.depth = (yLow + yHigh) * 0.5;
+        outTris.push_back(t2);
+    }
+}
+
+// ============================================================================
+// 3D→2D 光栅化
+// ============================================================================
+
+void Renderer::rasterizeTriangles(const std::vector<Tri3D> &tris,
+    const Camera3D &cam3d)
+{
+    for (const auto &tri : tris)
+        rasterizeTriangle(tri, cam3d);
+}
+
+void Renderer::rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d)
+{
+    int sx[3], sy[3];
+    double sz[3];
+    bool valid[3];
+
+    for (int i = 0; i < 3; ++i)
+    {
+        valid[i] = project3D(tri.u[i], tri.v[i], tri.y[i],
+            cam3d, m_screenWidth, m_screenHeight,
+            sx[i], sy[i], sz[i]);
+    }
+
+    if (!valid[0] && !valid[1] && !valid[2]) return;
+
+    // 按 y 排序
+    int idx[3] = { 0, 1, 2 };
+    if (sy[idx[0]] > sy[idx[1]]) std::swap(idx[0], idx[1]);
+    if (sy[idx[1]] > sy[idx[2]]) std::swap(idx[1], idx[2]);
+    if (sy[idx[0]] > sy[idx[1]]) std::swap(idx[0], idx[1]);
+
+    int y0 = sy[idx[0]], y1 = sy[idx[1]], y2 = sy[idx[2]];
+    int x0 = sx[idx[0]], x1 = sx[idx[1]], x2 = sx[idx[2]];
+    double z0 = sz[idx[0]], z1 = sz[idx[1]], z2 = sz[idx[2]];
+
+    if (y2 < 0 || y0 >= m_screenHeight) return;
+    if (y0 == y2) return;
+
+    // 上半部分：y0 → y1
+    if (y1 > y0)
+    {
+        double invDyTop = 1.0 / static_cast<double>(y1 - y0);
+        double invDyFull = 1.0 / static_cast<double>(y2 - y0);
+        double dxL = static_cast<double>(x1 - x0) * invDyTop;
+        double dxR = static_cast<double>(x2 - x0) * invDyFull;
+        double dzL = (z1 - z0) * invDyTop;
+        double dzR = (z2 - z0) * invDyFull;
+
+        int yStart = std::max(y0, 0);
+        int yEnd = std::min(y1, m_screenHeight);
+
+        for (int y = yStart; y < yEnd; ++y)
+        {
+            double t = static_cast<double>(y - y0);
+            int xL = static_cast<int>(x0 + dxL * t);
+            int xR = static_cast<int>(x0 + dxR * t);
+            double zL = z0 + dzL * t;
+            double zR = z0 + dzR * t;
+            if (xL > xR) { std::swap(xL, xR); std::swap(zL, zR); }
+            drawScanline(y, xL, xR, zL, zR, tri.color);
+        }
+    }
+
+    // 下半部分：y1 → y2
+    if (y2 > y1)
+    {
+        double invDyBot = 1.0 / static_cast<double>(y2 - y1);
+        double invDyFull = 1.0 / static_cast<double>(y2 - y0);
+        double dxL = static_cast<double>(x2 - x0) * invDyFull;
+        double dxR = static_cast<double>(x2 - x1) * invDyBot;
+        double dzL = (z2 - z0) * invDyFull;
+        double dzR = (z2 - z1) * invDyBot;
+
+        int yStart = std::max(y1, 0);
+        int yEnd = std::min(y2, m_screenHeight);
+
+        for (int y = yStart; y < yEnd; ++y)
+        {
+            double tFull = static_cast<double>(y - y0);
+            double tBot = static_cast<double>(y - y1);
+            int xL = static_cast<int>(x0 + dxL * tFull);
+            int xR = static_cast<int>(x1 + dxR * tBot);
+            double zL = z0 + dzL * tFull;
+            double zR = z1 + dzR * tBot;
+            if (xL > xR) { std::swap(xL, xR); std::swap(zL, zR); }
+            drawScanline(y, xL, xR, zL, zR, tri.color);
+        }
+    }
+}
+
+void Renderer::drawScanline(int y, int x0, int x1, double z0, double z1,
+    COLORREF color)
+{
+    if (y < 0 || y >= m_screenHeight) return;
+
+    if (x0 < 0) x0 = 0;
+    if (x1 > m_screenWidth) x1 = m_screenWidth;
+    if (x0 >= x1) return;
+
+    int rowBase = y * m_screenWidth;
+    double invDx = 1.0 / static_cast<double>(x1 - x0);
+    double dz = (z1 - z0) * invDx;
+
+    for (int x = x0; x < x1; ++x)
+    {
+        double t = static_cast<double>(x - x0);
+        double z = z0 + dz * t;
+
+        int idx = rowBase + x;
+        if (z < m_zbuf[idx])
+        {
+            m_zbuf[idx] = z;
+            m_pBits[idx] = color;
+        }
+    }
 }

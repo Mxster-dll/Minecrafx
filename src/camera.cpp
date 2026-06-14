@@ -1,4 +1,5 @@
 #include "camera.h"
+#include "project4d.h"
 
 Camera4D::Camera4D()
     : m_pos(1.5, 2.0, -5.0, 0.5)
@@ -256,11 +257,29 @@ void Camera4D::orthonormalize()
     gramSchmidt(m_right, m_forward, m_over, m_up);
 }
 
+Plane2D Camera4D::getViewPlane() const
+{
+    // 法向量 n = over 在 xzw 子空间中的分量
+    Vec3 n = Vec3::fromVec4(m_over);
+
+    // 参考基向量 p = right 在 xzw 子空间中的分量
+    // 正交化后 right ⊥ over 且 right 无 y 分量，故 p 已在平面上
+    Vec3 pRef = Vec3::fromVec4(m_right);
+
+    // 偏移量 offset = n · camPos_xzw（使平面穿过摄像机位置）
+    double offset = n.x * m_pos.x + n.z * m_pos.z + n.w * m_pos.w;
+
+    return Plane2D::fromNormal(n, pRef, offset);
+}
+
 void Camera4D::reset()
 {
     m_pos = Vec4(1.5, 2.0, -5.0, 0.5);
     m_right = Vec4(1.0, 0.0, 0.0, 0.0);
     m_up = Vec4(0.0, 1.0, 0.0, 0.0);
     m_forward = Vec4(0.0, 0.0, 1.0, 0.0);
-    m_over = Vec4(0.0, 0.0, 0.0, 1.0);    m_pitch = 0.0;
+    m_over = Vec4(0.0, 0.0, 0.0, 1.0);
+    m_pitch = 0.0;
+    m_cosPitch = 1.0;
+    m_sinPitch = 0.0;
 }
