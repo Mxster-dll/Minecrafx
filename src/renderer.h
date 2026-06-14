@@ -71,6 +71,10 @@ private:
     int m_diagOccl;
     int m_diagGeom;
     int m_diagFaces;
+    double m_msCollect;
+    double m_msFrustum;
+    double m_msBlock2Tri;
+    double m_msRaster;
 
     // ---- 纹理 ----
     COLORREF m_tex[16][16][16][16];

@@ -28,6 +28,10 @@ Renderer::Renderer(int screenWidth, int screenHeight)
     , m_diagOccl(0)
     , m_diagGeom(0)
     , m_diagFaces(0)
+    , m_msCollect(0.0)
+    , m_msFrustum(0.0)
+    , m_msBlock2Tri(0.0)
+    , m_msRaster(0.0)
     , m_texLoaded(false)
 {
     m_zbuf.resize(m_screenWidth * m_screenHeight);
@@ -154,8 +158,10 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
     m_diagFaces = 0;
 
     // 4. 收集可见方块（含统计）
+    clock_t t0 = clock();
     int preOccl = 0;
     std::vector<IVec4> visibleBlocks = collectVisibleBlocks(world, cam, plane, preOccl);
+    m_msCollect = static_cast<double>(clock() - t0) * 1000.0 / CLOCKS_PER_SEC;
     m_diagSlice = preOccl;
     m_diagOccl = preOccl - static_cast<int>(visibleBlocks.size());
 
@@ -191,6 +197,8 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
             rU /= rLen; rV /= rLen;
             double upU = rV * cam3d.dirY, upV = -rU * cam3d.dirY, upY = rU * cam3d.dirV - rV * cam3d.dirU;
 
+            clock_t tLoop = clock();
+            clock_t tBlock2Tri = 0;
             for (const auto &blk : visibleBlocks)
             {
                 // 方块中心在 3D 空间的近似坐标
@@ -216,18 +224,24 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
                 if (camX < -halfW - margin || camX > halfW + margin) continue;
                 if (camY < -halfH - margin || camY > halfH + margin) continue;
 
+                clock_t t0 = clock();
                 COLORREF col = getBlockColor(blk.x, blk.y, blk.z, blk.w);
                 size_t before = allTris.size();
                 blockToTriangles(blk.x, blk.y, blk.z, blk.w, cam, plane, col, allTris);
                 if (allTris.size() > before) ++m_diagGeom;
+                tBlock2Tri += clock() - t0;
             }
+            m_msFrustum = static_cast<double>((clock() - tLoop) - tBlock2Tri) * 1000.0 / CLOCKS_PER_SEC;
+            m_msBlock2Tri = static_cast<double>(tBlock2Tri) * 1000.0 / CLOCKS_PER_SEC;
 
             m_diagFaces = static_cast<int>(allTris.size());
 
             if (!allTris.empty())
             {
                 // 7. 光栅化
+                clock_t t2 = clock();
                 rasterizeTriangles(allTris, cam3d);
+                m_msRaster = static_cast<double>(clock() - t2) * 1000.0 / CLOCKS_PER_SEC;
             }
         }
     }
@@ -395,6 +409,16 @@ void Renderer::drawHUD(const Camera4D &cam)
     TextOutW(hdc, m_screenWidth - 200, 84, buf, (int) wcslen(buf));
     swprintf(buf, 256, L"渲染面数: %d", m_diagFaces);
     TextOutW(hdc, m_screenWidth - 200, 102, buf, (int) wcslen(buf));
+
+    settextcolor(RGB(180, 220, 255));
+    swprintf(buf, 256, L"收集: %.1fms", m_msCollect);
+    TextOutW(hdc, m_screenWidth - 200, 122, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"视锥裁剪: %.1fms", m_msFrustum);
+    TextOutW(hdc, m_screenWidth - 200, 140, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"方块->三角形: %.1fms", m_msBlock2Tri);
+    TextOutW(hdc, m_screenWidth - 200, 158, buf, (int) wcslen(buf));
+    swprintf(buf, 256, L"光栅化: %.1fms", m_msRaster);
+    TextOutW(hdc, m_screenWidth - 200, 176, buf, (int) wcslen(buf));
     settextcolor(RGB(255, 255, 255));
 
     // ========================================
