@@ -63,6 +63,15 @@ void SuperBlock::collectVisible(const Vec4 &camPos, const Plane2D &plane,
 
         if (size == 1)
         {
+            // 内部方块（8 个方向都在超方块内）不可见
+            int lx = bx - baseX, ly = by - baseY;
+            int lz = bz - baseZ, lw = bw - baseW;
+            if (lx > 0 && lx < SIZE - 1 &&
+                ly > 0 && ly < SIZE - 1 &&
+                lz > 0 && lz < SIZE - 1 &&
+                lw > 0 && lw < SIZE - 1)
+                return;
+
             if (blockIntersectsPlane(bx, bz, bw, camPos, plane, blockHalf, sp))
                 out.push_back(IVec4(bx, by, bz, bw));
             return;

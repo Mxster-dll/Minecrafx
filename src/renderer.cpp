@@ -160,74 +160,74 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
     if (!visibleBlocks.empty())
     {
         // 5. 设置 3D 相机（提前，用于视锥体裁剪）
-    Camera3D cam3d;
-    {
-        Vec3 camXZW = Vec3::fromVec4(cam.getPos());
-        double camU = vec3Dot(camXZW, plane.p);
-        double camV = vec3Dot(camXZW, plane.q);
-        double pitch = cam.getPitch();
-        double sP = std::sin(pitch), cP = std::cos(pitch);
-        cam3d.posU = camU;
-        cam3d.posV = camV;
-        cam3d.posY = cam.getPos().y;
-        cam3d.dirU = 0.0;
-        cam3d.dirV = cP;
-        cam3d.dirY = sP;
-    }
-
-    // 6. 4D→3D：方块 → 三角形（含视锥体裁剪）
-    {
-        std::vector<Tri3D> allTris;
-        allTris.reserve(visibleBlocks.size() * 12);
-
-        double half = m_blockHalf, sp = half * 2.0;
-        const Vec4 &camPos = cam.getPos();
-
-        // 预计算视锥体裁剪用的 camera right/up
-        double rU = cam3d.dirV, rV = -cam3d.dirU;
-        double rLen = std::sqrt(rU * rU + rV * rV);
-        rU /= rLen; rV /= rLen;
-        double upU = rV * cam3d.dirY, upV = -rU * cam3d.dirY, upY = rU * cam3d.dirV - rV * cam3d.dirU;
-
-        for (const auto &blk : visibleBlocks)
+        Camera3D cam3d;
         {
-            // 方块中心在 3D 空间的近似坐标
-            double bu = vec3Dot(Vec3(blk.x * sp - camPos.x, blk.z * sp - camPos.z, blk.w * sp - camPos.w), plane.p);
-            double bv = vec3Dot(Vec3(blk.x * sp - camPos.x, blk.z * sp - camPos.z, blk.w * sp - camPos.w), plane.q);
-            double by = blk.y * sp - camPos.y;
-
-            // 变换到相机空间
-            double dU = bu - cam3d.posU;
-            double dV = bv - cam3d.posV;
-            double dY = by - cam3d.posY;
-            double camZ = cam3d.dirU * dU + cam3d.dirV * dV + cam3d.dirY * dY;
-
-            // 在相机后方或太远则跳过
-            if (camZ < cam3d.nearPlane || camZ > cam3d.farPlane) continue;
-
-            // 视锥体水平/垂直检查（加 margin）
-            double margin = half * 3.0;
-            double camX = rU * dU + rV * dV;
-            double camY = upU * dU + upV * dV + upY * dY;
-            double halfH = std::tan(cam3d.fov * 0.5) * camZ;
-            double halfW = halfH * m_screenWidth / m_screenHeight;
-            if (camX < -halfW - margin || camX > halfW + margin) continue;
-            if (camY < -halfH - margin || camY > halfH + margin) continue;
-
-            COLORREF col = getBlockColor(blk.x, blk.y, blk.z, blk.w);
-            size_t before = allTris.size();
-            blockToTriangles(blk.x, blk.y, blk.z, blk.w, cam, plane, col, allTris);
-            if (allTris.size() > before) ++m_diagGeom;
+            Vec3 camXZW = Vec3::fromVec4(cam.getPos());
+            double camU = vec3Dot(camXZW, plane.p);
+            double camV = vec3Dot(camXZW, plane.q);
+            double pitch = cam.getPitch();
+            double sP = std::sin(pitch), cP = std::cos(pitch);
+            cam3d.posU = camU;
+            cam3d.posV = camV;
+            cam3d.posY = cam.getPos().y;
+            cam3d.dirU = 0.0;
+            cam3d.dirV = cP;
+            cam3d.dirY = sP;
         }
 
-        m_diagFaces = static_cast<int>(allTris.size());
-
-        if (!allTris.empty())
+        // 6. 4D→3D：方块 → 三角形（含视锥体裁剪）
         {
-            // 7. 光栅化
-            rasterizeTriangles(allTris, cam3d);
+            std::vector<Tri3D> allTris;
+            allTris.reserve(visibleBlocks.size() * 12);
+
+            double half = m_blockHalf, sp = half * 2.0;
+            const Vec4 &camPos = cam.getPos();
+
+            // 预计算视锥体裁剪用的 camera right/up
+            double rU = cam3d.dirV, rV = -cam3d.dirU;
+            double rLen = std::sqrt(rU * rU + rV * rV);
+            rU /= rLen; rV /= rLen;
+            double upU = rV * cam3d.dirY, upV = -rU * cam3d.dirY, upY = rU * cam3d.dirV - rV * cam3d.dirU;
+
+            for (const auto &blk : visibleBlocks)
+            {
+                // 方块中心在 3D 空间的近似坐标
+                double bu = vec3Dot(Vec3(blk.x * sp - camPos.x, blk.z * sp - camPos.z, blk.w * sp - camPos.w), plane.p);
+                double bv = vec3Dot(Vec3(blk.x * sp - camPos.x, blk.z * sp - camPos.z, blk.w * sp - camPos.w), plane.q);
+                double by = blk.y * sp - camPos.y;
+
+                // 变换到相机空间
+                double dU = bu - cam3d.posU;
+                double dV = bv - cam3d.posV;
+                double dY = by - cam3d.posY;
+                double camZ = cam3d.dirU * dU + cam3d.dirV * dV + cam3d.dirY * dY;
+
+                // 在相机后方或太远则跳过
+                if (camZ < cam3d.nearPlane || camZ > cam3d.farPlane) continue;
+
+                // 视锥体水平/垂直检查（加 margin）
+                double margin = half * 3.0;
+                double camX = rU * dU + rV * dV;
+                double camY = upU * dU + upV * dV + upY * dY;
+                double halfH = std::tan(cam3d.fov * 0.5) * camZ;
+                double halfW = halfH * m_screenWidth / m_screenHeight;
+                if (camX < -halfW - margin || camX > halfW + margin) continue;
+                if (camY < -halfH - margin || camY > halfH + margin) continue;
+
+                COLORREF col = getBlockColor(blk.x, blk.y, blk.z, blk.w);
+                size_t before = allTris.size();
+                blockToTriangles(blk.x, blk.y, blk.z, blk.w, cam, plane, col, allTris);
+                if (allTris.size() > before) ++m_diagGeom;
+            }
+
+            m_diagFaces = static_cast<int>(allTris.size());
+
+            if (!allTris.empty())
+            {
+                // 7. 光栅化
+                rasterizeTriangles(allTris, cam3d);
+            }
         }
-    }
     }
 
     // 8. 输出 DIB 到屏幕
@@ -450,6 +450,18 @@ std::vector<IVec4> Renderer::collectVisibleBlocks(const World &world,
     {
         int bx = pair.first.x, by = pair.first.y;
         int bz = pair.first.z, bw = pair.first.w;
+
+        // 遮挡剔除：8 个方向都有相邻方块则不可见
+        if (world.get(IVec4(bx + 1, by, bz, bw)) &&
+            world.get(IVec4(bx - 1, by, bz, bw)) &&
+            world.get(IVec4(bx, by + 1, bz, bw)) &&
+            world.get(IVec4(bx, by - 1, bz, bw)) &&
+            world.get(IVec4(bx, by, bz + 1, bw)) &&
+            world.get(IVec4(bx, by, bz - 1, bw)) &&
+            world.get(IVec4(bx, by, bz, bw + 1)) &&
+            world.get(IVec4(bx, by, bz, bw - 1)))
+            continue;
+
         if (blockIntersectsPlane(bx, by, bz, bw, camPos, plane, m_blockHalf, sp))
             result.push_back(IVec4(bx, by, bz, bw));
     }
