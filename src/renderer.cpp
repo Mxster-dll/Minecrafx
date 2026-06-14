@@ -502,6 +502,9 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
     double yLow = by * sp - camPos.y - half;
     double yHigh = by * sp - camPos.y + half;
 
+    // 相机视线 Y 分量，用于顶/底面背向剔除
+    double dirY = std::sin(cam.getPitch());
+
     int n = poly.n;
     const auto &pu = poly.u;
     const auto &pv = poly.v;
@@ -509,23 +512,29 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
     // 顶面和底面：扇形三角剖分（各 n-2 个三角形）
     for (int i = 1; i < n - 1; ++i)
     {
-        // 顶面
-        Tri3D t;
-        t.u[0] = pu[0];     t.v[0] = pv[0];     t.y[0] = yHigh;
-        t.u[1] = pu[i];     t.v[1] = pv[i];     t.y[1] = yHigh;
-        t.u[2] = pu[i + 1]; t.v[2] = pv[i + 1]; t.y[2] = yHigh;
-        t.color = color;
-        t.depth = yHigh;
-        outTris.push_back(t);
+        // 顶面（法线 +Y）：视线朝上时背向
+        if (dirY <= 0.0)
+        {
+            Tri3D t;
+            t.u[0] = pu[0];     t.v[0] = pv[0];     t.y[0] = yHigh;
+            t.u[1] = pu[i];     t.v[1] = pv[i];     t.y[1] = yHigh;
+            t.u[2] = pu[i + 1]; t.v[2] = pv[i + 1]; t.y[2] = yHigh;
+            t.color = color;
+            t.depth = yHigh;
+            outTris.push_back(t);
+        }
 
-        // 底面（反转绕序使法线朝下）
-        Tri3D b;
-        b.u[0] = pu[0];     b.v[0] = pv[0];     b.y[0] = yLow;
-        b.u[2] = pu[i];     b.v[2] = pv[i];     b.y[2] = yLow;
-        b.u[1] = pu[i + 1]; b.v[1] = pv[i + 1]; b.y[1] = yLow;
-        b.color = color;
-        b.depth = yLow;
-        outTris.push_back(b);
+        // 底面（法线 -Y）：视线朝下时背向
+        if (dirY >= 0.0)
+        {
+            Tri3D b;
+            b.u[0] = pu[0];     b.v[0] = pv[0];     b.y[0] = yLow;
+            b.u[2] = pu[i];     b.v[2] = pv[i];     b.y[2] = yLow;
+            b.u[1] = pu[i + 1]; b.v[1] = pv[i + 1]; b.y[1] = yLow;
+            b.color = color;
+            b.depth = yLow;
+            outTris.push_back(b);
+        }
     }
 
     // 侧面：n 条边，每条边 2 个三角形
