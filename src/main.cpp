@@ -54,9 +54,9 @@ int main()
     constexpr double DOUBLE_TAP_MS = 350;
 
     // 物理常量（单位/秒）
-    constexpr double GRAVITY = 32.0;   // 重力加速度
+    constexpr double GRAVITY = 25.0;   // 重力加速度
     constexpr double JUMP_VEL = 8.5;   // 跳跃初速度（≈1.45 方块高）
-
+    constexpr double EYE_HEIGHT = 1.0; // 视线高度（方块顶面上方的最小距离）
     // 切片旋转平滑变量
     double sliceVelocity = 0.0;
 
@@ -187,7 +187,7 @@ int main()
                                     double yLo = pY - r, yHi = pY + r;
                                     double bULo = uC - uH, bUHi = uC + uH;
                                     double bVLo = vC - vH, bVHi = vC + vH;
-                                    double bYLo = cy - half, bYHi = cy + half;
+                                    double bYLo = cy - half, bYHi = cy + half + EYE_HEIGHT;
 
                                     if (uLo < bUHi && uHi > bULo &&
                                         vLo < bVHi && vHi > bVLo &&
