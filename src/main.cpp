@@ -39,12 +39,29 @@ int main()
     Renderer renderer(SCREEN_WIDTH, SCREEN_HEIGHT);
 
     // 放置一些初始方块用于测试
-    // 放置 16×3×16×16 随机着色地板（y=0~2，使用哈希过程色）
-    for (int x = 0; x < 16; ++x)
-        for (int y = 0; y < 3; ++y)
-            for (int z = 0; z < 16; ++z)
-                for (int w = 0; w < 16; ++w)
+    // ---- 随机生成山脉 ----
+    // 使用多层正弦波模拟自然地形
+    auto terrainHeight = [](int x, int z, int w) -> int {
+        double h = 0.0;
+        h += std::sin(x * 0.25) * std::cos(z * 0.30) * 6.0;
+        h += std::cos(x * 0.45 + 1.2) * std::sin(z * 0.55) * 4.0;
+        h += std::sin((x + z) * 0.35) * 3.0;
+        h += std::cos(w * 0.40) * std::sin(x * 0.50 + z * 0.30) * 2.5;
+        h += std::sin(x * 0.70 - z * 0.60) * std::cos(w * 0.50) * 2.0;
+        h += 5.0;  // 基础高度
+        return (int)std::floor(h);
+    };
+
+    constexpr int MX = 24, MZ = 24, MW = 12;
+    for (int x = 0; x < MX; ++x)
+        for (int z = 0; z < MZ; ++z)
+            for (int w = 0; w < MW; ++w)
+            {
+                int h = terrainHeight(x, z, w);
+                if (h < 1) h = 1;
+                for (int y = 0; y < h; ++y)
                     world.set(IVec4(x, y, z, w), 1);
+            }
 
     // 移动模式：飞行 / 行走
     bool flyMode = true;
@@ -216,7 +233,7 @@ int main()
                 if (std::abs(moveDir.y) > 1e-12)
                 {
                     Vec4 t = newPos; t.y += moveDir.y;
-                    if (!check3D(t)) newPos = t;
+                    if (!check3D(t)) { newPos = t; if (!flyMode) onGround = false; }
                     else if (!flyMode && moveDir.y < 0.0) onGround = true;  // 向下被阻挡 → 着地
                 }
                 else if (!flyMode && verticalVel <= 0.0)
