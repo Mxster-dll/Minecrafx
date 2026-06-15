@@ -41,7 +41,8 @@ int main()
     // 放置一些初始方块用于测试
     // ---- 随机生成山脉 ----
     // 使用多层正弦波模拟自然地形
-    auto terrainHeight = [](int x, int z, int w) -> int {
+    auto terrainHeight = [](int x, int z, int w) -> int
+    {
         double h = 0.0;
         h += std::sin(x * 0.25) * std::cos(z * 0.30) * 6.0;
         h += std::cos(x * 0.45 + 1.2) * std::sin(z * 0.55) * 4.0;
@@ -49,7 +50,7 @@ int main()
         h += std::cos(w * 0.40) * std::sin(x * 0.50 + z * 0.30) * 2.5;
         h += std::sin(x * 0.70 - z * 0.60) * std::cos(w * 0.50) * 2.0;
         h += 5.0;  // 基础高度
-        return (int)std::floor(h);
+        return (int) std::floor(h);
     };
 
     constexpr int MX = 24, MZ = 24, MW = 12;
@@ -73,7 +74,7 @@ int main()
     // 物理常量（单位/秒）
     constexpr double GRAVITY = 25.0;   // 重力加速度
     constexpr double JUMP_VEL = 8.5;   // 跳跃初速度（≈1.45 方块高）
-    constexpr double EYE_HEIGHT = 1.0; // 视线高度（方块顶面上方的最小距离）
+    constexpr double EYE_HEIGHT = 0.0; // 视线高度（暂时关闭测试）
     // 切片旋转平滑变量
     double sliceVelocity = 0.0;
 
@@ -147,37 +148,25 @@ int main()
 
             if (vec4LengthSq(moveDir) > 1e-12)
             {
-                // ---- 3D 棱柱碰撞检测 ----
-                // 渲染管线：4D 方块 → xzw 立方体 ∩ 观察平面 → UV 多边形 → 沿 Y 挤出 → 3D 棱柱
-                // 碰撞在此 3D 空间 (U,V,Y) 中进行，玩家位于原点
-                Plane2D plane = camera.getViewPlane();
+                // ---- 3D 棱柱碰撞检测（xzw 空间直接 AABB，避免 UV 投影边界失真） ----
                 const Vec4 &camPos = camera.getPos();
-                double half = 0.5;  // BLOCK_HALF
-                double r = PLAYER_R;
+                double half = 0.5, r = PLAYER_R;
 
-                // 基向量分量绝对值（投影半宽计算用）
-                double pAbs = std::abs(plane.p.x) + std::abs(plane.p.z) + std::abs(plane.p.w);
-                double qAbs = std::abs(plane.q.x) + std::abs(plane.q.z) + std::abs(plane.q.w);
+                // 平面相交检测用：法向量分量绝对值之和
+                Plane2D plane = camera.getViewPlane();
                 double nAbs = std::abs(plane.n.x) + std::abs(plane.n.z) + std::abs(plane.n.w);
 
-                auto check3D = [&](const Vec4 &test) -> bool
+                auto check3D = [&](const Vec4 &test, bool vertical) -> bool
                 {
-                    // 玩家在相机相对 3D 空间中的位置
-                    double rx = test.x - camPos.x, rz = test.z - camPos.z;
-                    double rw = test.w - camPos.w, ry = test.y - camPos.y;
-                    double pU = rx * plane.p.x + rz * plane.p.z + rw * plane.p.w;
-                    double pV = rx * plane.q.x + rz * plane.q.z + rw * plane.q.w;
-                    double pY = ry;
-
-                    double sr = r + half * (pAbs > qAbs ? pAbs : qAbs) + 1.0;
-                    int minX = (int) std::floor((test.x - sr));
-                    int maxX = (int) std::floor((test.x + sr));
-                    int minY = (int) std::floor((test.y - sr));
-                    int maxY = (int) std::floor((test.y + sr));
-                    int minZ = (int) std::floor((test.z - sr));
-                    int maxZ = (int) std::floor((test.z + sr));
-                    int minW = (int) std::floor((test.w - sr));
-                    int maxW = (int) std::floor((test.w + sr));
+                    double sr = r + half + 1.0;
+                    int minX = (int) std::floor(test.x - sr);
+                    int maxX = (int) std::floor(test.x + sr);
+                    int minY = (int) std::floor(test.y - sr);
+                    int maxY = (int) std::floor(test.y + sr);
+                    int minZ = (int) std::floor(test.z - sr);
+                    int maxZ = (int) std::floor(test.z + sr);
+                    int minW = (int) std::floor(test.w - sr);
+                    int maxW = (int) std::floor(test.w + sr);
 
                     for (int bx = minX; bx <= maxX; ++bx)
                         for (int by = minY; by <= maxY; ++by)
@@ -186,29 +175,27 @@ int main()
                                 {
                                     if (!world.get(IVec4(bx, by, bz, bw))) continue;
 
-                                    double cx = bx - camPos.x, cz = bz - camPos.z;
-                                    double cw = bw - camPos.w, cy = by - camPos.y;
-
-                                    // 平面相交检测
+                                    // 平面相交：方块须与观察平面相交才在 3D 空间中存在
+                                    double cx = bx - camPos.x, cz = bz - camPos.z, cw = bw - camPos.w;
                                     double pd = std::abs(plane.n.x * cx + plane.n.z * cz + plane.n.w * cw);
                                     if (pd > half * nAbs + r) continue;
 
-                                    // 方块 3D AABB
-                                    double uC = cx * plane.p.x + cz * plane.p.z + cw * plane.p.w;
-                                    double vC = cx * plane.q.x + cz * plane.q.z + cw * plane.q.w;
-                                    double uH = half * pAbs, vH = half * qAbs;
+                                    // xzw 空间 AABB 区间重叠
+                                    double bXLo = bx - half, bXHi = bx + half;
+                                    double bZLo = bz - half, bZHi = bz + half;
+                                    double bWLo = bw - half, bWHi = bw + half;
+                                    double bYLo = by - half;
+                                    double bYHi = by + half + (vertical ? EYE_HEIGHT : 0.0);
 
-                                    // AABB 区间重叠检测（三个维度必须同时重叠）
-                                    double uLo = pU - r, uHi = pU + r;
-                                    double vLo = pV - r, vHi = pV + r;
-                                    double yLo = pY - r, yHi = pY + r;
-                                    double bULo = uC - uH, bUHi = uC + uH;
-                                    double bVLo = vC - vH, bVHi = vC + vH;
-                                    double bYLo = cy - half, bYHi = cy + half + EYE_HEIGHT;
+                                    double pXLo = test.x - r, pXHi = test.x + r;
+                                    double pZLo = test.z - r, pZHi = test.z + r;
+                                    double pWLo = test.w - r, pWHi = test.w + r;
+                                    double pYLo = test.y - r, pYHi = test.y + r;
 
-                                    if (uLo < bUHi && uHi > bULo &&
-                                        vLo < bVHi && vHi > bVLo &&
-                                        yLo < bYHi && yHi > bYLo)
+                                    if (pXLo < bXHi && pXHi > bXLo &&
+                                        pZLo < bZHi && pZHi > bZLo &&
+                                        pWLo < bWHi && pWHi > bWLo &&
+                                        pYLo < bYHi && pYHi > bYLo)
                                         return true;
                                 }
                     return false;
@@ -222,25 +209,25 @@ int main()
                 if (std::abs(fComp) > 1e-12)
                 {
                     Vec4 t = vec4Add(newPos, vec4Scale(fwd, fComp));
-                    if (!check3D(t)) newPos = t;
+                    if (!check3D(t, false)) newPos = t;
                 }
                 double rComp = vec4Dot(moveDir, rht);
                 if (std::abs(rComp) > 1e-12)
                 {
                     Vec4 t = vec4Add(newPos, vec4Scale(rht, rComp));
-                    if (!check3D(t)) newPos = t;
+                    if (!check3D(t, false)) newPos = t;
                 }
                 if (std::abs(moveDir.y) > 1e-12)
                 {
                     Vec4 t = newPos; t.y += moveDir.y;
-                    if (!check3D(t)) { newPos = t; if (!flyMode) onGround = false; }
+                    if (!check3D(t, true)) { newPos = t; if (!flyMode) onGround = false; }
                     else if (!flyMode && moveDir.y < 0.0) onGround = true;  // 向下被阻挡 → 着地
                 }
                 else if (!flyMode && verticalVel <= 0.0)
                 {
                     // 无 Y 移动且速度向下：检测是否着地
                     Vec4 t = newPos; t.y -= 0.001;
-                    onGround = check3D(t);
+                    onGround = check3D(t, true);
                 }
 
                 Vec4 actual = vec4Sub(newPos, camPos);
