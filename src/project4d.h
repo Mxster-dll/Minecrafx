@@ -103,10 +103,34 @@ PolyOnPlane intersectCubePlane(
 /** @brief 3D 空间中的三角形面（用于最终渲染） */
 struct Tri3D
 {
-    double u[3], v[3], y[3];  // 三顶点：(u,v,y) 其中 (u,v) 为平面坐标，y 为 4D 高度
+    double u[3], v[3], y[3];
     COLORREF color;
-    double depth;              // 用于深度排序
+    double depth;
 };
+
+// ============================================================================
+// 3D 地图（4D→3D 切片结果，可复用）
+// ============================================================================
+
+struct Prism3D
+{
+    std::vector<double> u, v;
+    double yLow, yHigh;
+    COLORREF color;
+};
+
+struct Map3D
+{
+    std::vector<Prism3D> prisms;
+    struct AABB { double uMin, uMax, vMin, vMax, yMin, yMax; };
+    std::vector<AABB> aabbs;
+    Vec4 camRef4D;
+    Plane2D plane;
+    bool valid = false;
+};
+
+Map3D generateMap3D(const class World &world, const class Camera4D &cam4D,
+    double blockHalf, COLORREF(*getColor)(int, int, int, int));
 
 // ============================================================================
 // 3D→2D 投影（标准透视投影）

@@ -23,6 +23,17 @@
 #include "renderer.h"
 #include "constant.h"
 #include "input/input_handler.h"
+
+ // 方块过程色（哈希）
+static COLORREF blockColor(int x, int y, int z, int w)
+{
+    unsigned int h = (unsigned int) (x * 73856093 + y * 19349663 + z * 83492791 + w * 39916801);
+    h = (h ^ (h >> 13)) * 0x9e3779b9;
+    int r = 60 + (h & 0xFF) % 156;
+    int g = 60 + ((h >> 8) & 0xFF) % 156;
+    int b = 60 + ((h >> 16) & 0xFF) % 156;
+    return RGB(r, g, b);
+}
 #include "constant.h"
 int main()
 {
@@ -66,18 +77,35 @@ int main()
 
     // 移动模式：飞行 / 行走
     bool flyMode = true;
-    double verticalVel = 0.0;         // 垂直速度（单位/秒）
+    double verticalVel = 0.0;
     bool onGround = false;
     clock_t lastSpacePress = 0;
     constexpr double DOUBLE_TAP_MS = 350;
-
-    // 物理常量（单位/秒）
-    constexpr double GRAVITY = 25.0;   // 重力加速度
-    constexpr double JUMP_VEL = 8.5;   // 跳跃初速度（≈1.45 方块高）
-    // 切片旋转平滑变量
+    constexpr double GRAVITY = 25.0;
+    constexpr double JUMP_VEL = 8.5;
     double sliceVelocity = 0.0;
-
     clock_t lastFrame = clock();
+
+    // ---- 3D 地图 + 3D 摄像机 ----
+    Map3D map3D;
+    double cam3U = 0, cam3V = 0, cam3Y = 0;   // 3D 位置（地图坐标系）
+    double cam3Yaw = 0, cam3Pitch = 0;          // 3D 朝向
+
+    // 初次生成地图
+    map3D = generateMap3D(world, camera, 0.5,
+        [](int bx, int by, int bz, int bw) -> COLORREF
+    {
+        return blockColor(bx, by, bz, bw);
+    });
+    // 从 4D 相机计算 3D 初始位置
+    {
+        Plane2D pl = camera.getViewPlane();
+        Vec3 cXZW = Vec3::fromVec4(camera.getPos());
+        cam3U = vec3Dot(cXZW, pl.p) - vec3Dot(Vec3::fromVec4(map3D.camRef4D), pl.p);
+        cam3V = vec3Dot(cXZW, pl.q) - vec3Dot(Vec3::fromVec4(map3D.camRef4D), pl.q);
+        cam3Y = camera.getPos().y - map3D.camRef4D.y;
+        cam3Yaw = 0; cam3Pitch = 0;
+    }
 
     SetWindowText(hwnd, L"Minecrafx");
 
@@ -90,193 +118,140 @@ int main()
         if (dt > 0.1) dt = 0.1;
         if (dt <= 0.0) dt = 0.001;
 
-        // 键盘控制移动
+        // ---- 键盘移动（3D 空间，方向由 4D 相机基向量投影决定） ----
         {
-            Vec4 moveDir;
+            Plane2D pl = map3D.plane;
+            const Vec4 &fwd = camera.getForward(), &rht = camera.getRight();
+            double fU = fwd.x * pl.p.x + fwd.z * pl.p.z + fwd.w * pl.p.w;
+            double fV = fwd.x * pl.q.x + fwd.z * pl.q.z + fwd.w * pl.q.w;
+            double rU = rht.x * pl.p.x + rht.z * pl.p.z + rht.w * pl.p.w;
+            double rV = rht.x * pl.q.x + rht.z * pl.q.z + rht.w * pl.q.w;
+            // 同步 cam3Yaw
+            cam3Yaw = std::atan2(fU, fV);
 
-            if (input.isKeyDown(Key::W))
-                moveDir = vec4Add(moveDir, vec4Scale(camera.getForward(), MOVE_SPEED * dt));
-            if (input.isKeyDown(Key::S))
-                moveDir = vec4Add(moveDir, vec4Scale(camera.getForward(), -MOVE_SPEED * dt));
-            if (input.isKeyDown(Key::D))
-                moveDir = vec4Add(moveDir, vec4Scale(camera.getRight(), MOVE_SPEED * dt));
-            if (input.isKeyDown(Key::A))
-                moveDir = vec4Add(moveDir, vec4Scale(camera.getRight(), -MOVE_SPEED * dt));
+            double moveU = 0, moveV = 0;
+            double speed = MOVE_SPEED * dt;
+            if (input.isKeyDown(Key::W)) { moveU += fU * speed; moveV += fV * speed; }
+            if (input.isKeyDown(Key::S)) { moveU -= fU * speed; moveV -= fV * speed; }
+            if (input.isKeyDown(Key::D)) { moveU += rU * speed; moveV += rV * speed; }
+            if (input.isKeyDown(Key::A)) { moveU -= rU * speed; moveV -= rV * speed; }
 
-            // ---- 模式切换 & 行走跳跃（共用空格按下事件） ----
+            // 模式切换 & 跳跃
             if (input.isPressed(Key::Space))
             {
                 clock_t now = clock();
-                double elapsed = static_cast<double>(now - lastSpacePress)
-                    * 1000.0 / CLOCKS_PER_SEC;
+                double elapsed = static_cast<double>(now - lastSpacePress) * 1000.0 / CLOCKS_PER_SEC;
                 if (elapsed < DOUBLE_TAP_MS && lastSpacePress != 0)
                 {
-                    // 双击：切换飞行/行走模式
-                    flyMode = !flyMode;
-                    verticalVel = 0.0;
-                    lastSpacePress = 0;
+                    flyMode = !flyMode; verticalVel = 0.0; lastSpacePress = 0;
                 }
                 else
                 {
-                    // 第一击：行走模式下跳跃
                     lastSpacePress = now;
-                    if (!flyMode && onGround)
-                    {
-                        verticalVel = JUMP_VEL;
-                        onGround = false;
-                    }
+                    if (!flyMode && onGround) { verticalVel = JUMP_VEL; onGround = false; }
                 }
             }
 
-            // ---- Y 轴移动 ----
-            double desiredDY = 0.0;
+            double moveY = 0;
             if (flyMode)
             {
-                if (input.isKeyDown(Key::Space))
-                    desiredDY = MOVE_SPEED * dt;
-                if (input.isKeyDown(Key::LShift) || input.isKeyDown(Key::RShift))
-                    desiredDY = -MOVE_SPEED * dt;
+                if (input.isKeyDown(Key::Space)) moveY = speed;
+                if (input.isKeyDown(Key::LShift) || input.isKeyDown(Key::RShift)) moveY = -speed;
             }
             else
             {
                 verticalVel -= GRAVITY * dt;
-                desiredDY = verticalVel * dt;
+                moveY = verticalVel * dt;
             }
 
-            moveDir.y += desiredDY;
-
-            if (vec4LengthSq(moveDir) > 1e-12)
+            // ---- 碰撞检测（对 3D 地图 AABB） ----
+            double cR = CYLINDER_R, cH = CYLINDER_H;
+            auto mapCollide = [&](double u, double v, double y) -> bool
             {
-                // ---- 3D 棱柱碰撞检测（圆柱体：半径0.8 xzw，高1.6 Y，摄像机在顶部） ----
-                const Vec4 &camPos = camera.getPos();
-                double half = 0.5, cR = CYLINDER_R, cH = CYLINDER_H;
-
-                Plane2D plane = camera.getViewPlane();
-                double nAbs = std::abs(plane.n.x) + std::abs(plane.n.z) + std::abs(plane.n.w);
-
-                auto check3D = [&](const Vec4 &test) -> bool
+                double uLo = u - cR, uHi = u + cR;
+                double vLo = v - cR, vHi = v + cR;
+                double yLo = y - cH, yHi = y;
+                for (auto &ab : map3D.aabbs)
                 {
-                    double sr = cR + half + 1.0;
-                    int minX = (int) std::floor(test.x - sr);
-                    int maxX = (int) std::floor(test.x + sr);
-                    int minY = (int) std::floor((test.y - cH) - half);
-                    int maxY = (int) std::floor(test.y + half);
-                    int minZ = (int) std::floor(test.z - sr);
-                    int maxZ = (int) std::floor(test.z + sr);
-                    int minW = (int) std::floor(test.w - sr);
-                    int maxW = (int) std::floor(test.w + sr);
-
-                    for (int bx = minX; bx <= maxX; ++bx)
-                        for (int by = minY; by <= maxY; ++by)
-                            for (int bz = minZ; bz <= maxZ; ++bz)
-                                for (int bw = minW; bw <= maxW; ++bw)
-                                {
-                                    if (!world.get(IVec4(bx, by, bz, bw))) continue;
-
-                                    double cx = bx - camPos.x, cz = bz - camPos.z, cw = bw - camPos.w;
-                                    double pd = std::abs(plane.n.x * cx + plane.n.z * cz + plane.n.w * cw);
-                                    if (pd > half * nAbs + cR) continue;
-
-                                    // 方块 AABB
-                                    double bXLo = bx - half, bXHi = bx + half;
-                                    double bZLo = bz - half, bZHi = bz + half;
-                                    double bWLo = bw - half, bWHi = bw + half;
-                                    double bYLo = by - half, bYHi = by + half;
-
-                                    // 圆柱体碰撞：xzw 球体半径 cR，Y 范围 [test.y-cH, test.y]
-                                    double pXLo = test.x - cR, pXHi = test.x + cR;
-                                    double pZLo = test.z - cR, pZHi = test.z + cR;
-                                    double pWLo = test.w - cR, pWHi = test.w + cR;
-                                    double pYLo = test.y - cH, pYHi = test.y;
-
-                                    if (pXLo < bXHi && pXHi > bXLo &&
-                                        pZLo < bZHi && pZHi > bZLo &&
-                                        pWLo < bWHi && pWHi > bWLo &&
-                                        pYLo < bYHi && pYHi > bYLo)
-                                        return true;
-                                }
-                    return false;
-                };
-
-                // 逐轴滑动（x/z/w/y — 适配 xzw 空间 AABB，实现贴墙滑动）
-                Vec4 newPos = camPos;
-
-                if (std::abs(moveDir.x) > 1e-12)
-                {
-                    Vec4 t = newPos; t.x += moveDir.x;
-                    if (!check3D(t)) newPos = t;
+                    if (uLo < ab.uMax && uHi > ab.uMin &&
+                        vLo < ab.vMax && vHi > ab.vMin &&
+                        yLo < ab.yMax && yHi > ab.yMin)
+                        return true;
                 }
-                if (std::abs(moveDir.z) > 1e-12)
-                {
-                    Vec4 t = newPos; t.z += moveDir.z;
-                    if (!check3D(t)) newPos = t;
-                }
-                if (std::abs(moveDir.w) > 1e-12)
-                {
-                    Vec4 t = newPos; t.w += moveDir.w;
-                    if (!check3D(t)) newPos = t;
-                }
-                if (std::abs(moveDir.y) > 1e-12)
-                {
-                    Vec4 t = newPos; t.y += moveDir.y;
-                    if (!check3D(t)) { newPos = t; if (!flyMode) onGround = false; }
-                    else if (!flyMode && moveDir.y < 0.0) onGround = true;  // 向下被阻挡 → 着地
-                }
-                else if (!flyMode && verticalVel <= 0.0)
-                {
-                    // 无 Y 移动且速度向下：检测是否着地
-                    Vec4 t = newPos; t.y -= 0.001;
-                    onGround = check3D(t);
-                }
+                return false;
+            };
 
-                Vec4 actual = vec4Sub(newPos, camPos);
-                if (vec4LengthSq(actual) > 1e-12) camera.move(actual);
+            double newU = cam3U, newV = cam3V, newY = cam3Y;
+            // 水平
+            if (!mapCollide(cam3U + moveU, cam3V + moveV, cam3Y))
+            {
+                newU += moveU; newV += moveV;
+            }
+            // 垂直
+            if (std::abs(moveY) > 1e-12)
+            {
+                if (!mapCollide(newU, newV, cam3Y + moveY))
+                {
+                    newY += moveY; if (!flyMode) onGround = false;
+                }
+                else if (!flyMode && moveY < 0) onGround = true;
+            }
+            else if (!flyMode && verticalVel <= 0)
+            {
+                onGround = mapCollide(newU, newV, cam3Y - 0.001);
+            }
 
-                // 着地时清零垂直速度
-                if (onGround && verticalVel < 0.0) verticalVel = 0.0;
+            cam3U = newU; cam3V = newV; cam3Y = newY;
+            if (onGround && verticalVel < 0) verticalVel = 0;
+
+            // ---- 同步 4D 摄像机位置 ----
+            {
+                Plane2D pl = map3D.plane;
+                const Vec4 &ref = map3D.camRef4D;
+                Vec4 new4D = ref;
+                new4D.x += cam3U * pl.p.x + cam3V * pl.q.x;
+                new4D.z += cam3U * pl.p.z + cam3V * pl.q.z;
+                new4D.w += cam3U * pl.p.w + cam3V * pl.q.w;
+                new4D.y = ref.y + cam3Y;
+                Vec4 delta = vec4Sub(new4D, camera.getPos());
+                if (vec4LengthSq(delta) > 1e-12) camera.move(delta);
             }
         }
 
-        // 鼠标控制视角旋转
+        // ---- 3D 视角旋转（鼠标） ----
         {
             auto [dx, dy] = input.getMouseDelta();
-
-            // 水平分量控制 i, j 在切片平面内旋转，不改变切片平面的位置
-            if (dx != 0) camera.rotateAroundUp(static_cast<double>(dx) *MOUSE_SENSITIVITY);
-
-            // 垂直分量控制俯仰角，仅改变视角与 XZW 平面的夹角，同样不改变切片平面的位置
-            if (dy != 0) camera.addPitch(static_cast<double>(-dy) *MOUSE_SENSITIVITY);
+            if (dx != 0) { cam3Yaw += dx * MOUSE_SENSITIVITY; camera.rotateAroundUp(dx * MOUSE_SENSITIVITY); }
+            if (dy != 0) { cam3Pitch -= dy * MOUSE_SENSITIVITY; camera.addPitch(-dy * MOUSE_SENSITIVITY); }
         }
 
-        // 滚轮 / Q/E → rotateSlice（绕 j=right 轴旋转切片平面）
+        // ---- Q/E/滚轮：重建地图 ----
         {
-            // 本帧的期望输入（滚轮 + Q/E，统一步长 SLICE_STEP）
             double inputDesire = 0.0;
-
             int wheel = input.getMouseWheel();
-            if (wheel != 0)
-                inputDesire += (wheel / static_cast<double>(WHEEL_DELTA)) * SLICE_STEP;
-
-            if (input.isKeyDown(Key::E))
-                inputDesire += SLICE_STEP;
-            if (input.isKeyDown(Key::Q))
-                inputDesire -= SLICE_STEP;
-
-            // 速度平滑趋近瞬时输入，松开后自然衰减至零
+            if (wheel != 0) inputDesire += (wheel / (double) WHEEL_DELTA) * SLICE_STEP;
+            if (input.isKeyDown(Key::E)) inputDesire += SLICE_STEP;
+            if (input.isKeyDown(Key::Q)) inputDesire -= SLICE_STEP;
             sliceVelocity += (inputDesire - sliceVelocity) * SLICE_SMOOTH;
 
             if (std::abs(sliceVelocity) > 1e-10)
             {
                 camera.rotateSlice(sliceVelocity);
+                // 重建 3D 地图
+                map3D = generateMap3D(world, camera, 0.5,
+                    [](int bx, int by, int bz, int bw) -> COLORREF
+                {
+                    return blockColor(bx, by, bz, bw);
+                });
+                // 重新计算 3D 位置
+                Plane2D pl = camera.getViewPlane();
+                Vec3 cXZW = Vec3::fromVec4(camera.getPos());
+                cam3U = vec3Dot(cXZW, pl.p) - vec3Dot(Vec3::fromVec4(map3D.camRef4D), pl.p);
+                cam3V = vec3Dot(cXZW, pl.q) - vec3Dot(Vec3::fromVec4(map3D.camRef4D), pl.q);
+                cam3Y = camera.getPos().y - map3D.camRef4D.y;
             }
-            else
-            {
-                sliceVelocity = 0.0;
-            }
+            else sliceVelocity = 0;
         }
-
-        // 视角重置（调试）
-        if (input.isPressed(Key::R)) camera.reset();
 
 
         // 鼠标按键行为

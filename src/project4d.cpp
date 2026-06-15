@@ -1,4 +1,6 @@
 #include "project4d.h"
+#include "world.h"
+#include "camera.h"
 #include <cmath>
 #include <algorithm>
 
@@ -293,6 +295,66 @@ bool project3D(double u, double v, double y,
     depth = camZ;
 
     return (sx >= -sw && sx < sw * 2 && sy >= -sh && sy < sh * 2);
+}
+
+// ============================================================================
+// 3D 地图生成
+// ============================================================================
+
+Map3D generateMap3D(const World &world, const Camera4D &cam4D,
+    double blockHalf, COLORREF(*getColor)(int, int, int, int))
+{
+    Map3D map;
+    map.valid = false;
+    map.camRef4D = cam4D.getPos();
+    map.plane = cam4D.getViewPlane();
+
+    const Vec4 &camPos = cam4D.getPos();
+    double sp = blockHalf * 2.0;
+    Plane2D camPlane = map.plane;
+    camPlane.offset = 0.0;
+
+    const auto &blocks = world.getAllBlocks();
+    for (const auto &pair : blocks)
+    {
+        int bx = pair.first.x, by = pair.first.y;
+        int bz = pair.first.z, bw = pair.first.w;
+
+        // 相机相对 xzw 包围盒
+        double x0 = bx * sp - camPos.x - blockHalf;
+        double x1 = bx * sp - camPos.x + blockHalf;
+        double z0 = bz * sp - camPos.z - blockHalf;
+        double z1 = bz * sp - camPos.z + blockHalf;
+        double w0 = bw * sp - camPos.w - blockHalf;
+        double w1 = bw * sp - camPos.w + blockHalf;
+
+        PolyOnPlane poly = intersectCubePlane(x0, x1, z0, z1, w0, w1, camPlane);
+        if (!poly.valid()) continue;
+
+        Prism3D p;
+        p.u = poly.u; p.v = poly.v;
+        p.yLow = by * sp - camPos.y - blockHalf;
+        p.yHigh = by * sp - camPos.y + blockHalf;
+        p.color = getColor(bx, by, bz, bw);
+        map.prisms.push_back(p);
+
+        // 碰撞 AABB
+        Map3D::AABB ab;
+        ab.uMin = ab.uMax = poly.u[0];
+        ab.vMin = ab.vMax = poly.v[0];
+        for (int i = 1; i < poly.n; ++i)
+        {
+            if (poly.u[i] < ab.uMin) ab.uMin = poly.u[i];
+            if (poly.u[i] > ab.uMax) ab.uMax = poly.u[i];
+            if (poly.v[i] < ab.vMin) ab.vMin = poly.v[i];
+            if (poly.v[i] > ab.vMax) ab.vMax = poly.v[i];
+        }
+        ab.yMin = p.yLow; ab.yMax = p.yHigh;
+        map.aabbs.push_back(ab);
+    }
+
+    map.valid = true;
+    return map;
 }
 
 
