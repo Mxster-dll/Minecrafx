@@ -60,7 +60,7 @@ int main()
 
     SetWindowText(hwnd, L"4D Miner — 四维体素沙盒");
 
-    for (InputHandler input(hwnd); !input.isPressed(Key::Esc); input.update())
+    for (auto &input : InputHandler(hwnd))
     {
         // 键盘控制移动
         {

@@ -16,6 +16,58 @@
 class InputHandler
 {
 public:
+    // ========================================================================
+    // 迭代器支持 — 支持 range-for 语法
+    // ========================================================================
+    // 用法：
+    //   for (auto& input : InputHandler(hwnd))
+    //   {
+    //       // 循环体，按下 Esc 自动退出
+    //   }
+    //
+    // 等价于传统写法：
+    //   for (InputHandler input(hwnd); !input.isPressed(Key::Esc); input.update())
+    // ========================================================================
+
+    /** @brief 结束标记类型 */
+    struct Sentinel {};
+
+    /** @brief 输入迭代器：operator++ 调用 update()，与 Sentinel 比较时检查 Esc */
+    class Iterator
+    {
+    public:
+        explicit Iterator(InputHandler &handler) : m_handler(handler) {}
+
+        InputHandler &operator*() { return m_handler; }
+        InputHandler *operator->() { return &m_handler; }
+
+        /** @brief 前进到下一帧：调用 update() 刷新输入状态 */
+        Iterator &operator++()
+        {
+            m_handler.update();
+            return *this;
+        }
+
+        /** @brief 与 Sentinel 比较：Esc 按下时结束 */
+        bool operator!=(Sentinel) const
+        {
+            return !m_handler.isPressed(Key::Esc);
+        }
+
+    private:
+        InputHandler &m_handler;
+    };
+
+    /** @brief 获取起始迭代器 */
+    Iterator begin() { return Iterator(*this); }
+
+    /** @brief 获取结束标记 */
+    Sentinel end() const { return {}; }
+
+    // ========================================================================
+    // 原有接口
+    // ========================================================================
+
     /** @brief 构造并子类化窗口以拦截滚轮消息 */
     explicit InputHandler(HWND hwnd);
 
