@@ -201,20 +201,22 @@ int main()
                     return false;
                 };
 
-                // 逐方向滑动（forward / right / Y）
+                // 逐轴滑动（x/z/w/y — 适配 xzw 空间 AABB，实现贴墙滑动）
                 Vec4 newPos = camPos;
-                const Vec4 &fwd = camera.getForward(), &rht = camera.getRight();
 
-                double fComp = vec4Dot(moveDir, fwd);
-                if (std::abs(fComp) > 1e-12)
+                if (std::abs(moveDir.x) > 1e-12)
                 {
-                    Vec4 t = vec4Add(newPos, vec4Scale(fwd, fComp));
+                    Vec4 t = newPos; t.x += moveDir.x;
                     if (!check3D(t, false)) newPos = t;
                 }
-                double rComp = vec4Dot(moveDir, rht);
-                if (std::abs(rComp) > 1e-12)
+                if (std::abs(moveDir.z) > 1e-12)
                 {
-                    Vec4 t = vec4Add(newPos, vec4Scale(rht, rComp));
+                    Vec4 t = newPos; t.z += moveDir.z;
+                    if (!check3D(t, false)) newPos = t;
+                }
+                if (std::abs(moveDir.w) > 1e-12)
+                {
+                    Vec4 t = newPos; t.w += moveDir.w;
                     if (!check3D(t, false)) newPos = t;
                 }
                 if (std::abs(moveDir.y) > 1e-12)
