@@ -164,28 +164,67 @@ int main()
                 moveY = verticalVel * dt;
             }
 
-            // ---- 碰撞检测（对 3D 地图 AABB） ----
+            // ---- 碰撞检测（棱柱多边形 + 法向量） ----
             double cR = CYLINDER_R, cH = CYLINDER_H;
+            auto collideNormal = [&](double u, double v, double y, double &nU, double &nV) -> bool
+            {
+                nU = nV = 0; double bestDist = cR;
+                for (size_t pi = 0; pi < map3D.prisms.size(); ++pi)
+                {
+                    auto &ab = map3D.aabbs[pi];
+                    if (u - cR > ab.uMax || u + cR < ab.uMin ||
+                        v - cR > ab.vMax || v + cR < ab.vMin ||
+                        y - cH > ab.yMax || y < ab.yMin) continue;
+                    auto &pr = map3D.prisms[pi];
+                    int n = (int) pr.u.size();
+                    // 点在凸多边形内？（修复地板穿透）
+                    bool inside = true;
+                    for (int i = 0; i < n && inside; ++i)
+                    {
+                        int j = (i + 1) % n;
+                        double eu = pr.u[j] - pr.u[i], ev = pr.v[j] - pr.v[i];
+                        if (eu * (v - pr.v[i]) - ev * (u - pr.u[i]) < -1e-9) inside = false;
+                    }
+                    if (inside) return true;
+                    // 圆 vs 凸多边形边
+                    for (int i = 0; i < n; ++i)
+                    {
+                        int j = (i + 1) % n;
+                        double eu = pr.u[j] - pr.u[i], ev = pr.v[j] - pr.v[i];
+                        double len2 = eu * eu + ev * ev;
+                        double t = ((u - pr.u[i]) * eu + (v - pr.v[i]) * ev) / len2;
+                        if (t < 0) t = 0; else if (t > 1) t = 1;
+                        double cu = pr.u[i] + t * eu, cv = pr.v[i] + t * ev;
+                        double du = u - cu, dv = v - cv;
+                        double dist = std::sqrt(du * du + dv * dv);
+                        if (dist < bestDist) { bestDist = dist; nU = du / dist; nV = dv / dist; }
+                    }
+                }
+                return bestDist < cR;
+            };
             auto mapCollide = [&](double u, double v, double y) -> bool
             {
-                double uLo = u - cR, uHi = u + cR;
-                double vLo = v - cR, vHi = v + cR;
-                double yLo = y - cH, yHi = y;
-                for (auto &ab : map3D.aabbs)
-                {
-                    if (uLo < ab.uMax && uHi > ab.uMin &&
-                        vLo < ab.vMax && vHi > ab.vMin &&
-                        yLo < ab.yMax && yHi > ab.yMin)
-                        return true;
-                }
-                return false;
+                double nU, nV; return collideNormal(u, v, y, nU, nV);
             };
 
             double newU = cam3U, newV = cam3V, newY = cam3Y;
-            // 水平
-            if (!mapCollide(cam3U + moveU, cam3V + moveV, cam3Y))
+            // 水平：法向投影滑动
             {
-                newU += moveU; newV += moveV;
+                double nU, nV;
+                if (!collideNormal(cam3U + moveU, cam3V + moveV, cam3Y, nU, nV))
+                {
+                    newU += moveU; newV += moveV;
+                }
+                else
+                {
+                    // 投影到面：去掉法向分量
+                    double dot = moveU * nU + moveV * nV;
+                    if (dot > 0) { moveU -= dot * nU; moveV -= dot * nV; }
+                    if (!mapCollide(cam3U + moveU, cam3V + moveV, cam3Y))
+                    {
+                        newU += moveU; newV += moveV;
+                    }
+                }
             }
             // 垂直
             if (std::abs(moveY) > 1e-12)
