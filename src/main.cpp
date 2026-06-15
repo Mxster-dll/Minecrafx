@@ -21,7 +21,6 @@
 #include "camera.h"
 #include "renderer.h"
 #include "input/input_handler.h"
-#include "superblock.h"
 #include "constant.h"
 int main()
 {
@@ -37,12 +36,13 @@ int main()
     Camera4D camera;
     Renderer renderer(SCREEN_WIDTH, SCREEN_HEIGHT);
 
-    for (int sx = 0; sx < 3; ++sx)
-        for (int sy = 0; sy < 3; ++sy)
-            for (int sz = 0; sz < 3; ++sz)
-                for (int sw = 0; sw < 3; ++sw)
-                    renderer.addSuperBlock(SuperBlock(IVec4(sx, sy, sz - 3, sw)));
-    renderer.loadTextures(L"../assert/texture/grass_block");
+    // 放置一些初始方块用于测试
+    // 放置 16×3×16×16 随机着色地板（y=0~2，使用哈希过程色）
+    for (int x = 0; x < 16; ++x)
+        for (int y = 0; y < 3; ++y)
+            for (int z = 0; z < 16; ++z)
+                for (int w = 0; w < 16; ++w)
+                    world.set(IVec4(x, y, z, w), 1);
 
     // 切片旋转平滑变量（无回弹：速度直接追踪瞬时输入）
     double sliceVelocity = 0.0;  // 当前旋转速度

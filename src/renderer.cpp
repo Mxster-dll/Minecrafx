@@ -14,7 +14,7 @@
 Renderer::Renderer(int screenWidth, int screenHeight)
     : m_screenWidth(screenWidth)
     , m_screenHeight(screenHeight)
-    , m_blockHalf(0.5 / 16.0)
+    , m_blockHalf(0.5)
     , m_frameCount(0)
     , m_hBmp(nullptr)
     , m_memDC(nullptr)
@@ -150,8 +150,7 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
     Plane2D plane = cam.getViewPlane();
 
     // 3. 诊断计数初始化
-    m_diagTotal = static_cast<int>(world.getAllBlocks().size())
-        + static_cast<int>(m_superBlocks.size()) * SuperBlock::SIZE * SuperBlock::SIZE * SuperBlock::SIZE * SuperBlock::SIZE;
+    m_diagTotal = static_cast<int>(world.getAllBlocks().size());
     m_diagSlice = 0;
     m_diagOccl = 0;
     m_diagGeom = 0;
@@ -170,14 +169,12 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
         // 5. 设置 3D 相机（提前，用于视锥体裁剪）
         Camera3D cam3d;
         {
-            Vec3 camXZW = Vec3::fromVec4(cam.getPos());
-            double camU = vec3Dot(camXZW, plane.p);
-            double camV = vec3Dot(camXZW, plane.q);
             double pitch = cam.getPitch();
             double sP = std::sin(pitch), cP = std::cos(pitch);
-            cam3d.posU = camU;
-            cam3d.posV = camV;
-            cam3d.posY = cam.getPos().y;
+            // 3D 相机位于相机相对空间原点（多边形顶点已在相机相对坐标中）
+            cam3d.posU = 0.0;
+            cam3d.posV = 0.0;
+            cam3d.posY = 0.0;
             cam3d.dirU = 0.0;
             cam3d.dirV = cP;
             cam3d.dirY = sP;
@@ -496,10 +493,6 @@ std::vector<IVec4> Renderer::collectVisibleBlocks(const World &world,
 
         result.push_back(IVec4(bx, by, bz, bw));
     }
-
-    // ---- 超方块：十六分法递归遍历 ----
-    for (const auto &sb : m_superBlocks)
-        sb.collectVisible(camPos, plane, m_blockHalf, result, outPreOccl);
 
     return result;
 }
