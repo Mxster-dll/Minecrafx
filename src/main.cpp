@@ -15,6 +15,7 @@
 #include <windows.h>
 #include <imm.h>
 #include <cmath>
+#include <ctime>
 
 #include "linalg.h"
 #include "world.h"
@@ -45,31 +46,87 @@ int main()
                 for (int w = 0; w < 16; ++w)
                     world.set(IVec4(x, y, z, w), 1);
 
-    // 切片旋转平滑变量（无回弹：速度直接追踪瞬时输入）
-    double sliceVelocity = 0.0;  // 当前旋转速度
+    // 移动模式：飞行 / 行走
+    bool flyMode = true;
+    double verticalVel = 0.0;         // 垂直速度（单位/秒）
+    bool onGround = false;
+    clock_t lastSpacePress = 0;
+    constexpr double DOUBLE_TAP_MS = 350;
+
+    // 物理常量（单位/秒）
+    constexpr double GRAVITY = 32.0;   // 重力加速度
+    constexpr double JUMP_VEL = 8.5;   // 跳跃初速度（≈1.45 方块高）
+
+    // 切片旋转平滑变量
+    double sliceVelocity = 0.0;
+
+    clock_t lastFrame = clock();
 
     SetWindowText(hwnd, L"Minecrafx");
 
     for (auto &input : InputHandler(hwnd))
     {
+        // ---- 帧间隔 ----
+        clock_t nowFrame = clock();
+        double dt = static_cast<double>(nowFrame - lastFrame) / CLOCKS_PER_SEC;
+        lastFrame = nowFrame;
+        if (dt > 0.1) dt = 0.1;
+        if (dt <= 0.0) dt = 0.001;
+
         // 键盘控制移动
         {
             Vec4 moveDir;
 
             if (input.isKeyDown(Key::W))
-                moveDir = vec4Add(moveDir, vec4Scale(camera.getForward(), MOVE_SPEED));
+                moveDir = vec4Add(moveDir, vec4Scale(camera.getForward(), MOVE_SPEED * dt));
             if (input.isKeyDown(Key::S))
-                moveDir = vec4Add(moveDir, vec4Scale(camera.getForward(), -MOVE_SPEED));
+                moveDir = vec4Add(moveDir, vec4Scale(camera.getForward(), -MOVE_SPEED * dt));
             if (input.isKeyDown(Key::D))
-                moveDir = vec4Add(moveDir, vec4Scale(camera.getRight(), MOVE_SPEED));
+                moveDir = vec4Add(moveDir, vec4Scale(camera.getRight(), MOVE_SPEED * dt));
             if (input.isKeyDown(Key::A))
-                moveDir = vec4Add(moveDir, vec4Scale(camera.getRight(), -MOVE_SPEED));
+                moveDir = vec4Add(moveDir, vec4Scale(camera.getRight(), -MOVE_SPEED * dt));
 
-            // 上下始终沿世界高度轴 Y
-            if (input.isKeyDown(Key::Space))
-                moveDir = vec4Add(moveDir, Vec4(0.0, MOVE_SPEED, 0.0, 0.0));
-            if (input.isKeyDown(Key::LShift) || input.isKeyDown(Key::RShift))
-                moveDir = vec4Add(moveDir, Vec4(0.0, -MOVE_SPEED, 0.0, 0.0));
+            // ---- 模式切换 & 行走跳跃（共用空格按下事件） ----
+            if (input.isPressed(Key::Space))
+            {
+                clock_t now = clock();
+                double elapsed = static_cast<double>(now - lastSpacePress)
+                    * 1000.0 / CLOCKS_PER_SEC;
+                if (elapsed < DOUBLE_TAP_MS && lastSpacePress != 0)
+                {
+                    // 双击：切换飞行/行走模式
+                    flyMode = !flyMode;
+                    verticalVel = 0.0;
+                    lastSpacePress = 0;
+                }
+                else
+                {
+                    // 第一击：行走模式下跳跃
+                    lastSpacePress = now;
+                    if (!flyMode && onGround)
+                    {
+                        verticalVel = JUMP_VEL;
+                        onGround = false;
+                    }
+                }
+            }
+
+            // ---- Y 轴移动 ----
+            double desiredDY = 0.0;
+            if (flyMode)
+            {
+                if (input.isKeyDown(Key::Space))
+                    desiredDY = MOVE_SPEED * dt;
+                if (input.isKeyDown(Key::LShift) || input.isKeyDown(Key::RShift))
+                    desiredDY = -MOVE_SPEED * dt;
+            }
+            else
+            {
+                verticalVel -= GRAVITY * dt;
+                desiredDY = verticalVel * dt;
+            }
+
+            moveDir.y += desiredDY;
 
             if (vec4LengthSq(moveDir) > 1e-12)
             {
@@ -124,12 +181,18 @@ int main()
                                     double vC = cx * plane.q.x + cz * plane.q.z + cw * plane.q.w;
                                     double uH = half * pAbs, vH = half * qAbs;
 
-                                    double cu = (pU < uC - uH) ? (uC - uH) : (pU > uC + uH) ? (uC + uH) : pU;
-                                    double cv = (pV < vC - vH) ? (vC - vH) : (pV > vC + vH) ? (vC + vH) : pV;
-                                    double cY = (pY < cy - half) ? (cy - half) : (pY > cy + half) ? (cy + half) : pY;
+                                    // AABB 区间重叠检测（三个维度必须同时重叠）
+                                    double uLo = pU - r, uHi = pU + r;
+                                    double vLo = pV - r, vHi = pV + r;
+                                    double yLo = pY - r, yHi = pY + r;
+                                    double bULo = uC - uH, bUHi = uC + uH;
+                                    double bVLo = vC - vH, bVHi = vC + vH;
+                                    double bYLo = cy - half, bYHi = cy + half;
 
-                                    double du = pU - cu, dv = pV - cv, dy = pY - cY;
-                                    if (du * du + dv * dv + dy * dy <= r * r) return true;
+                                    if (uLo < bUHi && uHi > bULo &&
+                                        vLo < bVHi && vHi > bVLo &&
+                                        yLo < bYHi && yHi > bYLo)
+                                        return true;
                                 }
                     return false;
                 };
@@ -154,10 +217,20 @@ int main()
                 {
                     Vec4 t = newPos; t.y += moveDir.y;
                     if (!check3D(t)) newPos = t;
+                    else if (!flyMode && moveDir.y < 0.0) onGround = true;  // 向下被阻挡 → 着地
+                }
+                else if (!flyMode && verticalVel <= 0.0)
+                {
+                    // 无 Y 移动且速度向下：检测是否着地
+                    Vec4 t = newPos; t.y -= 0.001;
+                    onGround = check3D(t);
                 }
 
                 Vec4 actual = vec4Sub(newPos, camPos);
                 if (vec4LengthSq(actual) > 1e-12) camera.move(actual);
+
+                // 着地时清零垂直速度
+                if (onGround && verticalVel < 0.0) verticalVel = 0.0;
             }
         }
 
