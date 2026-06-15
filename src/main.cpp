@@ -20,6 +20,7 @@
 #include "world.h"
 #include "camera.h"
 #include "renderer.h"
+#include "constant.h"
 #include "input/input_handler.h"
 #include "constant.h"
 int main()
@@ -71,7 +72,93 @@ int main()
                 moveDir = vec4Add(moveDir, Vec4(0.0, -MOVE_SPEED, 0.0, 0.0));
 
             if (vec4LengthSq(moveDir) > 1e-12)
-                camera.move(moveDir);
+            {
+                // ---- 3D 棱柱碰撞检测 ----
+                // 渲染管线：4D 方块 → xzw 立方体 ∩ 观察平面 → UV 多边形 → 沿 Y 挤出 → 3D 棱柱
+                // 碰撞在此 3D 空间 (U,V,Y) 中进行，玩家位于原点
+                Plane2D plane = camera.getViewPlane();
+                const Vec4 &camPos = camera.getPos();
+                double half = 0.5;  // BLOCK_HALF
+                double r = PLAYER_R;
+
+                // 基向量分量绝对值（投影半宽计算用）
+                double pAbs = std::abs(plane.p.x) + std::abs(plane.p.z) + std::abs(plane.p.w);
+                double qAbs = std::abs(plane.q.x) + std::abs(plane.q.z) + std::abs(plane.q.w);
+                double nAbs = std::abs(plane.n.x) + std::abs(plane.n.z) + std::abs(plane.n.w);
+
+                auto check3D = [&](const Vec4 &test) -> bool
+                {
+                    // 玩家在相机相对 3D 空间中的位置
+                    double rx = test.x - camPos.x, rz = test.z - camPos.z;
+                    double rw = test.w - camPos.w, ry = test.y - camPos.y;
+                    double pU = rx * plane.p.x + rz * plane.p.z + rw * plane.p.w;
+                    double pV = rx * plane.q.x + rz * plane.q.z + rw * plane.q.w;
+                    double pY = ry;
+
+                    double sr = r + half * (pAbs > qAbs ? pAbs : qAbs) + 1.0;
+                    int minX = (int) std::floor((test.x - sr));
+                    int maxX = (int) std::floor((test.x + sr));
+                    int minY = (int) std::floor((test.y - sr));
+                    int maxY = (int) std::floor((test.y + sr));
+                    int minZ = (int) std::floor((test.z - sr));
+                    int maxZ = (int) std::floor((test.z + sr));
+                    int minW = (int) std::floor((test.w - sr));
+                    int maxW = (int) std::floor((test.w + sr));
+
+                    for (int bx = minX; bx <= maxX; ++bx)
+                        for (int by = minY; by <= maxY; ++by)
+                            for (int bz = minZ; bz <= maxZ; ++bz)
+                                for (int bw = minW; bw <= maxW; ++bw)
+                                {
+                                    if (!world.get(IVec4(bx, by, bz, bw))) continue;
+
+                                    double cx = bx - camPos.x, cz = bz - camPos.z;
+                                    double cw = bw - camPos.w, cy = by - camPos.y;
+
+                                    // 平面相交检测
+                                    double pd = std::abs(plane.n.x * cx + plane.n.z * cz + plane.n.w * cw);
+                                    if (pd > half * nAbs + r) continue;
+
+                                    // 方块 3D AABB
+                                    double uC = cx * plane.p.x + cz * plane.p.z + cw * plane.p.w;
+                                    double vC = cx * plane.q.x + cz * plane.q.z + cw * plane.q.w;
+                                    double uH = half * pAbs, vH = half * qAbs;
+
+                                    double cu = (pU < uC - uH) ? (uC - uH) : (pU > uC + uH) ? (uC + uH) : pU;
+                                    double cv = (pV < vC - vH) ? (vC - vH) : (pV > vC + vH) ? (vC + vH) : pV;
+                                    double cY = (pY < cy - half) ? (cy - half) : (pY > cy + half) ? (cy + half) : pY;
+
+                                    double du = pU - cu, dv = pV - cv, dy = pY - cY;
+                                    if (du * du + dv * dv + dy * dy <= r * r) return true;
+                                }
+                    return false;
+                };
+
+                // 逐方向滑动（forward / right / Y）
+                Vec4 newPos = camPos;
+                const Vec4 &fwd = camera.getForward(), &rht = camera.getRight();
+
+                double fComp = vec4Dot(moveDir, fwd);
+                if (std::abs(fComp) > 1e-12)
+                {
+                    Vec4 t = vec4Add(newPos, vec4Scale(fwd, fComp));
+                    if (!check3D(t)) newPos = t;
+                }
+                double rComp = vec4Dot(moveDir, rht);
+                if (std::abs(rComp) > 1e-12)
+                {
+                    Vec4 t = vec4Add(newPos, vec4Scale(rht, rComp));
+                    if (!check3D(t)) newPos = t;
+                }
+                if (std::abs(moveDir.y) > 1e-12)
+                {
+                    Vec4 t = newPos; t.y += moveDir.y;
+                    if (!check3D(t)) newPos = t;
+                }
+
+                Vec4 actual = vec4Sub(newPos, camPos);
+                if (vec4LengthSq(actual) > 1e-12) camera.move(actual);
+            }
         }
 
         // 鼠标控制视角旋转
@@ -79,10 +166,10 @@ int main()
             auto [dx, dy] = input.getMouseDelta();
 
             // 水平分量控制 i, j 在切片平面内旋转，不改变切片平面的位置
-            if (dx != 0) camera.rotateAroundUp(static_cast<double>(dx) * MOUSE_SENSITIVITY);
+            if (dx != 0) camera.rotateAroundUp(static_cast<double>(dx) *MOUSE_SENSITIVITY);
 
             // 垂直分量控制俯仰角，仅改变视角与 XZW 平面的夹角，同样不改变切片平面的位置
-            if (dy != 0) camera.addPitch(static_cast<double>(-dy) * MOUSE_SENSITIVITY);
+            if (dy != 0) camera.addPitch(static_cast<double>(-dy) *MOUSE_SENSITIVITY);
         }
 
         // 滚轮 / Q/E → rotateSlice（绕 j=right 轴旋转切片平面）
