@@ -87,12 +87,11 @@ int main()
         wcscpy(sfxDir, tmp);
     }
 
-    wchar_t placePath[3][MAX_PATH], destroyPath[3][MAX_PATH];
-    for (int i = 0; i < 3; ++i)
-    {
-        swprintf(placePath[i], MAX_PATH, L"%lsplace%d.mp3", sfxDir, i + 1);
-        swprintf(destroyPath[i], MAX_PATH, L"%lsdestroy%d.mp3", sfxDir, i + 1);
-    }
+    wchar_t digPath[4][MAX_PATH], stepPath[6][MAX_PATH];
+    for (int i = 0; i < 4; ++i)
+        swprintf(digPath[i], MAX_PATH, L"%lsdig%d.mp3", sfxDir, i + 1);
+    for (int i = 0; i < 6; ++i)
+        swprintf(stepPath[i], MAX_PATH, L"%lsstep%d.mp3", sfxDir, i + 1);
 
     // 音效播放：先关旧音效再开新的（异步，不阻塞游戏）
     auto playSFX = [](const wchar_t *path)
@@ -189,6 +188,7 @@ int main()
     double sliceVelocity = 0.0;
     clock_t lastFrame = clock();
     int interactCooldown = 0;  // 放置/摧毁冷却帧数
+    int stepCooldown = 0;      // 脚步声冷却帧数
 
     // ---- 3D 地图 + 3D 摄像机 ----
     Map3D map3D;
@@ -235,10 +235,19 @@ int main()
 
             double moveU = 0, moveV = 0;
             double speed = MOVE_SPEED * dt;
-            if (input.isKeyDown(Key::W)) { moveU += fU * speed; moveV += fV * speed; }
-            if (input.isKeyDown(Key::S)) { moveU -= fU * speed; moveV -= fV * speed; }
-            if (input.isKeyDown(Key::D)) { moveU += rU * speed; moveV += rV * speed; }
-            if (input.isKeyDown(Key::A)) { moveU -= rU * speed; moveV -= rV * speed; }
+            bool isMoving = false;
+            if (input.isKeyDown(Key::W)) { moveU += fU * speed; moveV += fV * speed; isMoving = true; }
+            if (input.isKeyDown(Key::S)) { moveU -= fU * speed; moveV -= fV * speed; isMoving = true; }
+            if (input.isKeyDown(Key::D)) { moveU += rU * speed; moveV += rV * speed; isMoving = true; }
+            if (input.isKeyDown(Key::A)) { moveU -= rU * speed; moveV -= rV * speed; isMoving = true; }
+
+            // ---- 脚步声 ----
+            if (stepCooldown > 0) --stepCooldown;
+            if (isMoving && stepCooldown <= 0)
+            {
+                playSFX(stepPath[rand() % 6]);
+                stepCooldown = 18;  // ~300ms @60fps
+            }
 
             // 模式切换 & 跳跃
             if (input.isPressed(Key::Space))
@@ -428,7 +437,7 @@ int main()
                     if (raycast3D(hitPos, prevPos))
                     {
                         world.set(hitPos, 0); changed = true; interactCooldown = 15;
-                        playSFX(destroyPath[rand() % 3]);
+                        playSFX(digPath[rand() % 4]);
                     }
                 }
                 if (input.getMouseClick(1))
@@ -480,7 +489,7 @@ int main()
                         else
                         {
                             changed = true; interactCooldown = 15;
-                            playSFX(placePath[rand() % 3]);
+                            playSFX(digPath[rand() % 4]);
                         }
                     }
                 }
