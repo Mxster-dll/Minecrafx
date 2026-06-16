@@ -189,7 +189,7 @@ int main()
     double sliceVelocity = 0.0;
     clock_t lastFrame = clock();
     int interactCooldown = 0;  // 放置/摧毁冷却帧数
-    int stepCooldown = 0;      // 脚步声冷却帧数
+    clock_t lastStepTime = 0;  // 上次脚步声时间
 
     // ---- 3D 地图 + 3D 摄像机 ----
     Map3D map3D;
@@ -242,13 +242,17 @@ int main()
             if (input.isKeyDown(Key::D)) { moveU += rU * speed; moveV += rV * speed; isMoving = true; }
             if (input.isKeyDown(Key::A)) { moveU -= rU * speed; moveV -= rV * speed; isMoving = true; }
 
-            // ---- 脚步声 ----
-            if (stepCooldown > 0) --stepCooldown;
-            if (isMoving && stepCooldown <= 0)
+            // ---- 脚步声（仅在地面移动时，clock() 计时） ----
+            if (isMoving && !flyMode && onGround)
             {
-                playSFX(stepPath[rand() % 6]);
-                stepCooldown = 18;  // ~300ms @60fps
+                double sinceStep = (double) (clock() - lastStepTime) / CLOCKS_PER_SEC;
+                if (sinceStep >= 0.25)
+                {
+                    playSFX(stepPath[rand() % 6]);
+                    lastStepTime = clock();
+                }
             }
+
 
             // 模式切换 & 跳跃
             if (input.isPressed(Key::Space))
