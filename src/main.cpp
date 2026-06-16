@@ -85,6 +85,7 @@ int main()
     constexpr double JUMP_VEL = 8.5;
     double sliceVelocity = 0.0;
     clock_t lastFrame = clock();
+    int interactCooldown = 0;  // 放置/摧毁冷却帧数
 
     // ---- 3D 地图 + 3D 摄像机 ----
     Map3D map3D;
@@ -293,22 +294,95 @@ int main()
         }
 
 
-        // 鼠标按键行为
+        // 鼠标按键行为（3D 视线射线，带冷却防止连点）
         {
             IVec4 hitPos, prevPos;
-
-            // 左键：破坏方块
-            if (input.getMouseClick(0))
+            bool changed = false;
+            if (interactCooldown > 0) --interactCooldown;
+            else
             {
-                if (raycast(world, camera, hitPos, prevPos))
-                    world.set(hitPos, 0);
+                Plane2D pl = map3D.plane;
+                double du = std::sin(cam3Yaw) * std::cos(cam3Pitch);
+                double dv = std::cos(cam3Yaw) * std::cos(cam3Pitch);
+                double dys = std::sin(cam3Pitch);
+                Vec4 rayDir(du * pl.p.x + dv * pl.q.x, dys, du * pl.p.z + dv * pl.q.z, du * pl.p.w + dv * pl.q.w);
+                double rLen = vec4Length(rayDir); if (rLen > 1e-9) rayDir = vec4Scale(rayDir, 1.0 / rLen);
+                auto raycast3D = [&](IVec4 &hit, IVec4 &prev) -> bool
+                {
+                    Vec4 pos = camera.getPos();
+                    IVec4 pg((int) std::round(pos.x), (int) std::round(pos.y), (int) std::round(pos.z), (int) std::round(pos.w));
+                    for (double t = 0.2; t <= 8.0; t += 0.2)
+                    {
+                        Vec4 s = vec4Add(pos, vec4Scale(rayDir, t));
+                        IVec4 g((int) std::round(s.x), (int) std::round(s.y), (int) std::round(s.z), (int) std::round(s.w));
+                        if (g.x == pg.x && g.y == pg.y && g.z == pg.z && g.w == pg.w)continue;
+                        if (world.get(g)) { hit = g; prev = pg; return true; } pg = g;
+                    }
+                    return false;
+                };
+                if (input.getMouseClick(0)) { if (raycast3D(hitPos, prevPos)) { world.set(hitPos, 0); changed = true; interactCooldown = 15; } }
+                if (input.getMouseClick(1))
+                {
+                    if (raycast3D(hitPos, prevPos))
+                    {
+                        // 临时放置，检查是否会与摄像机碰撞
+                        world.set(prevPos, 1);
+                        Map3D testMap = generateMap3D(world, camera, 0.5,
+                            [](int bx, int by, int bz, int bw)->COLORREF { return blockColor(bx, by, bz, bw); });
+                        Plane2D tpl = testMap.plane;
+                        Vec3 tXZW = Vec3::fromVec4(camera.getPos());
+                        double tU = vec3Dot(tXZW, tpl.p) - vec3Dot(Vec3::fromVec4(testMap.camRef4D), tpl.p);
+                        double tV = vec3Dot(tXZW, tpl.q) - vec3Dot(Vec3::fromVec4(testMap.camRef4D), tpl.q);
+                        double tY = camera.getPos().y - testMap.camRef4D.y;
+                        double cR = CYLINDER_R, cH = CYLINDER_H;
+                        bool wouldCollide = false;
+                        for (size_t pi = 0; pi < testMap.prisms.size() && !wouldCollide; ++pi)
+                        {
+                            auto &ab = testMap.aabbs[pi];
+                            if (tU - cR > ab.uMax || tU + cR < ab.uMin ||
+                                tV - cR > ab.vMax || tV + cR < ab.vMin ||
+                                tY - cH > ab.yMax || tY < ab.yMin) continue;
+                            auto &pr = testMap.prisms[pi];
+                            int pn = (int) pr.u.size();
+                            bool inside = true;
+                            for (int i = 0; i < pn && inside; ++i)
+                            {
+                                int j = (i + 1) % pn;
+                                double eu = pr.u[j] - pr.u[i], ev = pr.v[j] - pr.v[i];
+                                if (eu * (tV - pr.v[i]) - ev * (tU - pr.u[i]) < -1e-9) inside = false;
+                            }
+                            if (inside) { wouldCollide = true; break; }
+                            for (int i = 0; i < pn; ++i)
+                            {
+                                int j = (i + 1) % pn;
+                                double eu = pr.u[j] - pr.u[i], ev = pr.v[j] - pr.v[i];
+                                double len2 = eu * eu + ev * ev;
+                                double t = ((tU - pr.u[i]) * eu + (tV - pr.v[i]) * ev) / len2;
+                                if (t < 0)t = 0; else if (t > 1)t = 1;
+                                double du = tU - (pr.u[i] + t * eu), dv = tV - (pr.v[i] + t * ev);
+                                if (du * du + dv * dv < cR * cR) { wouldCollide = true; break; }
+                            }
+                        }
+                        if (wouldCollide)
+                        {
+                            world.set(prevPos, 0);  // 撤销放置
+                        }
+                        else
+                        {
+                            changed = true; interactCooldown = 15;
+                        }
+                    }
+                }
             }
-
-            // 右键：放置方块
-            if (input.getMouseClick(1))
+            if (changed)
             {
-                if (raycast(world, camera, hitPos, prevPos))
-                    world.set(prevPos, 1);
+                map3D = generateMap3D(world, camera, 0.5,
+                    [](int bx, int by, int bz, int bw)->COLORREF { return blockColor(bx, by, bz, bw); });
+                Plane2D pl = camera.getViewPlane();
+                Vec3 cXZW = Vec3::fromVec4(camera.getPos());
+                cam3U = vec3Dot(cXZW, pl.p) - vec3Dot(Vec3::fromVec4(map3D.camRef4D), pl.p);
+                cam3V = vec3Dot(cXZW, pl.q) - vec3Dot(Vec3::fromVec4(map3D.camRef4D), pl.q);
+                cam3Y = camera.getPos().y - map3D.camRef4D.y;
             }
         }
 
