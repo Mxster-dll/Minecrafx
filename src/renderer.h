@@ -43,6 +43,15 @@ public:
     /** @brief 采样纹理像素（texId 0~11） */
     COLORREF sampleTexture(int texId, double tu, double tv) const;
 
+    /** @brief 加载热键栏素材 */
+    void loadHotbar();
+
+    /** @brief 绘制热键栏 */
+    void drawHotbar(int selectedSlot);
+
+    /** @brief 获取热键栏槽位对应的方块类型 */
+    int getHotbarBlockType(int slot) const;
+
     /** @brief 添加超方块（不展开，渲染时 16 分法遍历） */
     void addSuperBlock(const SuperBlock &sb)
     {
@@ -87,6 +96,16 @@ private:
     COLORREF m_texPixels[MAX_TEX][16][16];  // 像素数据（最多 16×16）
     int m_texW[MAX_TEX], m_texH[MAX_TEX];
     bool m_blockTexLoaded;
+
+    // ---- 热键栏 ----
+    static constexpr int HOTBAR_SLOTS = 4;
+    static constexpr int HB_ICON_SIZE = 32;      // 图标显示大小
+    static constexpr int HB_HEIGHT = 44;          // 热键栏显示高度
+    int m_hotbarBlockTypes[HOTBAR_SLOTS];
+    std::vector<COLORREF> m_hotbarBg;             // 热键栏背景像素（堆分配）
+    int m_hbBgW = 0, m_hbBgH = 0;                  // 背景原始宽高
+    std::vector<COLORREF> m_hotbarIcons[HOTBAR_SLOTS]; // 图标（堆分配，32x32）
+    bool m_hotbarLoaded = false;
 
     // ---- 超方块 ----
     std::vector<SuperBlock> m_superBlocks;

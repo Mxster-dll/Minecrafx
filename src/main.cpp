@@ -112,6 +112,7 @@ int main()
 
     // ---- 加载方块贴图 ----
     renderer.loadBlockTextures();
+    renderer.loadHotbar();
 
     // ---- 4D 丘陵地貌 ----
     // 使用多层正弦波模拟自然地形
@@ -189,6 +190,7 @@ int main()
     double sliceVelocity = 0.0;
     clock_t lastFrame = clock();
     int interactCooldown = 0;  // 放置/摧毁冷却帧数
+    int selectedSlot = 0;      // 热键栏选中槽位
     clock_t lastStepTime = 0;  // 上次脚步声时间
 
     // ---- 3D 地图 + 3D 摄像机 ----
@@ -383,6 +385,12 @@ int main()
             cam3Pitch = camera.getPitch();  // 同步（摄像机内部有钳制）
         }
 
+        // ---- 热键栏选择 ----
+        if (input.isPressed(Key::Num1)) selectedSlot = 0;
+        if (input.isPressed(Key::Num2)) selectedSlot = 1;
+        if (input.isPressed(Key::Num3)) selectedSlot = 2;
+        if (input.isPressed(Key::Num4)) selectedSlot = 3;
+
         // ---- Q/E/滚轮：重建地图 ----
         {
             double inputDesire = 0.0;
@@ -452,7 +460,8 @@ int main()
                     if (raycast3D(hitPos, prevPos))
                     {
                         // 临时放置，检查是否会与摄像机碰撞
-                        world.set(prevPos, 1);
+                        int placeType = renderer.getHotbarBlockType(selectedSlot);
+                        world.set(prevPos, placeType);
                         Map3D testMap = generateMap3D(world, camera, 0.5,
                             [](int bx, int by, int bz, int bw)->COLORREF { return blockColor(bx, by, bz, bw); });
                         Plane2D tpl = testMap.plane;
@@ -519,6 +528,7 @@ int main()
             setbkcolor(RGB(10, 10, 30));
 
             renderer.renderWorld(world, camera);
+            renderer.drawHotbar(selectedSlot);
             renderer.drawCrosshair();
             renderer.drawHUD(camera);
 

@@ -140,6 +140,127 @@ COLORREF Renderer::sampleTexture(int texId, double tu, double tv) const
 }
 
 // ============================================================================
+// 热键栏
+// ============================================================================
+
+static const wchar_t *kHotbarIcons[4] = {
+    L"../assert/gui/grass_block.png",
+    L"../assert/gui/dirt.png",
+    L"../assert/gui/oak_log.png",
+    L"../assert/gui/oak_leaves.png"
+};
+
+void Renderer::loadHotbar()
+{
+    bool bgOk = false;
+    // 加载 hotbar 背景
+    {
+        IMAGE img;
+        loadimage(&img, L"../assert/gui/hotbar.png");
+        DWORD *buf = GetImageBuffer(&img);
+        int srcW = img.getwidth();
+        if (buf && srcW > 0)
+        {
+            m_hbBgW = img.getwidth(); m_hbBgH = img.getheight();
+            m_hotbarBg.resize(m_hbBgW * m_hbBgH);
+            for (int y = 0; y < m_hbBgH; ++y)
+                for (int x = 0; x < m_hbBgW; ++x)
+                    m_hotbarBg[y * m_hbBgW + x] = buf[y * srcW + x];
+            bgOk = true;
+        }
+    }
+    // 加载方块图标（EasyX 自动缩放至 32x32）
+    for (int i = 0; i < HOTBAR_SLOTS; ++i)
+    {
+        IMAGE img;
+        loadimage(&img, kHotbarIcons[i], HB_ICON_SIZE, HB_ICON_SIZE);
+        DWORD *buf = GetImageBuffer(&img);
+        int srcW = img.getwidth();
+        if (buf && srcW > 0 && srcW <= HB_ICON_SIZE * 2)
+        {
+            m_hotbarIcons[i].resize(HB_ICON_SIZE * HB_ICON_SIZE);
+            for (int y = 0; y < HB_ICON_SIZE; ++y)
+                for (int x = 0; x < HB_ICON_SIZE; ++x)
+                    m_hotbarIcons[i][y * HB_ICON_SIZE + x] = buf[y * srcW + x];
+        }
+    }
+    m_hotbarBlockTypes[0] = BLOCK_GRASS;
+    m_hotbarBlockTypes[1] = BLOCK_DIRT;
+    m_hotbarBlockTypes[2] = BLOCK_LOG;
+    m_hotbarBlockTypes[3] = BLOCK_LEAVES;
+    m_hotbarLoaded = bgOk;  // 仅背景加载成功才允许绘制
+}
+
+void Renderer::drawHotbar(int selectedSlot)
+{
+    if (!m_hotbarLoaded || !m_dibReady || m_hbBgW <= 0 || m_hbBgH <= 0) return;
+
+    // 按高度 44 缩放，宽度自适应（保持比例）
+    double scale = (double) HB_HEIGHT / m_hbBgH;
+    int hbW = (int) (m_hbBgW * scale);
+    int hbH = HB_HEIGHT;
+    int hbX = (m_screenWidth - hbW) / 2;
+    int hbY = m_screenHeight - hbH - 4;
+
+    // 绘制 hotbar 背景
+    for (int dy = 0; dy < hbH; ++dy)
+    {
+        int sy = (int) (dy / scale);
+        if (sy >= m_hbBgH) sy = m_hbBgH - 1;
+        for (int dx = 0; dx < hbW; ++dx)
+        {
+            int sx = (int) (dx / scale);
+            if (sx >= m_hbBgW) sx = m_hbBgW - 1;
+            COLORREF c = m_hotbarBg[sy * m_hbBgW + sx];
+            if (c == 0 || c == RGB(0, 0, 0)) continue;
+            int px = hbX + dx, py = hbY + dy;
+            if (px >= 0 && px < m_screenWidth && py >= 0 && py < m_screenHeight)
+                m_pBits[py * m_screenWidth + px] = c;
+        }
+    }
+
+    // 绘制每个槽位的图标（按比例居中，适配热键栏背景的槽位）
+    for (int slot = 0; slot < HOTBAR_SLOTS; ++slot)
+    {
+        if (m_hotbarIcons[slot].empty()) continue;
+        // 槽位中心位于 hbW 的 1/8, 3/8, 5/8, 7/8 处
+        int slotCX = hbX + hbW * (2 * slot + 1) / (2 * 9);
+        int slotCY = hbY + hbH / 2;
+        int ix0 = slotCX - HB_ICON_SIZE / 2;
+        int iy0 = slotCY - HB_ICON_SIZE / 2;
+        for (int dy = 0; dy < HB_ICON_SIZE; ++dy)
+        {
+            for (int dx = 0; dx < HB_ICON_SIZE; ++dx)
+            {
+                COLORREF c = m_hotbarIcons[slot][dy * HB_ICON_SIZE + dx];
+                if (c == 0) continue;
+                int px = ix0 + dx, py = iy0 + dy;
+                if (px >= 0 && px < m_screenWidth && py >= 0 && py < m_screenHeight)
+                    m_pBits[py * m_screenWidth + px] = c;
+            }
+        }
+        // 选中高亮（按比例计算槽位边界）
+        if (slot == selectedSlot)
+        {
+            int slX = hbX + hbW * slot / HOTBAR_SLOTS;
+            int srX = hbX + hbW * (slot + 1) / HOTBAR_SLOTS;
+            setlinecolor(RGB(255, 255, 255));
+            rectangle(slX + 2, hbY + 2, srX - 2, hbY + hbH - 2);
+        }
+    }
+
+    // 刷新到屏幕
+    HDC hdc = GetImageHDC();
+    BitBlt(hdc, 0, 0, m_screenWidth, m_screenHeight, m_memDC, 0, 0, SRCCOPY);
+}
+
+int Renderer::getHotbarBlockType(int slot) const
+{
+    if (slot < 0 || slot >= HOTBAR_SLOTS) return 1;
+    return m_hotbarBlockTypes[slot];
+}
+
+// ============================================================================
 // 缓冲管理
 // ============================================================================
 
