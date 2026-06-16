@@ -1,4 +1,5 @@
 #include "renderer.h"
+#include "constant.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -32,10 +33,12 @@ Renderer::Renderer(int screenWidth, int screenHeight)
     , m_msFrustum(0.0)
     , m_msBlock2Tri(0.0)
     , m_msRaster(0.0)
-    , m_texLoaded(false)
+    , m_blockTexLoaded(false)
 {
     m_zbuf.resize(m_screenWidth * m_screenHeight);
-    memset(m_tex, 0, sizeof(m_tex));
+    memset(m_texPixels, 0, sizeof(m_texPixels));
+    memset(m_texW, 0, sizeof(m_texW));
+    memset(m_texH, 0, sizeof(m_texH));
 
     // 预创建 DIB
     HDC hdc = GetImageHDC();
@@ -69,54 +72,71 @@ Renderer::~Renderer()
 }
 
 // ============================================================================
-// 纹理加载
+// 方块贴图加载（像素数据）
 // ============================================================================
 
-static COLORREF blockColor(int x, int y, int z, int w)
+static void loadTexPixels(const wchar_t *path, COLORREF out[16][16], int &w, int &h)
 {
-    unsigned int h = static_cast<unsigned int>(
-        x * 73856093 + y * 19349663 + z * 83492791 + w * 39916801);
-    h = (h ^ (h >> 13)) * 0x9e3779b9;
-    int r = 60 + (h & 0xFF) % 156;
-    int g = 60 + ((h >> 8) & 0xFF) % 156;
-    int b = 60 + ((h >> 16) & 0xFF) % 156;
-    return RGB(r, g, b);
+    w = h = 0;
+    IMAGE img;
+    loadimage(&img, path);
+    DWORD *buf = GetImageBuffer(&img);
+    if (!buf) return;
+    w = img.getwidth(); h = img.getheight();
+    if (w <= 0 || h <= 0) { w = h = 0; return; }
+    if (w > 16) w = 16;
+    if (h > 16) h = 16;
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x)
+            out[y][x] = buf[y * img.getwidth() + x];
 }
 
-COLORREF Renderer::getBlockColor(int x, int y, int z, int w) const
+void Renderer::loadBlockTextures()
 {
-    if (m_texLoaded)
-    {
-        int tx = (x % 16 + 16) % 16;
-        int ty = (y % 16 + 16) % 16;
-        int tz = (z % 16 + 16) % 16;
-        int tw = (w % 16 + 16) % 16;
-        return m_tex[tx][ty][tz][tw];
-    }
-    return blockColor(x, y, z, w);
+    int tw, th;
+    // 草方块
+    loadTexPixels(L"../assert/texture/grass_block_top.png", m_texPixels[0], tw, th); m_texW[0] = tw; m_texH[0] = th;
+    loadTexPixels(L"../assert/texture/grass_block_side.png", m_texPixels[1], tw, th); m_texW[1] = tw; m_texH[1] = th;
+    loadTexPixels(L"../assert/texture/grass_block_bottom.png", m_texPixels[2], tw, th); m_texW[2] = tw; m_texH[2] = th;
+    // 泥土
+    loadTexPixels(L"../assert/texture/dirt_top.png", m_texPixels[3], tw, th); m_texW[3] = tw; m_texH[3] = th;
+    loadTexPixels(L"../assert/texture/dirt_side.png", m_texPixels[4], tw, th); m_texW[4] = tw; m_texH[4] = th;
+    loadTexPixels(L"../assert/texture/dirt_bottom.png", m_texPixels[5], tw, th); m_texW[5] = tw; m_texH[5] = th;
+    // 树干
+    loadTexPixels(L"../assert/texture/oak_log_top.png", m_texPixels[6], tw, th); m_texW[6] = tw; m_texH[6] = th;
+    loadTexPixels(L"../assert/texture/oak_log_side.png", m_texPixels[7], tw, th); m_texW[7] = tw; m_texH[7] = th;
+    loadTexPixels(L"../assert/texture/oak_log_bottom.png", m_texPixels[8], tw, th); m_texW[8] = tw; m_texH[8] = th;
+    // 树叶
+    loadTexPixels(L"../assert/texture/oak_leaves_top.png", m_texPixels[9], tw, th); m_texW[9] = tw;  m_texH[9] = th;
+    loadTexPixels(L"../assert/texture/oak_leaves_side.png", m_texPixels[10], tw, th); m_texW[10] = tw; m_texH[10] = th;
+    loadTexPixels(L"../assert/texture/oak_leaves_bottom.png", m_texPixels[11], tw, th); m_texW[11] = tw; m_texH[11] = th;
+
+    m_blockTexLoaded = true;
 }
 
-void Renderer::loadTextures(const wchar_t *basePath)
+int Renderer::blockTexId(int blockType, int face)
 {
-    wchar_t path[512];
-    for (int x = 0; x < 16; ++x)
-    {
-        for (int z = 0; z < 16; ++z)
-        {
-            swprintf(path, 512, L"%ls/x%02d/z%02d.png", basePath, x, z);
-            IMAGE img;
-            loadimage(&img, path);
-            DWORD *buf = GetImageBuffer(&img);
-            if (buf && img.getwidth() > 0)
-            {
-                int w = img.getwidth(), h = img.getheight();
-                for (int y = 0; y < 16 && y < h; ++y)
-                    for (int ww = 0; ww < 16 && ww < w; ++ww)
-                        m_tex[x][15 - y][z][ww] = buf[y * w + ww];
-            }
-        }
-    }
-    m_texLoaded = true;
+    if (blockType <= 0 || blockType >= 8) return -1;
+    return (blockType - 1) * 3 + face;  // face: 0=顶,1=侧,2=底
+}
+
+COLORREF Renderer::sampleTexture(int texId, double tu, double tv) const
+{
+    if (texId < 0 || texId >= MAX_TEX || !m_blockTexLoaded)
+        return RGB(128, 128, 128);
+    int w = m_texW[texId], h = m_texH[texId];
+    if (w <= 0 || h <= 0) return RGB(128, 128, 128);
+    tu = tu - std::floor(tu);
+    tv = tv - std::floor(tv);
+    if (tu < 0) tu += 1.0;
+    if (tv < 0) tv += 1.0;
+    int px = (int) (tu * w);
+    int py = (int) (tv * h);
+    if (px < 0) px = 0;
+    if (px >= w) px = w - 1;
+    if (py < 0) py = 0;
+    if (py >= h) py = h - 1;
+    return m_texPixels[texId][py][px];
 }
 
 // ============================================================================
@@ -222,9 +242,12 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
                 if (camY < -halfH - margin || camY > halfH + margin) continue;
 
                 clock_t t0 = clock();
-                COLORREF col = getBlockColor(blk.x, blk.y, blk.z, blk.w);
+                int bt = world.get(blk);
+                int topId = blockTexId(bt, 0);
+                int sideId = blockTexId(bt, 1);
+                int bottomId = blockTexId(bt, 2);
                 size_t before = allTris.size();
-                blockToTriangles(blk.x, blk.y, blk.z, blk.w, cam, plane, col, allTris);
+                blockToTriangles(blk.x, blk.y, blk.z, blk.w, cam, plane, topId, sideId, bottomId, allTris);
                 if (allTris.size() > before) ++m_diagGeom;
                 tBlock2Tri += clock() - t0;
             }
@@ -503,7 +526,8 @@ std::vector<IVec4> Renderer::collectVisibleBlocks(const World &world,
 
 void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
     const Camera4D &cam, const Plane2D &plane,
-    COLORREF color, std::vector<Tri3D> &outTris)
+    int topTexId, int sideTexId, int bottomTexId,
+    std::vector<Tri3D> &outTris)
 {
     const Vec4 &camPos = cam.getPos();
     double half = m_blockHalf;
@@ -516,7 +540,6 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
     double w0 = bw * sp - camPos.w - half;
     double w1 = bw * sp - camPos.w + half;
 
-    // 相机空间平面（过原点，offset=0）
     Plane2D camPlane = plane;
     camPlane.offset = 0.0;
 
@@ -530,27 +553,48 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
     const auto &pu = poly.u;
     const auto &pv = poly.v;
 
-    // 顶面和底面（不剔除）
+    // 计算多边形 UV 包围盒（用于顶/底面纹理映射）
+    double puMin = pu[0], puMax = pu[0], pvMin = pv[0], pvMax = pv[0];
+    for (int i = 1; i < n; ++i)
+    {
+        if (pu[i] < puMin) puMin = pu[i];
+        if (pu[i] > puMax) puMax = pu[i];
+        if (pv[i] < pvMin) pvMin = pv[i];
+        if (pv[i] > pvMax) pvMax = pv[i];
+    }
+    double puRange = puMax - puMin; if (puRange < 0.001) puRange = 0.001;
+    double pvRange = pvMax - pvMin; if (pvRange < 0.001) pvRange = 0.001;
+
+    // 顶面（yHigh）
     for (int i = 1; i < n - 1; ++i)
     {
-        {
-            Tri3D t;
-            t.u[0] = pu[0];     t.v[0] = pv[0];     t.y[0] = yHigh;
-            t.u[1] = pu[i];     t.v[1] = pv[i];     t.y[1] = yHigh;
-            t.u[2] = pu[i + 1]; t.v[2] = pv[i + 1]; t.y[2] = yHigh;
-            t.color = color;
-            t.depth = yHigh;
-            outTris.push_back(t);
-        }
-        {
-            Tri3D b;
-            b.u[0] = pu[0];     b.v[0] = pv[0];     b.y[0] = yLow;
-            b.u[2] = pu[i];     b.v[2] = pv[i];     b.y[2] = yLow;
-            b.u[1] = pu[i + 1]; b.v[1] = pv[i + 1]; b.y[1] = yLow;
-            b.color = color;
-            b.depth = yLow;
-            outTris.push_back(b);
-        }
+        Tri3D t;
+        t.u[0] = pu[0];     t.v[0] = pv[0];     t.y[0] = yHigh;
+        t.u[1] = pu[i];     t.v[1] = pv[i];     t.y[1] = yHigh;
+        t.u[2] = pu[i + 1]; t.v[2] = pv[i + 1]; t.y[2] = yHigh;
+        t.tu[0] = (pu[0] - puMin) / puRange;     t.tv[0] = (pv[0] - pvMin) / pvRange;
+        t.tu[1] = (pu[i] - puMin) / puRange;     t.tv[1] = (pv[i] - pvMin) / pvRange;
+        t.tu[2] = (pu[i + 1] - puMin) / puRange; t.tv[2] = (pv[i + 1] - pvMin) / pvRange;
+        t.color = RGB(128, 128, 128);
+        t.depth = yHigh;
+        t.texId = topTexId;
+        outTris.push_back(t);
+    }
+
+    // 底面（yLow）
+    for (int i = 1; i < n - 1; ++i)
+    {
+        Tri3D b;
+        b.u[0] = pu[0];     b.v[0] = pv[0];     b.y[0] = yLow;
+        b.u[2] = pu[i];     b.v[2] = pv[i];     b.y[2] = yLow;
+        b.u[1] = pu[i + 1]; b.v[1] = pv[i + 1]; b.y[1] = yLow;
+        b.tu[0] = (pu[0] - puMin) / puRange;     b.tv[0] = (pv[0] - pvMin) / pvRange;
+        b.tu[2] = (pu[i] - puMin) / puRange;     b.tv[2] = (pv[i] - pvMin) / pvRange;
+        b.tu[1] = (pu[i + 1] - puMin) / puRange; b.tv[1] = (pv[i + 1] - pvMin) / pvRange;
+        b.color = RGB(128, 128, 128);
+        b.depth = yLow;
+        b.texId = bottomTexId;
+        outTris.push_back(b);
     }
 
     // 侧面：n 条边，每条边 2 个三角形
@@ -562,16 +606,24 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
         t1.u[0] = pu[i]; t1.v[0] = pv[i]; t1.y[0] = yLow;
         t1.u[1] = pu[j]; t1.v[1] = pv[j]; t1.y[1] = yLow;
         t1.u[2] = pu[i]; t1.v[2] = pv[i]; t1.y[2] = yHigh;
-        t1.color = color;
+        t1.tu[0] = 0.0; t1.tv[0] = 1.0;
+        t1.tu[1] = 1.0; t1.tv[1] = 1.0;
+        t1.tu[2] = 0.0; t1.tv[2] = 0.0;
+        t1.color = RGB(128, 128, 128);
         t1.depth = (yLow + yHigh) * 0.5;
+        t1.texId = sideTexId;
         outTris.push_back(t1);
 
         Tri3D t2;
         t2.u[0] = pu[j]; t2.v[0] = pv[j]; t2.y[0] = yLow;
         t2.u[1] = pu[j]; t2.v[1] = pv[j]; t2.y[1] = yHigh;
         t2.u[2] = pu[i]; t2.v[2] = pv[i]; t2.y[2] = yHigh;
-        t2.color = color;
+        t2.tu[0] = 1.0; t2.tv[0] = 1.0;
+        t2.tu[1] = 1.0; t2.tv[1] = 0.0;
+        t2.tu[2] = 0.0; t2.tv[2] = 0.0;
+        t2.color = RGB(128, 128, 128);
         t2.depth = (yLow + yHigh) * 0.5;
+        t2.texId = sideTexId;
         outTris.push_back(t2);
     }
 }
@@ -611,6 +663,8 @@ void Renderer::rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d)
     int y0 = sy[idx[0]], y1 = sy[idx[1]], y2 = sy[idx[2]];
     int x0 = sx[idx[0]], x1 = sx[idx[1]], x2 = sx[idx[2]];
     double z0 = sz[idx[0]], z1 = sz[idx[1]], z2 = sz[idx[2]];
+    double tu0 = tri.tu[idx[0]], tu1 = tri.tu[idx[1]], tu2 = tri.tu[idx[2]];
+    double tv0 = tri.tv[idx[0]], tv1 = tri.tv[idx[1]], tv2 = tri.tv[idx[2]];
 
     if (y2 < 0 || y0 >= m_screenHeight) return;
     if (y0 == y2) return;
@@ -624,6 +678,10 @@ void Renderer::rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d)
         double dxR = static_cast<double>(x2 - x0) * invDyFull;
         double dzL = (z1 - z0) * invDyTop;
         double dzR = (z2 - z0) * invDyFull;
+        double dtuL = (tu1 - tu0) * invDyTop;
+        double dtuR = (tu2 - tu0) * invDyFull;
+        double dtvL = (tv1 - tv0) * invDyTop;
+        double dtvR = (tv2 - tv0) * invDyFull;
 
         int yStart = std::max(y0, 0);
         int yEnd = std::min(y1, m_screenHeight);
@@ -633,10 +691,11 @@ void Renderer::rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d)
             double t = static_cast<double>(y - y0);
             int xL = static_cast<int>(x0 + dxL * t);
             int xR = static_cast<int>(x0 + dxR * t);
-            double zL = z0 + dzL * t;
-            double zR = z0 + dzR * t;
-            if (xL > xR) { std::swap(xL, xR); std::swap(zL, zR); }
-            drawScanline(y, xL, xR, zL, zR, tri.color);
+            double zL = z0 + dzL * t, zR = z0 + dzR * t;
+            double tuL = tu0 + dtuL * t, tuR = tu0 + dtuR * t;
+            double tvL = tv0 + dtvL * t, tvR = tv0 + dtvR * t;
+            if (xL > xR) { std::swap(xL, xR); std::swap(zL, zR); std::swap(tuL, tuR); std::swap(tvL, tvR); }
+            drawScanline(y, xL, xR, zL, zR, tuL, tvL, tuR, tvR, tri.texId, tri.color);
         }
     }
 
@@ -649,6 +708,10 @@ void Renderer::rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d)
         double dxR = static_cast<double>(x2 - x1) * invDyBot;
         double dzL = (z2 - z0) * invDyFull;
         double dzR = (z2 - z1) * invDyBot;
+        double dtuL = (tu2 - tu0) * invDyFull;
+        double dtuR = (tu2 - tu1) * invDyBot;
+        double dtvL = (tv2 - tv0) * invDyFull;
+        double dtvR = (tv2 - tv1) * invDyBot;
 
         int yStart = std::max(y1, 0);
         int yEnd = std::min(y2, m_screenHeight);
@@ -659,16 +722,18 @@ void Renderer::rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d)
             double tBot = static_cast<double>(y - y1);
             int xL = static_cast<int>(x0 + dxL * tFull);
             int xR = static_cast<int>(x1 + dxR * tBot);
-            double zL = z0 + dzL * tFull;
-            double zR = z1 + dzR * tBot;
-            if (xL > xR) { std::swap(xL, xR); std::swap(zL, zR); }
-            drawScanline(y, xL, xR, zL, zR, tri.color);
+            double zL = z0 + dzL * tFull, zR = z1 + dzR * tBot;
+            double tuL = tu0 + dtuL * tFull, tuR = tu1 + dtuR * tBot;
+            double tvL = tv0 + dtvL * tFull, tvR = tv1 + dtvR * tBot;
+            if (xL > xR) { std::swap(xL, xR); std::swap(zL, zR); std::swap(tuL, tuR); std::swap(tvL, tvR); }
+            drawScanline(y, xL, xR, zL, zR, tuL, tvL, tuR, tvR, tri.texId, tri.color);
         }
     }
 }
 
 void Renderer::drawScanline(int y, int x0, int x1, double z0, double z1,
-    COLORREF color)
+    double tu0, double tv0, double tu1, double tv1,
+    int texId, COLORREF color)
 {
     if (y < 0 || y >= m_screenHeight) return;
 
@@ -679,17 +744,21 @@ void Renderer::drawScanline(int y, int x0, int x1, double z0, double z1,
     int rowBase = y * m_screenWidth;
     double invDx = 1.0 / static_cast<double>(x1 - x0);
     double dz = (z1 - z0) * invDx;
+    double dtu = (tu1 - tu0) * invDx;
+    double dtv = (tv1 - tv0) * invDx;
 
     for (int x = x0; x < x1; ++x)
     {
         double t = static_cast<double>(x - x0);
         double z = z0 + dz * t;
-
         int idx = rowBase + x;
         if (z < m_zbuf[idx])
         {
             m_zbuf[idx] = z;
-            m_pBits[idx] = color;
+            if (texId >= 0)
+                m_pBits[idx] = sampleTexture(texId, tu0 + dtu * t, tv0 + dtv * t);
+            else
+                m_pBits[idx] = color;
         }
     }
 }

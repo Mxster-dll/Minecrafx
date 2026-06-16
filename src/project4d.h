@@ -103,9 +103,11 @@ PolyOnPlane intersectCubePlane(
 /** @brief 3D 空间中的三角形面（用于最终渲染） */
 struct Tri3D
 {
-    double u[3], v[3], y[3];
-    COLORREF color;
+    double u[3], v[3], y[3];     // 3D 顶点坐标
+    double tu[3], tv[3];          // 纹理坐标 (0~1)
+    COLORREF color;               // 纯色后备（texId<0 时使用）
     double depth;
+    int texId;                    // 纹理 ID: 0~11, -1=纯色
 };
 
 // ============================================================================

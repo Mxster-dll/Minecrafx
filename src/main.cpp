@@ -16,6 +16,7 @@
 #include <imm.h>
 #include <cmath>
 #include <ctime>
+#include <cstdlib>
 
 #include "linalg.h"
 #include "world.h"
@@ -34,7 +35,7 @@ static COLORREF blockColor(int x, int y, int z, int w)
     int b = 60 + ((h >> 16) & 0xFF) % 156;
     return RGB(r, g, b);
 }
-#include "constant.h"
+
 int main()
 {
     initgraph(SCREEN_WIDTH, SCREEN_HEIGHT);
@@ -49,8 +50,10 @@ int main()
     Camera4D camera;
     Renderer renderer(SCREEN_WIDTH, SCREEN_HEIGHT);
 
-    // 放置一些初始方块用于测试
-    // ---- 随机生成山脉 ----
+    // ---- 加载方块贴图 ----
+    renderer.loadBlockTextures();
+
+    // ---- 4D 丘陵地貌 ----
     // 使用多层正弦波模拟自然地形
     auto terrainHeight = [](int x, int z, int w) -> int
     {
@@ -69,11 +72,51 @@ int main()
         for (int z = 0; z < MZ; ++z)
             for (int w = 0; w < MW; ++w)
             {
-                int h = terrainHeight(x, z, w);
-                if (h < 1) h = 1;
-                for (int y = 0; y < h; ++y)
-                    world.set(IVec4(x, y, z, w), 1);
+                int ht = terrainHeight(x, z, w);
+                if (ht < 1) ht = 1;
+                for (int y = 0; y < ht; ++y)
+                {
+                    int type = BLOCK_DIRT;
+                    if (y == ht - 1) type = BLOCK_GRASS;  // 表面草方块
+                    world.set(IVec4(x, y, z, w), type);
+                }
             }
+
+    // ---- 4D 树木 ----
+    srand(42);  // 固定种子保证可复现
+    for (int i = 0; i < 40; ++i)
+    {
+        int tx = rand() % (MX - 2) + 1;
+        int tz = rand() % (MZ - 2) + 1;
+        int tw = rand() % (MW - 2) + 1;
+        int groundY = terrainHeight(tx, tz, tw);
+        if (groundY < 2) continue;
+
+        // 树干：3~5 格高
+        int trunkH = 3 + rand() % 3;
+        for (int ty = groundY; ty < groundY + trunkH; ++ty)
+            world.set(IVec4(tx, ty, tz, tw), BLOCK_LOG);
+
+        // 树叶：在 x/z/w 三个方向围绕树冠展开
+        int leafBase = groundY + trunkH - 1;
+        for (int dx = -1; dx <= 1; ++dx)
+            for (int dz = -1; dz <= 1; ++dz)
+                for (int dw = -1; dw <= 1; ++dw)
+                {
+                    int lx = tx + dx, lz = tz + dz, lw = tw + dw;
+                    if (lx < 0 || lx >= MX || lz < 0 || lz >= MZ || lw < 0 || lw >= MW) continue;
+                    // 树干位置不替换
+                    if (dx == 0 && dz == 0 && dw == 0) continue;
+                    // 角落稀疏化
+                    int corner = (dx != 0) + (dz != 0) + (dw != 0);
+                    if (corner >= 2 && (rand() % 3) != 0) continue;
+                    for (int ly = leafBase; ly <= leafBase + 2; ++ly)
+                    {
+                        if (ly >= 20) continue;
+                        world.set(IVec4(lx, ly, lz, lw), BLOCK_LEAVES);
+                    }
+                }
+    }
 
     // 移动模式：飞行 / 行走
     bool flyMode = true;

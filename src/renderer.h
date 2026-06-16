@@ -34,8 +34,14 @@ public:
     /** @brief 绘制 HUD 信息 */
     void drawHUD(const Camera4D &cam);
 
-    /** @brief 从 assert/texture/grass_block/ 加载纹理颜色 */
-    void loadTextures(const wchar_t *basePath);
+    /** @brief 从 ../assert/texture/ 加载方块贴图（含像素数据） */
+    void loadBlockTextures();
+
+    /** @brief 由方块类型计算纹理 ID（face: 0=顶,1=侧,2=底） */
+    static int blockTexId(int blockType, int face);
+
+    /** @brief 采样纹理像素（texId 0~11） */
+    COLORREF sampleTexture(int texId, double tu, double tv) const;
 
     /** @brief 添加超方块（不展开，渲染时 16 分法遍历） */
     void addSuperBlock(const SuperBlock &sb)
@@ -76,9 +82,11 @@ private:
     double m_msBlock2Tri;
     double m_msRaster;
 
-    // ---- 纹理 ----
-    COLORREF m_tex[16][16][16][16];
-    bool m_texLoaded;
+    // ---- 方块贴图 ----
+    static constexpr int MAX_TEX = 12;
+    COLORREF m_texPixels[MAX_TEX][16][16];  // 像素数据（最多 16×16）
+    int m_texW[MAX_TEX], m_texH[MAX_TEX];
+    bool m_blockTexLoaded;
 
     // ---- 超方块 ----
     std::vector<SuperBlock> m_superBlocks;
@@ -89,9 +97,6 @@ private:
     /** @brief 清空帧缓冲 */
     void resetBuffers();
 
-    /** @brief 获取方块颜色 */
-    COLORREF getBlockColor(int x, int y, int z, int w) const;
-
     /**
      * @brief 收集所有需要渲染的可见方块
      * @return (bx, by, bz, bw) 列表
@@ -100,11 +105,12 @@ private:
         const Plane2D &plane, int &outPreOccl);
 
     /**
-     * @brief 4D→3D：单方块 → 三角形列表
+     * @brief 4D→3D：单方块 → 三角形列表（带纹理坐标）
      */
     void blockToTriangles(int bx, int by, int bz, int bw,
         const Camera4D &cam, const Plane2D &plane,
-        COLORREF color, std::vector<Tri3D> &outTris);
+        int topTexId, int sideTexId, int bottomTexId,
+        std::vector<Tri3D> &outTris);
 
     /**
      * @brief 3D→2D：光栅化所有三角形
@@ -115,6 +121,8 @@ private:
     /** @brief 光栅化单个三角形 */
     void rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d);
 
-    /** @brief 扫描线填充 */
-    void drawScanline(int y, int x0, int x1, double z0, double z1, COLORREF color);
+    /** @brief 扫描线填充（带纹理采样） */
+    void drawScanline(int y, int x0, int x1, double z0, double z1,
+        double tu0, double tv0, double tu1, double tv1,
+        int texId, COLORREF color);
 };
