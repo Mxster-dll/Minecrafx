@@ -65,6 +65,7 @@ int main()
         if (err == 0)
         {
             mciSendStringW(L"play bgm repeat", NULL, 0, NULL);
+            mciSendStringW(L"setaudio bgm volume to 100", NULL, 0, NULL);
         }
         else
         {
