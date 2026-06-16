@@ -294,14 +294,11 @@ void Renderer::drawCrosshair()
 {
     int cx = m_screenWidth / 2;
     int cy = m_screenHeight / 2;
-    int gap = 6;
-    int len = 10;
+    int len = 8;
 
     setlinecolor(RGB(255, 255, 255));
-    line(cx - len, cy, cx - gap, cy);
-    line(cx + gap, cy, cx + len, cy);
-    line(cx, cy - len, cx, cy - gap);
-    line(cx, cy + gap, cx, cy + len);
+    line(cx - len, cy, cx + len, cy);
+    line(cx, cy - len, cx, cy + len);
 }
 
 // ============================================================================
