@@ -17,6 +17,7 @@
 #include <cmath>
 #include <ctime>
 #include <cstdlib>
+#include <mmsystem.h>
 
 #include "linalg.h"
 #include "world.h"
@@ -43,6 +44,65 @@ int main()
 
     // 禁用输入法，防止 Shift 被系统拦截切换中英文
     ImmAssociateContext(hwnd, NULL);
+
+    // ---- BGM ----
+    {
+        // 获取 exe 所在目录，构建 mp3 绝对路径
+        wchar_t exePath[MAX_PATH], mp3Path[MAX_PATH];
+        GetModuleFileNameW(NULL, exePath, MAX_PATH);
+        wchar_t *lastSlash = wcsrchr(exePath, L'\\');
+        if (lastSlash) *lastSlash = L'\0';  // 去掉 exe 文件名
+        // 从 bin/ 回到项目根目录
+        wcscpy(mp3Path, exePath);
+        wcscat(mp3Path, L"\\..\\assert\\sounds\\方块的世界.mp3");
+        // 转换为绝对路径
+        wchar_t fullPath[MAX_PATH];
+        GetFullPathNameW(mp3Path, MAX_PATH, fullPath, NULL);
+
+        wchar_t cmd[512], errBuf[256];
+        swprintf(cmd, 512, L"open \"%ls\" alias bgm", fullPath);
+        MCIERROR err = mciSendStringW(cmd, NULL, 0, NULL);
+        if (err == 0)
+        {
+            mciSendStringW(L"play bgm repeat", NULL, 0, NULL);
+        }
+        else
+        {
+            mciGetErrorStringW(err, errBuf, 256);
+            MessageBoxW(NULL, errBuf, L"BGM 加载失败", MB_ICONWARNING);
+        }
+    }
+
+    // ---- 预计算音效路径 ----
+    wchar_t sfxDir[MAX_PATH];
+    {
+        wchar_t exePath[MAX_PATH];
+        GetModuleFileNameW(NULL, exePath, MAX_PATH);
+        wchar_t *lastSlash = wcsrchr(exePath, L'\\');
+        if (lastSlash) *lastSlash = L'\0';
+        wcscpy(sfxDir, exePath);
+        wcscat(sfxDir, L"\\..\\assert\\sounds\\");
+        wchar_t tmp[MAX_PATH];
+        GetFullPathNameW(sfxDir, MAX_PATH, tmp, NULL);
+        wcscpy(sfxDir, tmp);
+    }
+
+    wchar_t placePath[3][MAX_PATH], destroyPath[3][MAX_PATH];
+    for (int i = 0; i < 3; ++i)
+    {
+        swprintf(placePath[i], MAX_PATH, L"%lsplace%d.mp3", sfxDir, i + 1);
+        swprintf(destroyPath[i], MAX_PATH, L"%lsdestroy%d.mp3", sfxDir, i + 1);
+    }
+
+    // 音效播放：先关旧音效再开新的（异步，不阻塞游戏）
+    auto playSFX = [](const wchar_t *path)
+    {
+        mciSendStringW(L"close sfx", NULL, 0, NULL);
+        wchar_t cmd[512];
+        swprintf(cmd, 512, L"open \"%ls\" alias sfx", path);
+        mciSendStringW(cmd, NULL, 0, NULL);
+        mciSendStringW(L"play sfx", NULL, 0, NULL);
+    };
 
     BeginBatchDraw();
 
@@ -363,7 +423,14 @@ int main()
                     }
                     return false;
                 };
-                if (input.getMouseClick(0)) { if (raycast3D(hitPos, prevPos)) { world.set(hitPos, 0); changed = true; interactCooldown = 15; } }
+                if (input.getMouseClick(0))
+                {
+                    if (raycast3D(hitPos, prevPos))
+                    {
+                        world.set(hitPos, 0); changed = true; interactCooldown = 15;
+                        playSFX(destroyPath[rand() % 3]);
+                    }
+                }
                 if (input.getMouseClick(1))
                 {
                     if (raycast3D(hitPos, prevPos))
@@ -413,6 +480,7 @@ int main()
                         else
                         {
                             changed = true; interactCooldown = 15;
+                            playSFX(placePath[rand() % 3]);
                         }
                     }
                 }
@@ -443,5 +511,11 @@ int main()
     }
 
     EndBatchDraw();
+
+    // 停止并关闭 BGM / SFX
+    mciSendString(L"stop bgm", NULL, 0, NULL);
+    mciSendString(L"close bgm", NULL, 0, NULL);
+    mciSendString(L"close sfx", NULL, 0, NULL);
+
     closegraph();
 }
