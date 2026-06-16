@@ -156,6 +156,7 @@ PolyOnPlane intersectCubePlane(
 
     // 收集交点
     double uArr[12], vArr[12];
+    double oxArr[12], ozArr[12], owArr[12];
     int count = 0;
 
     for (int e = 0; e < 12; ++e)
@@ -202,6 +203,9 @@ PolyOnPlane intersectCubePlane(
         {
             uArr[count] = u;
             vArr[count] = v;
+            oxArr[count] = pt.x;
+            ozArr[count] = pt.z;
+            owArr[count] = pt.w;
             ++count;
         }
     }
@@ -226,10 +230,16 @@ PolyOnPlane intersectCubePlane(
     result.n = count;
     result.u.resize(count);
     result.v.resize(count);
+    result.ox.resize(count);
+    result.oz.resize(count);
+    result.ow.resize(count);
     for (int i = 0; i < count; ++i)
     {
         result.u[i] = uArr[idx[i]];
         result.v[i] = vArr[idx[i]];
+        result.ox[i] = oxArr[idx[i]];
+        result.oz[i] = ozArr[idx[i]];
+        result.ow[i] = owArr[idx[i]];
     }
 
     return result;

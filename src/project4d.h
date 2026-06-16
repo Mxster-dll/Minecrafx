@@ -80,6 +80,7 @@ struct PolyOnPlane
 {
     std::vector<double> u;  // 顶点 p-坐标
     std::vector<double> v;  // 顶点 q-坐标
+    std::vector<double> ox, oz, ow;  // 原始相机空间 xzw 坐标
     int n;                   // 顶点数 (3~6)
 
     PolyOnPlane() : n(0) {}

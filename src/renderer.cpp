@@ -552,29 +552,20 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
     int n = poly.n;
     const auto &pu = poly.u;
     const auto &pv = poly.v;
+    const auto &ox = poly.ox;
+    const auto &oz = poly.oz;
+    double invSp = 1.0 / sp;  // 1/方块边长
 
-    // 计算多边形 UV 包围盒（用于顶/底面纹理映射）
-    double puMin = pu[0], puMax = pu[0], pvMin = pv[0], pvMax = pv[0];
-    for (int i = 1; i < n; ++i)
-    {
-        if (pu[i] < puMin) puMin = pu[i];
-        if (pu[i] > puMax) puMax = pu[i];
-        if (pv[i] < pvMin) pvMin = pv[i];
-        if (pv[i] > pvMax) pvMax = pv[i];
-    }
-    double puRange = puMax - puMin; if (puRange < 0.001) puRange = 0.001;
-    double pvRange = pvMax - pvMin; if (pvRange < 0.001) pvRange = 0.001;
-
-    // 顶面（yHigh）
+    // 顶面（yHigh）—— UV 来自方块原始 (x,z) 坐标，与视角无关
     for (int i = 1; i < n - 1; ++i)
     {
         Tri3D t;
         t.u[0] = pu[0];     t.v[0] = pv[0];     t.y[0] = yHigh;
         t.u[1] = pu[i];     t.v[1] = pv[i];     t.y[1] = yHigh;
         t.u[2] = pu[i + 1]; t.v[2] = pv[i + 1]; t.y[2] = yHigh;
-        t.tu[0] = (pu[0] - puMin) / puRange;     t.tv[0] = (pv[0] - pvMin) / pvRange;
-        t.tu[1] = (pu[i] - puMin) / puRange;     t.tv[1] = (pv[i] - pvMin) / pvRange;
-        t.tu[2] = (pu[i + 1] - puMin) / puRange; t.tv[2] = (pv[i + 1] - pvMin) / pvRange;
+        t.tu[0] = (ox[0] - x0) * invSp;     t.tv[0] = (oz[0] - z0) * invSp;
+        t.tu[1] = (ox[i] - x0) * invSp;     t.tv[1] = (oz[i] - z0) * invSp;
+        t.tu[2] = (ox[i + 1] - x0) * invSp; t.tv[2] = (oz[i + 1] - z0) * invSp;
         t.color = RGB(128, 128, 128);
         t.depth = yHigh;
         t.texId = topTexId;
@@ -588,9 +579,9 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
         b.u[0] = pu[0];     b.v[0] = pv[0];     b.y[0] = yLow;
         b.u[2] = pu[i];     b.v[2] = pv[i];     b.y[2] = yLow;
         b.u[1] = pu[i + 1]; b.v[1] = pv[i + 1]; b.y[1] = yLow;
-        b.tu[0] = (pu[0] - puMin) / puRange;     b.tv[0] = (pv[0] - pvMin) / pvRange;
-        b.tu[2] = (pu[i] - puMin) / puRange;     b.tv[2] = (pv[i] - pvMin) / pvRange;
-        b.tu[1] = (pu[i + 1] - puMin) / puRange; b.tv[1] = (pv[i + 1] - pvMin) / pvRange;
+        b.tu[0] = (ox[0] - x0) * invSp;     b.tv[0] = (oz[0] - z0) * invSp;
+        b.tu[2] = (ox[i] - x0) * invSp;     b.tv[2] = (oz[i] - z0) * invSp;
+        b.tu[1] = (ox[i + 1] - x0) * invSp; b.tv[1] = (oz[i + 1] - z0) * invSp;
         b.color = RGB(128, 128, 128);
         b.depth = yLow;
         b.texId = bottomTexId;
@@ -663,8 +654,13 @@ void Renderer::rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d)
     int y0 = sy[idx[0]], y1 = sy[idx[1]], y2 = sy[idx[2]];
     int x0 = sx[idx[0]], x1 = sx[idx[1]], x2 = sx[idx[2]];
     double z0 = sz[idx[0]], z1 = sz[idx[1]], z2 = sz[idx[2]];
+
+    // 透视校正：插值 tu/z, tv/z, 1/z
     double tu0 = tri.tu[idx[0]], tu1 = tri.tu[idx[1]], tu2 = tri.tu[idx[2]];
     double tv0 = tri.tv[idx[0]], tv1 = tri.tv[idx[1]], tv2 = tri.tv[idx[2]];
+    double tuz0 = tu0 / z0, tuz1 = tu1 / z1, tuz2 = tu2 / z2;
+    double tvz0 = tv0 / z0, tvz1 = tv1 / z1, tvz2 = tv2 / z2;
+    double ooz0 = 1.0 / z0, ooz1 = 1.0 / z1, ooz2 = 1.0 / z2;
 
     if (y2 < 0 || y0 >= m_screenHeight) return;
     if (y0 == y2) return;
@@ -678,10 +674,9 @@ void Renderer::rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d)
         double dxR = static_cast<double>(x2 - x0) * invDyFull;
         double dzL = (z1 - z0) * invDyTop;
         double dzR = (z2 - z0) * invDyFull;
-        double dtuL = (tu1 - tu0) * invDyTop;
-        double dtuR = (tu2 - tu0) * invDyFull;
-        double dtvL = (tv1 - tv0) * invDyTop;
-        double dtvR = (tv2 - tv0) * invDyFull;
+        double dtuL = (tuz1 - tuz0) * invDyTop, dtuR = (tuz2 - tuz0) * invDyFull;
+        double dtvL = (tvz1 - tvz0) * invDyTop, dtvR = (tvz2 - tvz0) * invDyFull;
+        double doL = (ooz1 - ooz0) * invDyTop, doR = (ooz2 - ooz0) * invDyFull;
 
         int yStart = std::max(y0, 0);
         int yEnd = std::min(y1, m_screenHeight);
@@ -692,10 +687,11 @@ void Renderer::rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d)
             int xL = static_cast<int>(x0 + dxL * t);
             int xR = static_cast<int>(x0 + dxR * t);
             double zL = z0 + dzL * t, zR = z0 + dzR * t;
-            double tuL = tu0 + dtuL * t, tuR = tu0 + dtuR * t;
-            double tvL = tv0 + dtvL * t, tvR = tv0 + dtvR * t;
-            if (xL > xR) { std::swap(xL, xR); std::swap(zL, zR); std::swap(tuL, tuR); std::swap(tvL, tvR); }
-            drawScanline(y, xL, xR, zL, zR, tuL, tvL, tuR, tvR, tri.texId, tri.color);
+            double tuL = tuz0 + dtuL * t, tuR = tuz0 + dtuR * t;
+            double tvL = tvz0 + dtvL * t, tvR = tvz0 + dtvR * t;
+            double ooL = ooz0 + doL * t, ooR = ooz0 + doR * t;
+            if (xL > xR) { std::swap(xL, xR); std::swap(zL, zR); std::swap(tuL, tuR); std::swap(tvL, tvR); std::swap(ooL, ooR); }
+            drawScanline(y, xL, xR, zL, zR, tuL, tvL, ooL, tuR, tvR, ooR, tri.texId, tri.color);
         }
     }
 
@@ -708,10 +704,9 @@ void Renderer::rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d)
         double dxR = static_cast<double>(x2 - x1) * invDyBot;
         double dzL = (z2 - z0) * invDyFull;
         double dzR = (z2 - z1) * invDyBot;
-        double dtuL = (tu2 - tu0) * invDyFull;
-        double dtuR = (tu2 - tu1) * invDyBot;
-        double dtvL = (tv2 - tv0) * invDyFull;
-        double dtvR = (tv2 - tv1) * invDyBot;
+        double dtuL = (tuz2 - tuz0) * invDyFull, dtuR = (tuz2 - tuz1) * invDyBot;
+        double dtvL = (tvz2 - tvz0) * invDyFull, dtvR = (tvz2 - tvz1) * invDyBot;
+        double doL = (ooz2 - ooz0) * invDyFull, doR = (ooz2 - ooz1) * invDyBot;
 
         int yStart = std::max(y1, 0);
         int yEnd = std::min(y2, m_screenHeight);
@@ -723,16 +718,17 @@ void Renderer::rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d)
             int xL = static_cast<int>(x0 + dxL * tFull);
             int xR = static_cast<int>(x1 + dxR * tBot);
             double zL = z0 + dzL * tFull, zR = z1 + dzR * tBot;
-            double tuL = tu0 + dtuL * tFull, tuR = tu1 + dtuR * tBot;
-            double tvL = tv0 + dtvL * tFull, tvR = tv1 + dtvR * tBot;
-            if (xL > xR) { std::swap(xL, xR); std::swap(zL, zR); std::swap(tuL, tuR); std::swap(tvL, tvR); }
-            drawScanline(y, xL, xR, zL, zR, tuL, tvL, tuR, tvR, tri.texId, tri.color);
+            double tuL = tuz0 + dtuL * tFull, tuR = tuz1 + dtuR * tBot;
+            double tvL = tvz0 + dtvL * tFull, tvR = tvz1 + dtvR * tBot;
+            double ooL = ooz0 + doL * tFull, ooR = ooz1 + doR * tBot;
+            if (xL > xR) { std::swap(xL, xR); std::swap(zL, zR); std::swap(tuL, tuR); std::swap(tvL, tvR); std::swap(ooL, ooR); }
+            drawScanline(y, xL, xR, zL, zR, tuL, tvL, ooL, tuR, tvR, ooR, tri.texId, tri.color);
         }
     }
 }
 
 void Renderer::drawScanline(int y, int x0, int x1, double z0, double z1,
-    double tu0, double tv0, double tu1, double tv1,
+    double tu0, double tv0, double ooz0, double tu1, double tv1, double ooz1,
     int texId, COLORREF color)
 {
     if (y < 0 || y >= m_screenHeight) return;
@@ -746,6 +742,7 @@ void Renderer::drawScanline(int y, int x0, int x1, double z0, double z1,
     double dz = (z1 - z0) * invDx;
     double dtu = (tu1 - tu0) * invDx;
     double dtv = (tv1 - tv0) * invDx;
+    double doo = (ooz1 - ooz0) * invDx;
 
     for (int x = x0; x < x1; ++x)
     {
@@ -756,7 +753,12 @@ void Renderer::drawScanline(int y, int x0, int x1, double z0, double z1,
         {
             m_zbuf[idx] = z;
             if (texId >= 0)
-                m_pBits[idx] = sampleTexture(texId, tu0 + dtu * t, tv0 + dtv * t);
+            {
+                double oo = ooz0 + doo * t;
+                double tu = (tu0 + dtu * t) / oo;
+                double tv = (tv0 + dtv * t) / oo;
+                m_pBits[idx] = sampleTexture(texId, tu, tv);
+            }
             else
                 m_pBits[idx] = color;
         }

@@ -121,8 +121,9 @@ private:
     /** @brief 光栅化单个三角形 */
     void rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d);
 
-    /** @brief 扫描线填充（带纹理采样） */
+    /** @brief 扫描线填充（透视校正纹理） */
     void drawScanline(int y, int x0, int x1, double z0, double z1,
-        double tu0, double tv0, double tu1, double tv1,
+        double tuz0, double tvz0, double ooz0,
+        double tuz1, double tvz1, double ooz1,
         int texId, COLORREF color);
 };
