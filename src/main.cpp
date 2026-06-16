@@ -380,6 +380,7 @@ int main()
             auto [dx, dy] = input.getMouseDelta();
             if (dx != 0) { cam3Yaw += dx * MOUSE_SENSITIVITY; camera.rotateAroundUp(dx * MOUSE_SENSITIVITY); }
             if (dy != 0) { cam3Pitch -= dy * MOUSE_SENSITIVITY; camera.addPitch(-dy * MOUSE_SENSITIVITY); }
+            cam3Pitch = camera.getPitch();  // 同步（摄像机内部有钳制）
         }
 
         // ---- Q/E/滚轮：重建地图 ----
@@ -419,9 +420,10 @@ int main()
             else
             {
                 Plane2D pl = map3D.plane;
-                double du = std::sin(cam3Yaw) * std::cos(cam3Pitch);
-                double dv = std::cos(cam3Yaw) * std::cos(cam3Pitch);
-                double dys = std::sin(cam3Pitch);
+                double cp = camera.getPitch();  // 用摄像机实际 pitch，避免与 cam3Pitch 不同步
+                double du = std::sin(cam3Yaw) * std::cos(cp);
+                double dv = std::cos(cam3Yaw) * std::cos(cp);
+                double dys = std::sin(cp);
                 Vec4 rayDir(du * pl.p.x + dv * pl.q.x, dys, du * pl.p.z + dv * pl.q.z, du * pl.p.w + dv * pl.q.w);
                 double rLen = vec4Length(rayDir); if (rLen > 1e-9) rayDir = vec4Scale(rayDir, 1.0 / rLen);
                 auto raycast3D = [&](IVec4 &hit, IVec4 &prev) -> bool

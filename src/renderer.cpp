@@ -733,8 +733,27 @@ void Renderer::drawScanline(int y, int x0, int x1, double z0, double z1,
 {
     if (y < 0 || y >= m_screenHeight) return;
 
-    if (x0 < 0) x0 = 0;
-    if (x1 > m_screenWidth) x1 = m_screenWidth;
+    // 裁剪到屏幕边界，同时修正插值参数
+    if (x0 < 0)
+    {
+        int origX1 = x1; if (origX1 <= x0) return;
+        double t = (0.0 - x0) / (double) (origX1 - x0);
+        z0 += (z1 - z0) * t;
+        tu0 += (tu1 - tu0) * t;
+        tv0 += (tv1 - tv0) * t;
+        ooz0 += (ooz1 - ooz0) * t;
+        x0 = 0;
+    }
+    if (x1 > m_screenWidth)
+    {
+        int origX0 = x0; if (x1 <= origX0) return;
+        double t = (double) (m_screenWidth - origX0) / (double) (x1 - origX0);
+        z1 = z0 + (z1 - z0) * t;
+        tu1 = tu0 + (tu1 - tu0) * t;
+        tv1 = tv0 + (tv1 - tv0) * t;
+        ooz1 = ooz0 + (ooz1 - ooz0) * t;
+        x1 = m_screenWidth;
+    }
     if (x0 >= x1) return;
 
     int rowBase = y * m_screenWidth;
