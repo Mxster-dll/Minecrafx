@@ -104,7 +104,8 @@ private:
     int m_hotbarBlockTypes[HOTBAR_SLOTS];
     std::vector<COLORREF> m_hotbarBg;             // 热键栏背景像素（堆分配）
     int m_hbBgW = 0, m_hbBgH = 0;                  // 背景原始宽高
-    std::vector<COLORREF> m_hotbarIcons[HOTBAR_SLOTS]; // 图标（堆分配，32x32）
+    std::vector<COLORREF> m_hotbarIcons[HOTBAR_SLOTS]; // 32x32 快捷栏图标
+    std::vector<COLORREF> m_hotbarIconsBig[HOTBAR_SLOTS]; // 64x64 右下角大图标
     bool m_hotbarLoaded = false;
 
     // ---- 超方块 ----

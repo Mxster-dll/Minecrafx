@@ -152,6 +152,15 @@ COLORREF Renderer::sampleTexture(int texId, double tu, double tv) const
 // ============================================================================
 
 static const wchar_t *kHotbarIcons[6] = {
+    L"../assert/gui/grass_block_32x32.png",
+    L"../assert/gui/dirt_32x32.png",
+    L"../assert/gui/oak_log_32x32.png",
+    L"../assert/gui/oak_leaves_32x32.png",
+    L"../assert/gui/stone_32x32.png",
+    L"../assert/gui/oak_planks_32x32.png"
+};
+
+static const wchar_t *kBigIconPaths[6] = {
     L"../assert/gui/grass_block.png",
     L"../assert/gui/dirt.png",
     L"../assert/gui/oak_log.png",
@@ -179,19 +188,35 @@ void Renderer::loadHotbar()
             bgOk = true;
         }
     }
-    // 加载方块图标（EasyX 自动缩放至 32x32）
+    // 加载快捷栏图标（_32x32 预缩放文件）
     for (int i = 0; i < HOTBAR_SLOTS; ++i)
     {
         IMAGE img;
-        loadimage(&img, kHotbarIcons[i], HB_ICON_SIZE, HB_ICON_SIZE);
+        loadimage(&img, kHotbarIcons[i]);
         DWORD *buf = GetImageBuffer(&img);
         int srcW = img.getwidth();
-        if (buf && srcW > 0 && srcW <= HB_ICON_SIZE * 2)
+        if (buf && srcW > 0)
         {
             m_hotbarIcons[i].resize(HB_ICON_SIZE * HB_ICON_SIZE);
             for (int y = 0; y < HB_ICON_SIZE; ++y)
                 for (int x = 0; x < HB_ICON_SIZE; ++x)
                     m_hotbarIcons[i][y * HB_ICON_SIZE + x] = buf[y * srcW + x];
+        }
+    }
+    // 加载右下角大图标（原图 loadimage 缩放至 64x64）
+    const int BIG = HB_ICON_SIZE * 2;
+    for (int i = 0; i < HOTBAR_SLOTS; ++i)
+    {
+        IMAGE img;
+        loadimage(&img, kBigIconPaths[i], BIG, BIG);
+        DWORD *buf = GetImageBuffer(&img);
+        int srcW = img.getwidth();
+        if (buf && srcW > 0)
+        {
+            m_hotbarIconsBig[i].resize(BIG * BIG);
+            for (int y = 0; y < BIG; ++y)
+                for (int x = 0; x < BIG; ++x)
+                    m_hotbarIconsBig[i][y * BIG + x] = buf[y * srcW + x];
         }
     }
     m_hotbarBlockTypes[0] = BLOCK_GRASS;
@@ -231,7 +256,7 @@ void Renderer::drawHotbar(int selectedSlot)
         }
     }
 
-    // 绘制每个槽位的图标（按比例居中，适配热键栏背景的槽位）
+    // 绘制每个槽位的图标
     for (int slot = 0; slot < HOTBAR_SLOTS; ++slot)
     {
         if (m_hotbarIcons[slot].empty()) continue;
@@ -251,13 +276,24 @@ void Renderer::drawHotbar(int selectedSlot)
                     m_pBits[py * m_screenWidth + px] = c;
             }
         }
-        // 选中高亮（按比例计算槽位边界）
-        if (slot == selectedSlot)
+    }
+
+    // 右下角显示当前选中方块（64x64，loadimage 缩放）
+    if (!m_hotbarIconsBig[selectedSlot].empty())
+    {
+        const int BIG = HB_ICON_SIZE * 2;
+        int bx = m_screenWidth - BIG - 8;
+        int by = m_screenHeight - BIG - 8;
+        for (int dy = 0; dy < BIG; ++dy)
         {
-            int slX = hbX + hbW * slot / HOTBAR_SLOTS;
-            int srX = hbX + hbW * (slot + 1) / HOTBAR_SLOTS;
-            setlinecolor(RGB(255, 255, 255));
-            rectangle(slX + 2, hbY + 2, srX - 2, hbY + hbH - 2);
+            for (int dx = 0; dx < BIG; ++dx)
+            {
+                COLORREF c = m_hotbarIconsBig[selectedSlot][dy * BIG + dx];
+                if (c == 0) continue;
+                int px = bx + dx, py = by + dy;
+                if (px >= 0 && px < m_screenWidth && py >= 0 && py < m_screenHeight)
+                    m_pBits[py * m_screenWidth + px] = c;
+            }
         }
     }
 
