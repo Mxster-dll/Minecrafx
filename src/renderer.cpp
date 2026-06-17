@@ -107,16 +107,24 @@ void Renderer::loadBlockTextures()
     loadTexPixels(L"../assert/texture/oak_log_side.png", m_texPixels[7], tw, th); m_texW[7] = tw; m_texH[7] = th;
     loadTexPixels(L"../assert/texture/oak_log_bottom.png", m_texPixels[8], tw, th); m_texW[8] = tw; m_texH[8] = th;
     // 树叶
-    loadTexPixels(L"../assert/texture/oak_leaves_top.png", m_texPixels[9], tw, th); m_texW[9] = tw;  m_texH[9] = th;
+    loadTexPixels(L"../assert/texture/oak_leaves_top.png", m_texPixels[9], tw, th); m_texW[9] = tw; m_texH[9] = th;
     loadTexPixels(L"../assert/texture/oak_leaves_side.png", m_texPixels[10], tw, th); m_texW[10] = tw; m_texH[10] = th;
     loadTexPixels(L"../assert/texture/oak_leaves_bottom.png", m_texPixels[11], tw, th); m_texW[11] = tw; m_texH[11] = th;
+    // 石头
+    loadTexPixels(L"../assert/texture/stone_top.png", m_texPixels[12], tw, th); m_texW[12] = tw; m_texH[12] = th;
+    loadTexPixels(L"../assert/texture/stone_side.png", m_texPixels[13], tw, th); m_texW[13] = tw; m_texH[13] = th;
+    loadTexPixels(L"../assert/texture/stone_bottom.png", m_texPixels[14], tw, th); m_texW[14] = tw; m_texH[14] = th;
+    // 木板
+    loadTexPixels(L"../assert/texture/oak_planks_top.png", m_texPixels[15], tw, th); m_texW[15] = tw; m_texH[15] = th;
+    loadTexPixels(L"../assert/texture/oak_planks_side.png", m_texPixels[16], tw, th); m_texW[16] = tw; m_texH[16] = th;
+    loadTexPixels(L"../assert/texture/oak_planks_bottom.png", m_texPixels[17], tw, th); m_texW[17] = tw; m_texH[17] = th;
 
     m_blockTexLoaded = true;
 }
 
 int Renderer::blockTexId(int blockType, int face)
 {
-    if (blockType <= 0 || blockType >= 8) return -1;
+    if (blockType <= 0 || blockType > 6) return -1;
     return (blockType - 1) * 3 + face;  // face: 0=顶,1=侧,2=底
 }
 
@@ -143,11 +151,13 @@ COLORREF Renderer::sampleTexture(int texId, double tu, double tv) const
 // 热键栏
 // ============================================================================
 
-static const wchar_t *kHotbarIcons[4] = {
+static const wchar_t *kHotbarIcons[6] = {
     L"../assert/gui/grass_block.png",
     L"../assert/gui/dirt.png",
     L"../assert/gui/oak_log.png",
-    L"../assert/gui/oak_leaves.png"
+    L"../assert/gui/oak_leaves.png",
+    L"../assert/gui/stone.png",
+    L"../assert/gui/oak_planks.png"
 };
 
 void Renderer::loadHotbar()
@@ -188,6 +198,8 @@ void Renderer::loadHotbar()
     m_hotbarBlockTypes[1] = BLOCK_DIRT;
     m_hotbarBlockTypes[2] = BLOCK_LOG;
     m_hotbarBlockTypes[3] = BLOCK_LEAVES;
+    m_hotbarBlockTypes[4] = BLOCK_STONE;
+    m_hotbarBlockTypes[5] = BLOCK_PLANKS;
     m_hotbarLoaded = bgOk;  // 仅背景加载成功才允许绘制
 }
 

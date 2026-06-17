@@ -15,6 +15,8 @@ enum BlockType : int
     BLOCK_DIRT = 2,
     BLOCK_LOG = 3,
     BLOCK_LEAVES = 4,
+    BLOCK_STONE = 5,
+    BLOCK_PLANKS = 6,
 };
 
 // 碰撞常量

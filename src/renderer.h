@@ -92,13 +92,13 @@ private:
     double m_msRaster;
 
     // ---- 方块贴图 ----
-    static constexpr int MAX_TEX = 12;
+    static constexpr int MAX_TEX = 18;
     COLORREF m_texPixels[MAX_TEX][16][16];  // 像素数据（最多 16×16）
     int m_texW[MAX_TEX], m_texH[MAX_TEX];
     bool m_blockTexLoaded;
 
     // ---- 热键栏 ----
-    static constexpr int HOTBAR_SLOTS = 4;
+    static constexpr int HOTBAR_SLOTS = 6;
     static constexpr int HB_ICON_SIZE = 32;      // 图标显示大小
     static constexpr int HB_HEIGHT = 44;          // 热键栏显示高度
     int m_hotbarBlockTypes[HOTBAR_SLOTS];

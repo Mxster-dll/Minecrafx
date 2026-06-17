@@ -390,6 +390,8 @@ int main()
         if (input.isPressed(Key::Num2)) selectedSlot = 1;
         if (input.isPressed(Key::Num3)) selectedSlot = 2;
         if (input.isPressed(Key::Num4)) selectedSlot = 3;
+        if (input.isPressed(Key::Num5)) selectedSlot = 4;
+        if (input.isPressed(Key::Num6)) selectedSlot = 5;
 
         // ---- Q/E/滚轮：重建地图 ----
         {
