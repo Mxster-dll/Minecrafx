@@ -227,12 +227,12 @@ int main()
     // ---- 预加载 GUI 图片 ----
     IMAGE imgInventory, imgButton, imgButtonHover, imgButtonActive;
     // 先获取原图尺寸，再用 loadimage 自带缩放加载为 2 倍
-    loadimage(&imgInventory, L"../assert/gui/inventory.png");
+    loadimage(&imgInventory, L"../assert/gui/widget/inventory.png");
     int invW = imgInventory.getwidth(), invH = imgInventory.getheight();
-    loadimage(&imgInventory, L"../assert/gui/inventory.png", invW * 2, invH * 2, true);
-    loadimage(&imgButton, L"../assert/gui/button.png");
-    loadimage(&imgButtonHover, L"../assert/gui/button_hover.png");
-    loadimage(&imgButtonActive, L"../assert/gui/button_active.png");
+    loadimage(&imgInventory, L"../assert/gui/widget/inventory.png", invW * 2, invH * 2, true);
+    loadimage(&imgButton, L"../assert/gui/widget/button.png");
+    loadimage(&imgButtonHover, L"../assert/gui/widget/button_hover.png");
+    loadimage(&imgButtonActive, L"../assert/gui/widget/button_active.png");
 
     // ---- 游戏状态 ----
     GameState state = GameState::Gameplay;

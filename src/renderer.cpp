@@ -152,21 +152,21 @@ COLORREF Renderer::sampleTexture(int texId, double tu, double tv) const
 // ============================================================================
 
 static const wchar_t *kHotbarIcons[6] = {
-    L"../assert/gui/grass_block_32x32.png",
-    L"../assert/gui/dirt_32x32.png",
-    L"../assert/gui/oak_log_32x32.png",
-    L"../assert/gui/oak_leaves_32x32.png",
-    L"../assert/gui/stone_32x32.png",
-    L"../assert/gui/oak_planks_32x32.png"
+    L"../assert/gui/item/grass_block.png",
+    L"../assert/gui/item/dirt.png",
+    L"../assert/gui/item/oak_log.png",
+    L"../assert/gui/item/oak_leaves.png",
+    L"../assert/gui/item/stone.png",
+    L"../assert/gui/item/oak_planks.png"
 };
 
 static const wchar_t *kBigIconPaths[6] = {
-    L"../assert/gui/grass_block.png",
-    L"../assert/gui/dirt.png",
-    L"../assert/gui/oak_log.png",
-    L"../assert/gui/oak_leaves.png",
-    L"../assert/gui/stone.png",
-    L"../assert/gui/oak_planks.png"
+    L"../assert/gui/block/grass_block.png",
+    L"../assert/gui/block/dirt.png",
+    L"../assert/gui/block/oak_log.png",
+    L"../assert/gui/block/oak_leaves.png",
+    L"../assert/gui/block/stone.png",
+    L"../assert/gui/block/oak_planks.png"
 };
 
 void Renderer::loadHotbar()
@@ -192,7 +192,7 @@ void Renderer::loadHotbar()
     for (int i = 0; i < HOTBAR_SLOTS; ++i)
     {
         IMAGE img;
-        loadimage(&img, kHotbarIcons[i]);
+        loadimage(&img, kHotbarIcons[i], 32, 32);
         DWORD *buf = GetImageBuffer(&img);
         int srcW = img.getwidth();
         if (buf && srcW > 0)
