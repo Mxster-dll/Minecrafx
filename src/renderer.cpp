@@ -56,6 +56,7 @@ Renderer::Renderer(int screenWidth, int screenHeight)
     , m_diagOccl(0)
     , m_diagGeom(0)
     , m_diagFaces(0)
+    , m_diagFaceCull(0)
     , m_msCollect(0.0)
     , m_msFrustum(0.0)
     , m_msBlock2Tri(0.0)
@@ -463,6 +464,7 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
     m_diagOccl = 0;
     m_diagGeom = 0;
     m_diagFaces = 0;
+    m_diagFaceCull = 0;
 
     // 4. 收集可见方块（含统计）
     clock_t t0 = clock();
@@ -535,7 +537,7 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
                 int sideId = blockTexId(bt, 1);
                 int bottomId = blockTexId(bt, 2);
                 size_t before = allTris.size();
-                blockToTriangles(blk.x, blk.y, blk.z, blk.w, cam, plane, topId, sideId, bottomId, allTris);
+                blockToTriangles(blk.x, blk.y, blk.z, blk.w, cam, plane, topId, sideId, bottomId, allTris, world);
                 if (allTris.size() > before) ++m_diagGeom;
                 tBlock2Tri += clock() - t0;
             }
@@ -721,6 +723,8 @@ void Renderer::drawHUD(const Camera4D &cam)
         TextOutW(hdc, m_screenWidth - 200, 84, buf, (int) wcslen(buf));
         swprintf(buf, 256, L"渲染面数: %d", m_diagFaces);
         TextOutW(hdc, m_screenWidth - 200, 102, buf, (int) wcslen(buf));
+        swprintf(buf, 256, L"面剔除: %d", m_diagFaceCull);
+        TextOutW(hdc, m_screenWidth - 200, 120, buf, (int) wcslen(buf));
 
         settextcolor(RGB(180, 220, 255));
         swprintf(buf, 256, L"收集: %.1fms", m_msCollect);
@@ -915,7 +919,8 @@ void Renderer::drawOutlineEdge3D(double u0, double v0, double y0,
 void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
     const Camera4D &cam, const Plane2D &plane,
     int topTexId, int sideTexId, int bottomTexId,
-    std::vector<Tri3D> &outTris)
+    std::vector<Tri3D> &outTris,
+    const World &world)
 {
     const Vec4 &camPos = cam.getPos();
     double half = m_blockHalf;
@@ -937,6 +942,12 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
     double yLow = by * sp - camPos.y - half;
     double yHigh = by * sp - camPos.y + half;
 
+    // ±Y 面剔除：相邻方块存在则跳过该面
+    bool cullTop = world.get(IVec4(bx, by + 1, bz, bw)) != 0;
+    bool cullBottom = world.get(IVec4(bx, by - 1, bz, bw)) != 0;
+    if (cullTop) ++m_diagFaceCull;
+    if (cullBottom) ++m_diagFaceCull;
+
     int n = poly.n;
     const auto &pu = poly.u;
     const auto &pv = poly.v;
@@ -945,35 +956,41 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
     double invSp = 1.0 / sp;  // 1/方块边长
 
     // 顶面（yHigh）—— UV 来自方块原始 (x,z) 坐标，与视角无关
-    for (int i = 1; i < n - 1; ++i)
+    if (!cullTop)
     {
-        Tri3D t;
-        t.u[0] = pu[0];     t.v[0] = pv[0];     t.y[0] = yHigh;
-        t.u[1] = pu[i];     t.v[1] = pv[i];     t.y[1] = yHigh;
-        t.u[2] = pu[i + 1]; t.v[2] = pv[i + 1]; t.y[2] = yHigh;
-        t.tu[0] = (ox[0] - x0) * invSp;     t.tv[0] = (oz[0] - z0) * invSp;
-        t.tu[1] = (ox[i] - x0) * invSp;     t.tv[1] = (oz[i] - z0) * invSp;
-        t.tu[2] = (ox[i + 1] - x0) * invSp; t.tv[2] = (oz[i + 1] - z0) * invSp;
-        t.color = RGB(128, 128, 128);
-        t.depth = yHigh;
-        t.texId = topTexId;
-        outTris.push_back(t);
+        for (int i = 1; i < n - 1; ++i)
+        {
+            Tri3D t;
+            t.u[0] = pu[0];     t.v[0] = pv[0];     t.y[0] = yHigh;
+            t.u[1] = pu[i];     t.v[1] = pv[i];     t.y[1] = yHigh;
+            t.u[2] = pu[i + 1]; t.v[2] = pv[i + 1]; t.y[2] = yHigh;
+            t.tu[0] = (ox[0] - x0) * invSp;     t.tv[0] = (oz[0] - z0) * invSp;
+            t.tu[1] = (ox[i] - x0) * invSp;     t.tv[1] = (oz[i] - z0) * invSp;
+            t.tu[2] = (ox[i + 1] - x0) * invSp; t.tv[2] = (oz[i + 1] - z0) * invSp;
+            t.color = RGB(128, 128, 128);
+            t.depth = yHigh;
+            t.texId = topTexId;
+            outTris.push_back(t);
+        }
     }
 
     // 底面（yLow）
-    for (int i = 1; i < n - 1; ++i)
+    if (!cullBottom)
     {
-        Tri3D b;
-        b.u[0] = pu[0];     b.v[0] = pv[0];     b.y[0] = yLow;
-        b.u[2] = pu[i];     b.v[2] = pv[i];     b.y[2] = yLow;
-        b.u[1] = pu[i + 1]; b.v[1] = pv[i + 1]; b.y[1] = yLow;
-        b.tu[0] = (ox[0] - x0) * invSp;     b.tv[0] = (oz[0] - z0) * invSp;
-        b.tu[2] = (ox[i] - x0) * invSp;     b.tv[2] = (oz[i] - z0) * invSp;
-        b.tu[1] = (ox[i + 1] - x0) * invSp; b.tv[1] = (oz[i + 1] - z0) * invSp;
-        b.color = RGB(128, 128, 128);
-        b.depth = yLow;
-        b.texId = bottomTexId;
-        outTris.push_back(b);
+        for (int i = 1; i < n - 1; ++i)
+        {
+            Tri3D b;
+            b.u[0] = pu[0];     b.v[0] = pv[0];     b.y[0] = yLow;
+            b.u[2] = pu[i];     b.v[2] = pv[i];     b.y[2] = yLow;
+            b.u[1] = pu[i + 1]; b.v[1] = pv[i + 1]; b.y[1] = yLow;
+            b.tu[0] = (ox[0] - x0) * invSp;     b.tv[0] = (oz[0] - z0) * invSp;
+            b.tu[2] = (ox[i] - x0) * invSp;     b.tv[2] = (oz[i] - z0) * invSp;
+            b.tu[1] = (ox[i + 1] - x0) * invSp; b.tv[1] = (oz[i + 1] - z0) * invSp;
+            b.color = RGB(128, 128, 128);
+            b.depth = yLow;
+            b.texId = bottomTexId;
+            outTris.push_back(b);
+        }
     }
 
     // 侧面：n 条边，每条边 2 个三角形

@@ -134,6 +134,7 @@ private:
     int m_diagOccl;
     int m_diagGeom;
     int m_diagFaces;
+    int m_diagFaceCull;  // 面剔除跳过的面数
     double m_msCollect;
     double m_msFrustum;
     double m_msBlock2Tri;
@@ -193,12 +194,13 @@ private:
         const Plane2D &plane, int &outPreOccl);
 
     /**
-     * @brief 4D→3D：单方块 → 三角形列表（带纹理坐标）
+     * @brief 4D→3D：单方块 → 三角形列表（带纹理坐标，含面剔除）
      */
     void blockToTriangles(int bx, int by, int bz, int bw,
         const Camera4D &cam, const Plane2D &plane,
         int topTexId, int sideTexId, int bottomTexId,
-        std::vector<Tri3D> &outTris);
+        std::vector<Tri3D> &outTris,
+        const World &world);
 
     /**
      * @brief 3D→2D：光栅化所有三角形
