@@ -522,33 +522,38 @@ int main()
         }
 
 
-        // 鼠标按键行为（3D 视线射线，带冷却防止连点）
+        // ---- 视线射线（每帧计算，用于方块边框 + 鼠标交互） ----
+        IVec4 targetedBlock, targetedPrev;
+        bool hasTarget = false;
         {
+            Plane2D pl = map3D.plane;
+            double cp = camera.getPitch();
+            double du = std::sin(cam3Yaw) * std::cos(cp);
+            double dv = std::cos(cam3Yaw) * std::cos(cp);
+            double dys = std::sin(cp);
+            Vec4 rayDir(du * pl.p.x + dv * pl.q.x, dys, du * pl.p.z + dv * pl.q.z, du * pl.p.w + dv * pl.q.w);
+            double rLen = vec4Length(rayDir); if (rLen > 1e-9) rayDir = vec4Scale(rayDir, 1.0 / rLen);
+            auto raycast3D = [&](IVec4 &hit, IVec4 &prev) -> bool
+            {
+                Vec4 pos = camera.getPos();
+                IVec4 pg((int) std::round(pos.x), (int) std::round(pos.y), (int) std::round(pos.z), (int) std::round(pos.w));
+                for (double t = 0.2; t <= 6.0; t += 0.2)
+                {
+                    Vec4 s = vec4Add(pos, vec4Scale(rayDir, t));
+                    IVec4 g((int) std::round(s.x), (int) std::round(s.y), (int) std::round(s.z), (int) std::round(s.w));
+                    if (g.x == pg.x && g.y == pg.y && g.z == pg.z && g.w == pg.w) continue;
+                    if (world.get(g)) { hit = g; prev = pg; return true; } pg = g;
+                }
+                return false;
+            };
+            hasTarget = raycast3D(targetedBlock, targetedPrev);
+
+            // 鼠标按键行为（带冷却防止连点）
             IVec4 hitPos, prevPos;
             bool changed = false;
             if (interactCooldown > 0) --interactCooldown;
             else
             {
-                Plane2D pl = map3D.plane;
-                double cp = camera.getPitch();  // 用摄像机实际 pitch，避免与 cam3Pitch 不同步
-                double du = std::sin(cam3Yaw) * std::cos(cp);
-                double dv = std::cos(cam3Yaw) * std::cos(cp);
-                double dys = std::sin(cp);
-                Vec4 rayDir(du * pl.p.x + dv * pl.q.x, dys, du * pl.p.z + dv * pl.q.z, du * pl.p.w + dv * pl.q.w);
-                double rLen = vec4Length(rayDir); if (rLen > 1e-9) rayDir = vec4Scale(rayDir, 1.0 / rLen);
-                auto raycast3D = [&](IVec4 &hit, IVec4 &prev) -> bool
-                {
-                    Vec4 pos = camera.getPos();
-                    IVec4 pg((int) std::round(pos.x), (int) std::round(pos.y), (int) std::round(pos.z), (int) std::round(pos.w));
-                    for (double t = 0.2; t <= 8.0; t += 0.2)
-                    {
-                        Vec4 s = vec4Add(pos, vec4Scale(rayDir, t));
-                        IVec4 g((int) std::round(s.x), (int) std::round(s.y), (int) std::round(s.z), (int) std::round(s.w));
-                        if (g.x == pg.x && g.y == pg.y && g.z == pg.z && g.w == pg.w)continue;
-                        if (world.get(g)) { hit = g; prev = pg; return true; } pg = g;
-                    }
-                    return false;
-                };
                 if (input.getMouseClick(0))
                 {
                     if (raycast3D(hitPos, prevPos))
@@ -628,6 +633,12 @@ int main()
         {
             cleardevice();
             setbkcolor(RGB(10, 10, 30));
+
+            // 设置目标方块（用于线框绘制）
+            if (hasTarget)
+                renderer.setTargetBlock(targetedBlock);
+            else
+                renderer.clearTargetBlock();
 
             renderer.renderWorld(world, camera);
             renderer.drawHotbar(selectedSlot);

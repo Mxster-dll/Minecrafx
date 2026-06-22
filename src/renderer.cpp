@@ -458,6 +458,10 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
         }
     }
 
+    // 7.5. 目标方块线框（与面片共享深度缓冲）
+    if (m_hasTarget)
+        drawBlockOutline(m_targetBlock, cam);
+
     // 8. 输出 DIB 到屏幕
     HDC hdc = GetImageHDC();
     BitBlt(hdc, 0, 0, m_screenWidth, m_screenHeight, m_memDC, 0, 0, SRCCOPY);
@@ -714,6 +718,98 @@ std::vector<IVec4> Renderer::collectVisibleBlocks(const World &world,
     }
 
     return result;
+}
+
+// ============================================================================
+// 目标方块线框（与面片一起参与深度缓冲）
+// ============================================================================
+
+void Renderer::drawBlockOutline(const IVec4 &blockPos, const Camera4D &cam)
+{
+    const Vec4 &camPos = cam.getPos();
+    double half = m_blockHalf;
+    double sp = half * 2.0;
+
+    int bx = blockPos.x, by = blockPos.y, bz = blockPos.z, bw = blockPos.w;
+
+    double x0 = bx * sp - camPos.x - half;
+    double x1 = bx * sp - camPos.x + half;
+    double z0 = bz * sp - camPos.z - half;
+    double z1 = bz * sp - camPos.z + half;
+    double w0 = bw * sp - camPos.w - half;
+    double w1 = bw * sp - camPos.w + half;
+
+    Plane2D camPlane = cam.getViewPlane();
+    camPlane.offset = 0.0;
+
+    PolyOnPlane poly = intersectCubePlane(x0, x1, z0, z1, w0, w1, camPlane);
+    if (!poly.valid()) return;
+
+    double yLow = by * sp - camPos.y - half;
+    double yHigh = by * sp - camPos.y + half;
+    int n = poly.n;
+
+    // 3D 相机（与 renderWorld 一致）
+    Camera3D cam3d;
+    {
+        double pitch = cam.getPitch();
+        double sP = std::sin(pitch), cP = std::cos(pitch);
+        cam3d.posU = 0.0; cam3d.posV = 0.0; cam3d.posY = 0.0;
+        cam3d.dirU = 0.0;
+        cam3d.dirV = cP;
+        cam3d.dirY = sP;
+    }
+
+    // 所有边用深度测试线段绘制（直接写入 DIB + z-buffer）
+    for (int i = 0; i < n; ++i)
+    {
+        int j = (i + 1) % n;
+
+        // 顶面边
+        drawOutlineEdge3D(poly.u[i], poly.v[i], yHigh,
+            poly.u[j], poly.v[j], yHigh, cam3d);
+        // 底面边
+        drawOutlineEdge3D(poly.u[i], poly.v[i], yLow,
+            poly.u[j], poly.v[j], yLow, cam3d);
+        // 垂直边
+        drawOutlineEdge3D(poly.u[i], poly.v[i], yLow,
+            poly.u[i], poly.v[i], yHigh, cam3d);
+    }
+}
+
+void Renderer::drawOutlineEdge3D(double u0, double v0, double y0,
+    double u1, double v1, double y1,
+    const Camera3D &cam3d)
+{
+    int sx0, sy0, sx1, sy1;
+    double z0, z1;
+
+    if (!project3D(u0, v0, y0, cam3d, m_screenWidth, m_screenHeight, sx0, sy0, z0)) return;
+    if (!project3D(u1, v1, y1, cam3d, m_screenWidth, m_screenHeight, sx1, sy1, z1)) return;
+
+    int dx = std::abs(sx1 - sx0);
+    int dy = std::abs(sy1 - sy0);
+    int steps = std::max(dx, dy);
+    if (steps <= 0) return;
+
+    double invSteps = 1.0 / steps;
+    for (int i = 0; i <= steps; ++i)
+    {
+        double t = i * invSteps;
+        int sx = static_cast<int>(sx0 + (sx1 - sx0) * t + 0.5);
+        int sy = static_cast<int>(sy0 + (sy1 - sy0) * t + 0.5);
+        double z = z0 + (z1 - z0) * t;
+
+        if (sx < 0 || sx >= m_screenWidth || sy < 0 || sy >= m_screenHeight)
+            continue;
+
+        int idx = sy * m_screenWidth + sx;
+        if (z <= m_zbuf[idx])
+        {
+            m_pBits[idx] = RGB(0, 0, 0);
+            m_zbuf[idx] = z;  // 写入 z-buffer 防止后续面片覆盖线框
+        }
+    }
 }
 
 // ============================================================================

@@ -37,6 +37,13 @@ public:
     /** @brief 切换 HUD 显示/隐藏 */
     void toggleHUD() { m_showHUD = !m_showHUD; }
 
+    /** @brief 绘制目标方块的黑色线框（深度缓冲） */
+    void drawBlockOutline(const IVec4 &blockPos, const Camera4D &cam);
+
+    /** @brief 设置当前目标方块（每帧调用，传空 IVec4 清零） */
+    void setTargetBlock(const IVec4 &pos) { m_targetBlock = pos; m_hasTarget = true; }
+    void clearTargetBlock() { m_hasTarget = false; }
+
     /** @brief 从 ../assert/texture/ 加载方块贴图（含像素数据） */
     void loadBlockTextures();
 
@@ -160,6 +167,10 @@ private:
     // ---- HUD 开关 ----
     bool m_showHUD = false;
 
+    // ---- 目标方块 ----
+    IVec4 m_targetBlock;
+    bool m_hasTarget = false;
+
     // ---- 内部方法 ----
 
     /** @brief 清空帧缓冲 */
@@ -194,4 +205,9 @@ private:
         double tuz0, double tvz0, double ooz0,
         double tuz1, double tvz1, double ooz1,
         int texId, COLORREF color);
+
+    /** @brief 绘制一条经深度测试的 3D 线段到 DIB */
+    void drawOutlineEdge3D(double u0, double v0, double y0,
+        double u1, double v1, double y1,
+        const Camera3D &cam3d);
 };
