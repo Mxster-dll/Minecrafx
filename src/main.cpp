@@ -492,6 +492,9 @@ int main()
         if (input.isPressed(Key::Num5)) selectedSlot = 4;
         if (input.isPressed(Key::Num6)) selectedSlot = 5;
 
+        // ---- F3：切换 HUD 显示 ----
+        if (input.isPressed(Key::F3)) renderer.toggleHUD();
+
         // ---- 滚轮：重建地图 ----
         {
             double inputDesire = 0.0;

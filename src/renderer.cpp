@@ -21,6 +21,9 @@ Renderer::Renderer(int screenWidth, int screenHeight)
     , m_memDC(nullptr)
     , m_oldBmp(nullptr)
     , m_dibReady(false)
+    , m_hFont(nullptr)
+    , m_hFontLarge(nullptr)
+    , m_hOldFont(nullptr)
     , m_fpsFrames(0)
     , m_fpsTime(0)
     , m_fps(0)
@@ -58,6 +61,18 @@ Renderer::Renderer(int screenWidth, int screenHeight)
         m_oldBmp = (HBITMAP) SelectObject(m_memDC, m_hBmp);
         m_pBits = bits;
         m_dibReady = true;
+
+        // 加载 Minecraft AE 字体（小号：HUD / 大号：按钮）
+        m_hFont = CreateFontW(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
+            L"Minecraft AE");
+        m_hFontLarge = CreateFontW(20, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
+            L"Minecraft AE");
+        if (m_hFont)
+            m_hOldFont = (HFONT) SelectObject(m_memDC, m_hFont);
     }
 }
 
@@ -65,6 +80,14 @@ Renderer::~Renderer()
 {
     if (m_dibReady)
     {
+        // 恢复原字体
+        if (m_hOldFont)
+            SelectObject(m_memDC, m_hOldFont);
+        if (m_hFont)
+            DeleteObject(m_hFont);
+        if (m_hFontLarge)
+            DeleteObject(m_hFontLarge);
+
         SelectObject(m_memDC, m_oldBmp);
         DeleteDC(m_memDC);
         DeleteObject(m_hBmp);
@@ -483,6 +506,7 @@ void Renderer::drawHUD(const Camera4D &cam)
 
     wchar_t buf[256];
     HDC hdc = GetImageHDC();
+    HFONT oldHudFont = m_hFont ? (HFONT) SelectObject(hdc, m_hFont) : nullptr;
     SetBkMode(hdc, TRANSPARENT);
 
     // ========================================
@@ -578,34 +602,37 @@ void Renderer::drawHUD(const Camera4D &cam)
     settextcolor(RGB(255, 120, 255)); TextOutW(hdc, nP.x + 3, nP.y - 10, L"n", 1);
 
     // ========================================
-    // FPS + 诊断（右上角）
+    // FPS + 诊断（右上角，F3 切换）
     // ========================================
-    settextcolor(RGB(255, 255, 255));
-    swprintf(buf, 256, L"FPS: %d", m_fps);
-    TextOutW(hdc, m_screenWidth - 100, 10, buf, (int) wcslen(buf));
+    if (m_showHUD)
+    {
+        settextcolor(RGB(255, 255, 255));
+        swprintf(buf, 256, L"FPS: %d", m_fps);
+        TextOutW(hdc, m_screenWidth - 100, 10, buf, (int) wcslen(buf));
 
-    settextcolor(RGB(255, 255, 100));
-    swprintf(buf, 256, L"方块总数: %d", m_diagTotal);
-    TextOutW(hdc, m_screenWidth - 200, 30, buf, (int) wcslen(buf));
-    swprintf(buf, 256, L"切片通过: %d", m_diagSlice);
-    TextOutW(hdc, m_screenWidth - 200, 48, buf, (int) wcslen(buf));
-    swprintf(buf, 256, L"遮挡通过: %d", m_diagOccl);
-    TextOutW(hdc, m_screenWidth - 200, 66, buf, (int) wcslen(buf));
-    swprintf(buf, 256, L"几何生成: %d", m_diagGeom);
-    TextOutW(hdc, m_screenWidth - 200, 84, buf, (int) wcslen(buf));
-    swprintf(buf, 256, L"渲染面数: %d", m_diagFaces);
-    TextOutW(hdc, m_screenWidth - 200, 102, buf, (int) wcslen(buf));
+        settextcolor(RGB(255, 255, 100));
+        swprintf(buf, 256, L"方块总数: %d", m_diagTotal);
+        TextOutW(hdc, m_screenWidth - 200, 30, buf, (int) wcslen(buf));
+        swprintf(buf, 256, L"切片通过: %d", m_diagSlice);
+        TextOutW(hdc, m_screenWidth - 200, 48, buf, (int) wcslen(buf));
+        swprintf(buf, 256, L"遮挡通过: %d", m_diagOccl);
+        TextOutW(hdc, m_screenWidth - 200, 66, buf, (int) wcslen(buf));
+        swprintf(buf, 256, L"几何生成: %d", m_diagGeom);
+        TextOutW(hdc, m_screenWidth - 200, 84, buf, (int) wcslen(buf));
+        swprintf(buf, 256, L"渲染面数: %d", m_diagFaces);
+        TextOutW(hdc, m_screenWidth - 200, 102, buf, (int) wcslen(buf));
 
-    settextcolor(RGB(180, 220, 255));
-    swprintf(buf, 256, L"收集: %.1fms", m_msCollect);
-    TextOutW(hdc, m_screenWidth - 200, 122, buf, (int) wcslen(buf));
-    swprintf(buf, 256, L"视锥裁剪: %.1fms", m_msFrustum);
-    TextOutW(hdc, m_screenWidth - 200, 140, buf, (int) wcslen(buf));
-    swprintf(buf, 256, L"方块->三角形: %.1fms", m_msBlock2Tri);
-    TextOutW(hdc, m_screenWidth - 200, 158, buf, (int) wcslen(buf));
-    swprintf(buf, 256, L"光栅化: %.1fms", m_msRaster);
-    TextOutW(hdc, m_screenWidth - 200, 176, buf, (int) wcslen(buf));
-    settextcolor(RGB(255, 255, 255));
+        settextcolor(RGB(180, 220, 255));
+        swprintf(buf, 256, L"收集: %.1fms", m_msCollect);
+        TextOutW(hdc, m_screenWidth - 200, 122, buf, (int) wcslen(buf));
+        swprintf(buf, 256, L"视锥裁剪: %.1fms", m_msFrustum);
+        TextOutW(hdc, m_screenWidth - 200, 140, buf, (int) wcslen(buf));
+        swprintf(buf, 256, L"方块->三角形: %.1fms", m_msBlock2Tri);
+        TextOutW(hdc, m_screenWidth - 200, 158, buf, (int) wcslen(buf));
+        swprintf(buf, 256, L"光栅化: %.1fms", m_msRaster);
+        TextOutW(hdc, m_screenWidth - 200, 176, buf, (int) wcslen(buf));
+        settextcolor(RGB(255, 255, 255));
+    } // m_showHUD
 
     // ========================================
     // 坐标信息（左侧，坐标系下方）
@@ -617,8 +644,11 @@ void Renderer::drawHUD(const Camera4D &cam)
     infoY += 18;
 
     const double rad2deg = 180.0 / 3.1415926535;
-    swprintf(buf, 256, L"俯仰角: %+.1f°", cam.getPitch() * rad2deg);
+    swprintf(buf, 256, L"俯仰角: %+.1f", cam.getPitch() * rad2deg);
     TextOutW(hdc, 10, infoY, buf, (int) wcslen(buf));
+
+    if (oldHudFont)
+        SelectObject(hdc, oldHudFont);
 }
 
 // ============================================================================
@@ -1162,22 +1192,18 @@ void Renderer::drawButton(int x, int y, int w, int h,
         }
     }
 
-    // 绘制文字
+    // 绘制文字（使用大号 Minecraft AE 字体）
     if (text && text[0])
     {
         int tx = x + w / 2;
         int ty = y + h / 2;
-        // 使用 GDI 在 DIB 内存 DC 上绘制文字
-        HFONT hFont = CreateFontW(24, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Microsoft YaHei");
-        HFONT oldFont = (HFONT) SelectObject(m_memDC, hFont);
+        HFONT oldFont = m_hFontLarge ? (HFONT) SelectObject(m_memDC, m_hFontLarge) : nullptr;
         SetBkMode(m_memDC, TRANSPARENT);
         SetTextColor(m_memDC, RGB(255, 255, 255));
         SIZE textSize;
         GetTextExtentPoint32W(m_memDC, text, (int) wcslen(text), &textSize);
         TextOutW(m_memDC, tx - textSize.cx / 2, ty - textSize.cy / 2, text, (int) wcslen(text));
-        SelectObject(m_memDC, oldFont);
-        DeleteObject(hFont);
+        if (oldFont)
+            SelectObject(m_memDC, oldFont);
     }
 }

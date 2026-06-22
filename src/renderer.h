@@ -34,6 +34,9 @@ public:
     /** @brief 绘制 HUD 信息 */
     void drawHUD(const Camera4D &cam);
 
+    /** @brief 切换 HUD 显示/隐藏 */
+    void toggleHUD() { m_showHUD = !m_showHUD; }
+
     /** @brief 从 ../assert/texture/ 加载方块贴图（含像素数据） */
     void loadBlockTextures();
 
@@ -105,6 +108,11 @@ private:
     DWORD *m_pBits;
     bool m_dibReady;
 
+    // ---- Minecraft AE 字体 ----
+    HFONT m_hFont;       // HUD 小号字体（14pt）
+    HFONT m_hFontLarge;  // 按钮大字字体（20pt）
+    HFONT m_hOldFont;    // 原 DC 字体（用于析构恢复）
+
     // ---- z-buffer ----
     std::vector<double> m_zbuf;
 
@@ -148,6 +156,9 @@ private:
     // ---- GUI 背景 ----
     std::vector<DWORD> m_background;
     bool m_backgroundReady = false;
+
+    // ---- HUD 开关 ----
+    bool m_showHUD = false;
 
     // ---- 内部方法 ----
 
