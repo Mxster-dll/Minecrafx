@@ -230,9 +230,11 @@ int main()
     loadimage(&imgInventory, L"../assert/gui/widget/inventory.png");
     int invW = imgInventory.getwidth(), invH = imgInventory.getheight();
     loadimage(&imgInventory, L"../assert/gui/widget/inventory.png", invW * 2, invH * 2, true);
-    loadimage(&imgButton, L"../assert/gui/widget/button.png");
-    loadimage(&imgButtonHover, L"../assert/gui/widget/button_hover.png");
-    loadimage(&imgButtonActive, L"../assert/gui/widget/button_active.png");
+    // 按钮贴图：用 loadimage 缩放至目标尺寸
+    constexpr int BTN_W = 200, BTN_H = 50;
+    loadimage(&imgButton, L"../assert/gui/widget/button.png", BTN_W, BTN_H, true);
+    loadimage(&imgButtonHover, L"../assert/gui/widget/button_hover.png", BTN_W, BTN_H, true);
+    loadimage(&imgButtonActive, L"../assert/gui/widget/button_active.png", BTN_W, BTN_H, true);
 
     // ---- 游戏状态 ----
     GameState state = GameState::Gameplay;
@@ -282,7 +284,6 @@ int main()
             }
 
             // 按钮交互
-            constexpr int BTN_W = 200, BTN_H = 50;
             int btnX = (SCREEN_WIDTH - BTN_W) / 2;
             int btnY = SCREEN_HEIGHT / 2 + 40;
             POINT mp = input.getMouseScreenPos();
@@ -491,6 +492,9 @@ int main()
         if (input.isPressed(Key::Num4)) selectedSlot = 3;
         if (input.isPressed(Key::Num5)) selectedSlot = 4;
         if (input.isPressed(Key::Num6)) selectedSlot = 5;
+        if (input.isPressed(Key::Num7)) selectedSlot = 6;
+        if (input.isPressed(Key::Num8)) selectedSlot = 7;
+        if (input.isPressed(Key::Num9)) selectedSlot = 8;
 
         // ---- F3：切换 HUD 显示 ----
         if (input.isPressed(Key::F3)) renderer.toggleHUD();

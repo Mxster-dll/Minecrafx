@@ -146,14 +146,23 @@ private:
     bool m_blockTexLoaded;
 
     // ---- 热键栏 ----
-    static constexpr int HOTBAR_SLOTS = 6;
-    static constexpr int HB_ICON_SIZE = 32;      // 图标显示大小
+    static constexpr int HOTBAR_SLOTS = 9;
+    static constexpr int HB_ICON_SIZE = 16;      // 图标显示大小
     static constexpr int HB_HEIGHT = 44;          // 热键栏显示高度
+    // 每个槽位在 hotbar 原图中的位置：x = 3 + slot*20, y = 3, 大小 16×16
+    static constexpr int HB_SLOT_ORIGIN_X = 3;
+    static constexpr int HB_SLOT_ORIGIN_Y = 3;
+    static constexpr int HB_SLOT_STEP = 20;
+    static constexpr int HB_SLOT_SIZE = 16;
     int m_hotbarBlockTypes[HOTBAR_SLOTS];
     std::vector<COLORREF> m_hotbarBg;             // 热键栏背景像素（堆分配）
     int m_hbBgW = 0, m_hbBgH = 0;                  // 背景原始宽高
-    std::vector<COLORREF> m_hotbarIcons[HOTBAR_SLOTS]; // 32x32 快捷栏图标
-    std::vector<COLORREF> m_hotbarIconsBig[HOTBAR_SLOTS]; // 64x64 右下角大图标
+    std::vector<COLORREF> m_hotbarIcons[HOTBAR_SLOTS]; // 槽位图标像素（预缩放至显示尺寸）
+    std::vector<COLORREF> m_hotbarIconsBig[HOTBAR_SLOTS]; // 右下角大图标
+    int m_hbIconDisplaySize = 0;  // 槽位图标实际显示尺寸（像素）
+    // 选中框
+    std::vector<COLORREF> m_selectPixels;  // select.png 像素（预缩放）
+    int m_selectW = 0, m_selectH = 0;      // select 显示尺寸
     bool m_hotbarLoaded = false;
 
     // ---- 超方块 ----

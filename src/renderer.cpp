@@ -9,6 +9,30 @@
 #include <windows.h>
 
 // ============================================================================
+// Alpha 混合：EasyX PNG 像素 (0xAARRGGBB) → DIB 像素 (0x00RRGGBB)
+// ============================================================================
+
+/** @brief 将 ARGB 源像素叠加到 DIB 目标像素，返回混合结果 */
+static inline DWORD alphaBlend(DWORD dst, DWORD src)
+{
+    unsigned int a = (src >> 24) & 0xFF;
+    if (a == 0) return dst;                     // 全透明，保持目标
+    if (a == 255) return src & 0x00FFFFFF;       // 不透明，直接覆盖（去掉 alpha 字节）
+    // 半透明混合
+    unsigned int sr = (src >> 16) & 0xFF;
+    unsigned int sg = (src >> 8) & 0xFF;
+    unsigned int sb = src & 0xFF;
+    unsigned int dr = (dst >> 16) & 0xFF;
+    unsigned int dg = (dst >> 8) & 0xFF;
+    unsigned int db = dst & 0xFF;
+    unsigned int invA = 255 - a;
+    dr = (sr * a + dr * invA) / 255;
+    dg = (sg * a + dg * invA) / 255;
+    db = (sb * a + db * invA) / 255;
+    return RGB(dr, dg, db);
+}
+
+// ============================================================================
 // 构造 / 析构
 // ============================================================================
 
@@ -174,22 +198,28 @@ COLORREF Renderer::sampleTexture(int texId, double tu, double tv) const
 // 热键栏
 // ============================================================================
 
-static const wchar_t *kHotbarIcons[6] = {
+static const wchar_t *kHotbarIcons[9] = {
     L"../assert/gui/item/grass_block.png",
     L"../assert/gui/item/dirt.png",
     L"../assert/gui/item/oak_log.png",
     L"../assert/gui/item/oak_leaves.png",
     L"../assert/gui/item/stone.png",
-    L"../assert/gui/item/oak_planks.png"
+    L"../assert/gui/item/oak_planks.png",
+    L"",  // 槽位 7（空）
+    L"",  // 槽位 8（空）
+    L""   // 槽位 9（空）
 };
 
-static const wchar_t *kBigIconPaths[6] = {
+static const wchar_t *kBigIconPaths[9] = {
     L"../assert/gui/block/grass_block.png",
     L"../assert/gui/block/dirt.png",
     L"../assert/gui/block/oak_log.png",
     L"../assert/gui/block/oak_leaves.png",
     L"../assert/gui/block/stone.png",
-    L"../assert/gui/block/oak_planks.png"
+    L"../assert/gui/block/oak_planks.png",
+    L"",
+    L"",
+    L""
 };
 
 void Renderer::loadHotbar()
@@ -198,7 +228,7 @@ void Renderer::loadHotbar()
     // 加载 hotbar 背景
     {
         IMAGE img;
-        loadimage(&img, L"../assert/gui/hotbar.png");
+        loadimage(&img, L"../assert/gui/widget/hotbar.png");
         DWORD *buf = GetImageBuffer(&img);
         int srcW = img.getwidth();
         if (buf && srcW > 0)
@@ -211,27 +241,34 @@ void Renderer::loadHotbar()
             bgOk = true;
         }
     }
-    // 加载快捷栏图标（_32x32 预缩放文件）
+    // 加载快捷栏图标（用 loadimage 缩放至槽位显示尺寸）
+    double scale = (double) HB_HEIGHT / m_hbBgH;
+    int iconSz = (int) (HB_SLOT_SIZE * scale);
+    if (iconSz < 1) iconSz = 1;
+    m_hbIconDisplaySize = iconSz;
+
     for (int i = 0; i < HOTBAR_SLOTS; ++i)
     {
+        if (kHotbarIcons[i][0] == L'\0') continue;  // 空槽位跳过
         IMAGE img;
-        loadimage(&img, kHotbarIcons[i], 32, 32);
+        loadimage(&img, kHotbarIcons[i], iconSz, iconSz, true);  // loadimage 缩放
         DWORD *buf = GetImageBuffer(&img);
         int srcW = img.getwidth();
         if (buf && srcW > 0)
         {
-            m_hotbarIcons[i].resize(HB_ICON_SIZE * HB_ICON_SIZE);
-            for (int y = 0; y < HB_ICON_SIZE; ++y)
-                for (int x = 0; x < HB_ICON_SIZE; ++x)
-                    m_hotbarIcons[i][y * HB_ICON_SIZE + x] = buf[y * srcW + x];
+            m_hotbarIcons[i].resize(iconSz * iconSz);
+            for (int y = 0; y < iconSz; ++y)
+                for (int x = 0; x < iconSz; ++x)
+                    m_hotbarIcons[i][y * iconSz + x] = buf[y * srcW + x];
         }
     }
-    // 加载右下角大图标（原图 loadimage 缩放至 64x64）
+    // 加载右下角大图标（loadimage 缩放至 32x32）
     const int BIG = HB_ICON_SIZE * 2;
     for (int i = 0; i < HOTBAR_SLOTS; ++i)
     {
+        if (kBigIconPaths[i][0] == L'\0') continue;
         IMAGE img;
-        loadimage(&img, kBigIconPaths[i], BIG, BIG);
+        loadimage(&img, kBigIconPaths[i], BIG, BIG, true);
         DWORD *buf = GetImageBuffer(&img);
         int srcW = img.getwidth();
         if (buf && srcW > 0)
@@ -248,6 +285,36 @@ void Renderer::loadHotbar()
     m_hotbarBlockTypes[3] = BLOCK_LEAVES;
     m_hotbarBlockTypes[4] = BLOCK_STONE;
     m_hotbarBlockTypes[5] = BLOCK_PLANKS;
+    m_hotbarBlockTypes[6] = BLOCK_AIR;
+    m_hotbarBlockTypes[7] = BLOCK_AIR;
+    m_hotbarBlockTypes[8] = BLOCK_AIR;
+
+    // 加载选中框 select.png（与 hotbar 同缩放比）
+    {
+        IMAGE selImg;
+        loadimage(&selImg, L"../assert/gui/widget/select.png");
+        int selW = selImg.getwidth(), selH = selImg.getheight();
+        if (selW > 0 && selH > 0)
+        {
+            // 按 hotbar 缩放比缩放至显示尺寸
+            int dispW = (int) (selW * scale);
+            int dispH = (int) (selH * scale);
+            if (dispW < 1) dispW = 1;
+            if (dispH < 1) dispH = 1;
+            loadimage(&selImg, L"../assert/gui/widget/select.png", dispW, dispH, true);
+            DWORD *buf = GetImageBuffer(&selImg);
+            int srcW = selImg.getwidth();
+            if (buf && srcW > 0)
+            {
+                m_selectW = dispW; m_selectH = dispH;
+                m_selectPixels.resize(dispW * dispH);
+                for (int y = 0; y < dispH; ++y)
+                    for (int x = 0; x < dispW; ++x)
+                        m_selectPixels[y * dispW + x] = buf[y * srcW + x];
+            }
+        }
+    }
+
     m_hotbarLoaded = bgOk;  // 仅背景加载成功才允许绘制
 }
 
@@ -275,33 +342,62 @@ void Renderer::drawHotbar(int selectedSlot)
             if (c == 0 || c == RGB(0, 0, 0)) continue;
             int px = hbX + dx, py = hbY + dy;
             if (px >= 0 && px < m_screenWidth && py >= 0 && py < m_screenHeight)
-                m_pBits[py * m_screenWidth + px] = c;
+                m_pBits[py * m_screenWidth + px] = alphaBlend(m_pBits[py * m_screenWidth + px], c);
         }
     }
 
-    // 绘制每个槽位的图标
+    // 绘制每个槽位的图标（loadimage 已预缩放到显示尺寸，1:1 复制）
     for (int slot = 0; slot < HOTBAR_SLOTS; ++slot)
     {
         if (m_hotbarIcons[slot].empty()) continue;
-        // 槽位中心位于 hbW 的 1/8, 3/8, 5/8, 7/8 处
-        int slotCX = hbX + hbW * (2 * slot + 1) / (2 * 9);
-        int slotCY = hbY + hbH / 2;
-        int ix0 = slotCX - HB_ICON_SIZE / 2;
-        int iy0 = slotCY - HB_ICON_SIZE / 2;
-        for (int dy = 0; dy < HB_ICON_SIZE; ++dy)
+        int nativeX = HB_SLOT_ORIGIN_X + slot * HB_SLOT_STEP;
+        int nativeY = HB_SLOT_ORIGIN_Y;
+        int screenX = hbX + (int) (nativeX * scale);
+        int screenY = hbY + (int) (nativeY * scale);
+        int sz = m_hbIconDisplaySize;
+
+        for (int dy = 0; dy < sz; ++dy)
         {
-            for (int dx = 0; dx < HB_ICON_SIZE; ++dx)
+            int py = screenY + dy;
+            if (py < 0 || py >= m_screenHeight) continue;
+            int dstRow = py * m_screenWidth;
+            int srcRow = dy * sz;
+            for (int dx = 0; dx < sz; ++dx)
             {
-                COLORREF c = m_hotbarIcons[slot][dy * HB_ICON_SIZE + dx];
+                COLORREF c = m_hotbarIcons[slot][srcRow + dx];
                 if (c == 0) continue;
-                int px = ix0 + dx, py = iy0 + dy;
-                if (px >= 0 && px < m_screenWidth && py >= 0 && py < m_screenHeight)
-                    m_pBits[py * m_screenWidth + px] = c;
+                int px = screenX + dx;
+                if (px >= 0 && px < m_screenWidth)
+                    m_pBits[dstRow + px] = alphaBlend(m_pBits[dstRow + px], c);
             }
         }
     }
 
-    // 右下角显示当前选中方块（64x64，loadimage 缩放）
+    // 绘制选中框（select.png 的 (3,3) 与选中槽位左上角对齐）
+    if (!m_selectPixels.empty() && selectedSlot >= 0 && selectedSlot < HOTBAR_SLOTS)
+    {
+        // 选中槽位原生左上角 = (3 + slot*20, 3)
+        // select 的 (3,3) 对上去 → select 绘制起点 = (slot*20*scale, 0) 相对 hbX,hbY
+        int selX = hbX + (int) (selectedSlot * HB_SLOT_STEP * scale);
+        int selY = hbY;
+        for (int dy = 0; dy < m_selectH; ++dy)
+        {
+            int py = selY + dy;
+            if (py < 0 || py >= m_screenHeight) continue;
+            int dstRow = py * m_screenWidth;
+            int srcRow = dy * m_selectW;
+            for (int dx = 0; dx < m_selectW; ++dx)
+            {
+                COLORREF c = m_selectPixels[srcRow + dx];
+                if (c == 0) continue;  // 全透明跳过
+                int px = selX + dx;
+                if (px >= 0 && px < m_screenWidth)
+                    m_pBits[dstRow + px] = alphaBlend(m_pBits[dstRow + px], c);
+            }
+        }
+    }
+
+    // 右下角显示当前选中方块（32x32，loadimage 缩放）
     if (!m_hotbarIconsBig[selectedSlot].empty())
     {
         const int BIG = HB_ICON_SIZE * 2;
@@ -315,7 +411,7 @@ void Renderer::drawHotbar(int selectedSlot)
                 if (c == 0) continue;
                 int px = bx + dx, py = by + dy;
                 if (px >= 0 && px < m_screenWidth && py >= 0 && py < m_screenHeight)
-                    m_pBits[py * m_screenWidth + px] = c;
+                    m_pBits[py * m_screenWidth + px] = alphaBlend(m_pBits[py * m_screenWidth + px], c);
             }
         }
     }
@@ -1208,7 +1304,7 @@ void Renderer::drawImageCentered(IMAGE *img)
             // 跳过全透明（黑色背景也算——如果图片有 alpha，EasyX 会预乘到黑色）
             // 这里简单跳过纯黑像素，适用于 Minecraft 风格 GUI
             if (c == 0 || c == RGB(0, 0, 0)) continue;
-            m_pBits[dstRow + px] = c;
+            m_pBits[dstRow + px] = alphaBlend(m_pBits[dstRow + px], c);
         }
     }
 }
@@ -1229,29 +1325,27 @@ void Renderer::drawButton(int x, int y, int w, int h,
 
     if (useImg)
     {
-        // 拉伸贴图到按钮大小
+        // 贴图已用 loadimage 预缩放到按钮大小，1:1 复制
         DWORD *buf = GetImageBuffer(useImg);
         int iw = useImg->getwidth();
         int ih = useImg->getheight();
         if (buf && iw > 0 && ih > 0)
         {
-            for (int dy = 0; dy < h; ++dy)
+            int copyW = iw < w ? iw : w;
+            int copyH = ih < h ? ih : h;
+            for (int dy = 0; dy < copyH; ++dy)
             {
-                int sy = dy * ih / h;
-                if (sy >= ih) sy = ih - 1;
                 int py = y + dy;
                 if (py < 0 || py >= m_screenHeight) continue;
-                int srcRow = sy * iw;
                 int dstRow = py * m_screenWidth;
-                for (int dx = 0; dx < w; ++dx)
+                int srcRow = dy * iw;
+                for (int dx = 0; dx < copyW; ++dx)
                 {
-                    int sx = dx * iw / w;
-                    if (sx >= iw) sx = iw - 1;
                     int px = x + dx;
                     if (px < 0 || px >= m_screenWidth) continue;
-                    DWORD c = buf[srcRow + sx];
+                    DWORD c = buf[srcRow + dx];
                     if (c == 0 || c == RGB(0, 0, 0)) continue;
-                    m_pBits[dstRow + px] = c;
+                    m_pBits[dstRow + px] = alphaBlend(m_pBits[dstRow + px], c);
                 }
             }
         }
