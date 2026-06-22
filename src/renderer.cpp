@@ -459,7 +459,7 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
     Plane2D plane = cam.getViewPlane();
 
     // 3. 诊断计数初始化
-    m_diagTotal = static_cast<int>(world.getAllBlocks().size());
+    m_diagTotal = static_cast<int>(world.totalBlocks());
     m_diagSlice = 0;
     m_diagOccl = 0;
     m_diagGeom = 0;
@@ -792,30 +792,33 @@ std::vector<IVec4> Renderer::collectVisibleBlocks(const World &world,
     const Vec4 &camPos = cam.getPos();
     double sp = m_blockHalf * 2.0;
 
-    // ---- 世界独立方块 ----
-    const auto &blocks = world.getAllBlocks();
-    for (const auto &pair : blocks)
+    // ---- 遍历所有区块及其方块 ----
+    for (const auto &[chunkPos, chunk] : world.getChunks())
     {
-        int bx = pair.first.x, by = pair.first.y;
-        int bz = pair.first.z, bw = pair.first.w;
+        if (chunk.empty()) continue;
+        for (const auto &[localPos, type] : chunk.blocks())
+        {
+            IVec4 blk = chunk.localToWorld(localPos.x, localPos.y, localPos.z, localPos.w);
+            int bx = blk.x, by = blk.y, bz = blk.z, bw = blk.w;
 
-        if (!blockIntersectsPlane(bx, by, bz, bw, camPos, plane, m_blockHalf, sp))
-            continue;
-        ++outPreOccl;
+            if (!blockIntersectsPlane(bx, by, bz, bw, camPos, plane, m_blockHalf, sp))
+                continue;
+            ++outPreOccl;
 
-        // 遮挡剔除：8 个方向都有相邻方块则不可见
-        if (world.get(IVec4(bx + 1, by, bz, bw)) &&
-            world.get(IVec4(bx - 1, by, bz, bw)) &&
-            world.get(IVec4(bx, by + 1, bz, bw)) &&
-            world.get(IVec4(bx, by - 1, bz, bw)) &&
-            world.get(IVec4(bx, by, bz + 1, bw)) &&
-            world.get(IVec4(bx, by, bz - 1, bw)) &&
-            world.get(IVec4(bx, by, bz, bw + 1)) &&
-            world.get(IVec4(bx, by, bz, bw - 1)))
-            continue;
+            // 遮挡剔除：8 个方向都有相邻方块则不可见
+            if (world.get(IVec4(bx + 1, by, bz, bw)) &&
+                world.get(IVec4(bx - 1, by, bz, bw)) &&
+                world.get(IVec4(bx, by + 1, bz, bw)) &&
+                world.get(IVec4(bx, by - 1, bz, bw)) &&
+                world.get(IVec4(bx, by, bz + 1, bw)) &&
+                world.get(IVec4(bx, by, bz - 1, bw)) &&
+                world.get(IVec4(bx, by, bz, bw + 1)) &&
+                world.get(IVec4(bx, by, bz, bw - 1)))
+                continue;
 
-        result.push_back(IVec4(bx, by, bz, bw));
-    }
+            result.push_back(IVec4(bx, by, bz, bw));
+        } // inner: chunk blocks
+    } // outer: world chunks
 
     return result;
 }

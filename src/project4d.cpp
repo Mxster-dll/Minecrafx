@@ -324,44 +324,47 @@ Map3D generateMap3D(const World &world, const Camera4D &cam4D,
     Plane2D camPlane = map.plane;
     camPlane.offset = 0.0;
 
-    const auto &blocks = world.getAllBlocks();
-    for (const auto &pair : blocks)
+    for (const auto &[chunkPos, chunk] : world.getChunks())
     {
-        int bx = pair.first.x, by = pair.first.y;
-        int bz = pair.first.z, bw = pair.first.w;
-
-        // 相机相对 xzw 包围盒
-        double x0 = bx * sp - camPos.x - blockHalf;
-        double x1 = bx * sp - camPos.x + blockHalf;
-        double z0 = bz * sp - camPos.z - blockHalf;
-        double z1 = bz * sp - camPos.z + blockHalf;
-        double w0 = bw * sp - camPos.w - blockHalf;
-        double w1 = bw * sp - camPos.w + blockHalf;
-
-        PolyOnPlane poly = intersectCubePlane(x0, x1, z0, z1, w0, w1, camPlane);
-        if (!poly.valid()) continue;
-
-        Prism3D p;
-        p.u = poly.u; p.v = poly.v;
-        p.yLow = by * sp - camPos.y - blockHalf;
-        p.yHigh = by * sp - camPos.y + blockHalf;
-        p.color = getColor(bx, by, bz, bw);
-        map.prisms.push_back(p);
-
-        // 碰撞 AABB
-        Map3D::AABB ab;
-        ab.uMin = ab.uMax = poly.u[0];
-        ab.vMin = ab.vMax = poly.v[0];
-        for (int i = 1; i < poly.n; ++i)
+        if (chunk.empty()) continue;
+        for (const auto &[localPos, type] : chunk.blocks())
         {
-            if (poly.u[i] < ab.uMin) ab.uMin = poly.u[i];
-            if (poly.u[i] > ab.uMax) ab.uMax = poly.u[i];
-            if (poly.v[i] < ab.vMin) ab.vMin = poly.v[i];
-            if (poly.v[i] > ab.vMax) ab.vMax = poly.v[i];
-        }
-        ab.yMin = p.yLow; ab.yMax = p.yHigh;
-        map.aabbs.push_back(ab);
-    }
+            IVec4 blk = chunk.localToWorld(localPos.x, localPos.y, localPos.z, localPos.w);
+            int bx = blk.x, by = blk.y, bz = blk.z, bw = blk.w;
+
+            // 相机相对 xzw 包围盒
+            double x0 = bx * sp - camPos.x - blockHalf;
+            double x1 = bx * sp - camPos.x + blockHalf;
+            double z0 = bz * sp - camPos.z - blockHalf;
+            double z1 = bz * sp - camPos.z + blockHalf;
+            double w0 = bw * sp - camPos.w - blockHalf;
+            double w1 = bw * sp - camPos.w + blockHalf;
+
+            PolyOnPlane poly = intersectCubePlane(x0, x1, z0, z1, w0, w1, camPlane);
+            if (!poly.valid()) continue;
+
+            Prism3D p;
+            p.u = poly.u; p.v = poly.v;
+            p.yLow = by * sp - camPos.y - blockHalf;
+            p.yHigh = by * sp - camPos.y + blockHalf;
+            p.color = getColor(bx, by, bz, bw);
+            map.prisms.push_back(p);
+
+            // 碰撞 AABB
+            Map3D::AABB ab;
+            ab.uMin = ab.uMax = poly.u[0];
+            ab.vMin = ab.vMax = poly.v[0];
+            for (int i = 1; i < poly.n; ++i)
+            {
+                if (poly.u[i] < ab.uMin) ab.uMin = poly.u[i];
+                if (poly.u[i] > ab.uMax) ab.uMax = poly.u[i];
+                if (poly.v[i] < ab.vMin) ab.vMin = poly.v[i];
+                if (poly.v[i] > ab.vMax) ab.vMax = poly.v[i];
+            }
+            ab.yMin = p.yLow; ab.yMax = p.yHigh;
+            map.aabbs.push_back(ab);
+        } // inner chunk blocks
+    } // outer chunks
 
     map.valid = true;
     return map;

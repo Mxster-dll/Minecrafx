@@ -40,41 +40,66 @@ namespace std
     };
 }
 
-/**
- * @brief 世界数据管理类
- *
- * 使用哈希表存储非空方块，类型 0 表示空气（不存在于表中）。
- * 世界规模上限 16×16×16×16。
- */
+// ============================================================================
+// Chunk — 16x16x16x16 的方块子区域
+// ============================================================================
+
+class Chunk
+{
+public:
+    static constexpr int SIZE = 16;
+
+    Chunk() = default;
+    explicit Chunk(int cx, int cy, int cz, int cw)
+        : m_cx(cx), m_cy(cy), m_cz(cz), m_cw(cw)
+    {}
+
+    int get(int lx, int ly, int lz, int lw) const;
+    void set(int lx, int ly, int lz, int lw, int type);
+
+    bool empty() const { return m_blocks.empty(); }
+    size_t blockCount() const { return m_blocks.size(); }
+    const std::unordered_map<IVec4, int> &blocks() const { return m_blocks; }
+
+    int cx() const { return m_cx; }
+    int cy() const { return m_cy; }
+    int cz() const { return m_cz; }
+    int cw() const { return m_cw; }
+
+    IVec4 localToWorld(int lx, int ly, int lz, int lw) const
+    {
+        return IVec4(m_cx * SIZE + lx, m_cy * SIZE + ly,
+            m_cz * SIZE + lz, m_cw * SIZE + lw);
+    }
+
+private:
+    int m_cx = 0, m_cy = 0, m_cz = 0, m_cw = 0;
+    std::unordered_map<IVec4, int> m_blocks;
+};
+
+// ============================================================================
+// World — 基于 Chunk 的世界数据管理
+// ============================================================================
+
 class World
 {
 public:
-    static constexpr int MAX_WORLD_SIZE = 16;
+    static constexpr int CHUNK_SIZE = Chunk::SIZE;
 
     World() = default;
 
-    /**
-     * @brief 获取指定坐标的方块类型
-     * @return 方块类型，0 表示空气（空）
-     */
     int get(const IVec4 &pos) const;
-
-    /**
-     * @brief 设置指定坐标的方块类型
-     * @param type 方块类型，0 表示删除（移除空气方块键）
-     */
     void set(const IVec4 &pos, int type);
+    void clear() { m_chunks.clear(); }
+    size_t totalBlocks() const;
 
-    /**
-     * @brief 获取所有非空方块的只读引用（用于遍历渲染）
-     */
-    const std::unordered_map<IVec4, int> &getAllBlocks() const { return m_blocks; }
+    const std::unordered_map<IVec4, Chunk> &getChunks() const { return m_chunks; }
 
-    /** @brief 清空世界 */
-    void clear() { m_blocks.clear(); }
+    static void worldToChunk(int wx, int &cx, int &lx);
+    static void worldToChunk(const IVec4 &wpos, IVec4 &cpos, IVec4 &lpos);
 
 private:
-    std::unordered_map<IVec4, int> m_blocks;
+    std::unordered_map<IVec4, Chunk> m_chunks;
 };
 
 // ============================================================================
