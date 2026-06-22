@@ -12,6 +12,8 @@
 #include <atomic>
 #include <ctime>
 
+class ThreadPool;
+
 /**
  * @brief 4D→3D→2D 渲染器
  *
@@ -108,6 +110,9 @@ private:
     int m_screenWidth, m_screenHeight;
     double m_blockHalf;
     int m_frameCount;
+
+    // ---- 线程池 ----
+    class ThreadPool *m_pool;
 
     // ---- DIB 离屏缓冲 ----
     HBITMAP m_hBmp;

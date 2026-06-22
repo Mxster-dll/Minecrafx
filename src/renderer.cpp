@@ -8,6 +8,109 @@
 #include <iostream>
 #include <windows.h>
 #include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <atomic>
+#include <queue>
+
+// ============================================================================
+// 简易线程池
+// ============================================================================
+
+class ThreadPool
+{
+public:
+    explicit ThreadPool(int numThreads)
+        : m_stop(false)
+    {
+        for (int i = 0; i < numThreads; ++i)
+            m_workers.emplace_back(&ThreadPool::workerLoop, this);
+    }
+
+    ~ThreadPool()
+    {
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_stop = true;
+        }
+        m_cv.notify_all();
+        for (auto &w : m_workers)
+            if (w.joinable()) w.join();
+    }
+
+    /** @brief 并行执行：将 [0, count) 按 numTasks 份均分，每份调用 func(taskIdx, start, end) */
+    void parallelRanges(int count, int numTasks,
+        const std::function<void(int, int, int)> &func)
+    {
+        if (count <= 0 || numTasks <= 1)
+        {
+            func(0, 0, count);
+            return;
+        }
+
+        m_pending.store(numTasks, std::memory_order_release);
+
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_taskCount = count;
+            m_numTasks = numTasks;
+            m_taskFunc = func;
+            m_nextTask.store(0, std::memory_order_release);
+        }
+        m_cv.notify_all();
+
+        // 主线程也参与
+        runTasks();
+
+        // 等待所有 worker 完成
+        while (m_pending.load(std::memory_order_acquire) > 0)
+            std::this_thread::yield();
+    }
+
+    int workerCount() const { return (int) m_workers.size(); }
+
+private:
+    void runTasks()
+    {
+        int count = m_taskCount;
+        int numTasks = m_numTasks;
+        const auto &func = m_taskFunc;
+        while (true)
+        {
+            int t = m_nextTask.fetch_add(1, std::memory_order_acq_rel);
+            if (t >= numTasks) break;
+            int start = (int) ((long long) count * t / numTasks);
+            int end = (int) ((long long) count * (t + 1) / numTasks);
+            func(t, start, end);
+            m_pending.fetch_sub(1, std::memory_order_acq_rel);
+        }
+    }
+
+    void workerLoop()
+    {
+        while (true)
+        {
+            {
+                std::unique_lock<std::mutex> lock(m_mutex);
+                m_cv.wait(lock, [this] { return m_stop || m_pending.load(std::memory_order_acquire) > 0; });
+                if (m_stop) return;
+            }
+            runTasks();
+        }
+    }
+
+    std::vector<std::thread> m_workers;
+    std::mutex m_mutex;
+    std::condition_variable m_cv;
+    std::atomic<bool> m_stop;
+
+    // 当前任务
+    int m_taskCount = 0;
+    int m_numTasks = 0;
+    std::function<void(int, int, int)> m_taskFunc;
+    std::atomic<int> m_nextTask { 0 };
+    std::atomic<int> m_pending { 0 };
+};
 
 // ============================================================================
 // Alpha 混合：EasyX PNG 像素 (0xAARRGGBB) → DIB 像素 (0x00RRGGBB)
@@ -42,6 +145,7 @@ Renderer::Renderer(int screenWidth, int screenHeight)
     , m_screenHeight(screenHeight)
     , m_blockHalf(0.5)
     , m_frameCount(0)
+    , m_pool(new ThreadPool(std::max(1u, std::thread::hardware_concurrency())))
     , m_hBmp(nullptr)
     , m_memDC(nullptr)
     , m_oldBmp(nullptr)
@@ -108,6 +212,7 @@ Renderer::Renderer(int screenWidth, int screenHeight)
 
 Renderer::~Renderer()
 {
+    delete m_pool;
     if (m_dibReady)
     {
         // 恢复原字体
@@ -513,69 +618,54 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
 
             // 决定线程数
             size_t totalBlk = visibleBlocks.size();
-            unsigned int numThreads = std::thread::hardware_concurrency();
-            if (numThreads < 1) numThreads = 1;
+            int numThreads = m_pool->workerCount();
             if (numThreads > 16) numThreads = 16;
-            if (totalBlk < 16) numThreads = 1;  // 方块太少不启动多线程
+            if (totalBlk < 16) numThreads = 1;
 
-            std::vector<std::thread> threads;
             std::vector<std::vector<Tri3D>> threadTris(numThreads);
             std::vector<int> threadGeom(numThreads, 0);
 
-            for (unsigned int t = 0; t < numThreads; ++t)
+            m_pool->parallelRanges((int) totalBlk, numThreads,
+                [&](int t, int start, int end)
             {
-                size_t start = t * totalBlk / numThreads;
-                size_t end = (t + 1) * totalBlk / numThreads;
-
-                threadTris[t].reserve((end - start) * 12);
-
-                threads.emplace_back([&, t, start, end]()
+                auto &localTris = threadTris[t];
+                localTris.reserve((end - start) * 12);
+                int localGeom = 0;
+                for (int i = start; i < end; ++i)
                 {
-                    auto &localTris = threadTris[t];
-                    int localGeom = 0;
-                    for (size_t i = start; i < end; ++i)
-                    {
-                        const auto &blk = visibleBlocks[i];
+                    const auto &blk = visibleBlocks[i];
+                    double bu = vec3Dot(Vec3(blk.x * sp - camPos.x, blk.z * sp - camPos.z, blk.w * sp - camPos.w), plane.p);
+                    double bv = vec3Dot(Vec3(blk.x * sp - camPos.x, blk.z * sp - camPos.z, blk.w * sp - camPos.w), plane.q);
+                    double by = blk.y * sp - camPos.y;
+                    double dU = bu - cam3d.posU;
+                    double dV = bv - cam3d.posV;
+                    double dY = by - cam3d.posY;
+                    double camZ = cam3d.dirU * dU + cam3d.dirV * dV + cam3d.dirY * dY;
+                    if (camZ < cam3d.nearPlane || camZ > cam3d.farPlane) continue;
+                    double margin = half * 3.0;
+                    double camX = rU * dU + rV * dV;
+                    double camY = upU * dU + upV * dV + upY * dY;
+                    double halfH = std::tan(cam3d.fov * 0.5) * camZ;
+                    double halfW = halfH * m_screenWidth / m_screenHeight;
+                    if (camX < -halfW - margin || camX > halfW + margin) continue;
+                    if (camY < -halfH - margin || camY > halfH + margin) continue;
+                    int bt = world.get(blk);
+                    int topId = blockTexId(bt, 0);
+                    int sideId = blockTexId(bt, 1);
+                    int bottomId = blockTexId(bt, 2);
+                    size_t before = localTris.size();
+                    blockToTriangles(blk.x, blk.y, blk.z, blk.w, cam, plane,
+                        topId, sideId, bottomId, localTris, world);
+                    if (localTris.size() > before) ++localGeom;
+                }
+                threadGeom[t] = localGeom;
+            });
 
-                        // 方块中心在 3D 空间的近似坐标
-                        double bu = vec3Dot(Vec3(blk.x * sp - camPos.x, blk.z * sp - camPos.z, blk.w * sp - camPos.w), plane.p);
-                        double bv = vec3Dot(Vec3(blk.x * sp - camPos.x, blk.z * sp - camPos.z, blk.w * sp - camPos.w), plane.q);
-                        double by = blk.y * sp - camPos.y;
-
-                        double dU = bu - cam3d.posU;
-                        double dV = bv - cam3d.posV;
-                        double dY = by - cam3d.posY;
-                        double camZ = cam3d.dirU * dU + cam3d.dirV * dV + cam3d.dirY * dY;
-
-                        if (camZ < cam3d.nearPlane || camZ > cam3d.farPlane) continue;
-
-                        double margin = half * 3.0;
-                        double camX = rU * dU + rV * dV;
-                        double camY = upU * dU + upV * dV + upY * dY;
-                        double halfH = std::tan(cam3d.fov * 0.5) * camZ;
-                        double halfW = halfH * m_screenWidth / m_screenHeight;
-                        if (camX < -halfW - margin || camX > halfW + margin) continue;
-                        if (camY < -halfH - margin || camY > halfH + margin) continue;
-
-                        int bt = world.get(blk);
-                        int topId = blockTexId(bt, 0);
-                        int sideId = blockTexId(bt, 1);
-                        int bottomId = blockTexId(bt, 2);
-                        size_t before = localTris.size();
-                        blockToTriangles(blk.x, blk.y, blk.z, blk.w, cam, plane,
-                            topId, sideId, bottomId, localTris, world);
-                        if (localTris.size() > before) ++localGeom;
-                    }
-                    threadGeom[t] = localGeom;
-                });
-            }
-
-            m_diagThreads = (int) numThreads;
-            for (auto &th : threads) th.join();
+            m_diagThreads = numThreads;
 
             // 合并结果
             m_diagGeom = 0;
-            for (unsigned int t = 0; t < numThreads; ++t)
+            for (int t = 0; t < numThreads; ++t)
             {
                 m_diagGeom += threadGeom[t];
                 auto &src = threadTris[t];
@@ -590,26 +680,19 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
 
             if (!allTris.empty())
             {
-                // 7. Tile 并行光栅化
+                // 7. Tile 并行光栅化（线程池）
                 clock_t t2 = clock();
-                unsigned int numTiles = std::thread::hardware_concurrency();
-                if (numTiles < 1) numTiles = 1;
+                int numTiles = m_pool->workerCount();
                 if (numTiles > 8) numTiles = 8;
-                if (allTris.size() < 16) numTiles = 1;  // 三角形太少不并行
+                if (allTris.size() < 16) numTiles = 1;
 
-                std::vector<std::thread> tileThreads;
-                for (unsigned int t = 0; t < numTiles; ++t)
+                m_pool->parallelRanges(m_screenHeight, numTiles,
+                    [&](int /*t*/, int ty0, int ty1)
                 {
-                    int ty0 = t * m_screenHeight / numTiles;
-                    int ty1 = (t + 1) * m_screenHeight / numTiles;
-                    tileThreads.emplace_back([&, ty0, ty1]()
-                    {
-                        rasterizeTriangles(allTris, cam3d, ty0, ty1);
-                    });
-                }
-                m_diagTiles = (int) numTiles;
-                for (auto &th : tileThreads) th.join();
+                    rasterizeTriangles(allTris, cam3d, ty0, ty1);
+                });
 
+                m_diagTiles = numTiles;
                 m_msRaster = static_cast<double>(clock() - t2) * 1000.0 / CLOCKS_PER_SEC;
             }
         }
