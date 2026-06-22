@@ -7,6 +7,7 @@
 #include <functional>
 #include <iostream>
 #include <windows.h>
+#include <thread>
 
 // ============================================================================
 // Alpha 混合：EasyX PNG 像素 (0xAARRGGBB) → DIB 像素 (0x00RRGGBB)
@@ -59,6 +60,8 @@ Renderer::Renderer(int screenWidth, int screenHeight)
     , m_diagFaceCull(0)
     , m_diagChunkTotal(0)
     , m_diagChunkPass(0)
+    , m_diagThreads(0)
+    , m_diagTiles(0)
     , m_msCollect(0.0)
     , m_msFrustum(0.0)
     , m_msBlock2Tri(0.0)
@@ -492,7 +495,7 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
             cam3d.dirY = sP;
         }
 
-        // 6. 4D→3D：方块 → 三角形（含视锥体裁剪）
+        // 6. 4D→3D：方块 → 三角形（多线程并行）
         {
             std::vector<Tri3D> allTris;
             allTris.reserve(visibleBlocks.size() * 12);
@@ -500,59 +503,113 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
             double half = m_blockHalf, sp = half * 2.0;
             const Vec4 &camPos = cam.getPos();
 
-            // 预计算视锥体裁剪用的 camera right/up
+            // 预计算视锥体裁剪用的 camera right/up（所有线程共享只读）
             double rU = cam3d.dirV, rV = -cam3d.dirU;
             double rLen = std::sqrt(rU * rU + rV * rV);
             rU /= rLen; rV /= rLen;
             double upU = rV * cam3d.dirY, upV = -rU * cam3d.dirY, upY = rU * cam3d.dirV - rV * cam3d.dirU;
 
             clock_t tLoop = clock();
-            clock_t tBlock2Tri = 0;
-            for (const auto &blk : visibleBlocks)
+
+            // 决定线程数
+            size_t totalBlk = visibleBlocks.size();
+            unsigned int numThreads = std::thread::hardware_concurrency();
+            if (numThreads < 1) numThreads = 1;
+            if (numThreads > 16) numThreads = 16;
+            if (totalBlk < 16) numThreads = 1;  // 方块太少不启动多线程
+
+            std::vector<std::thread> threads;
+            std::vector<std::vector<Tri3D>> threadTris(numThreads);
+            std::vector<int> threadGeom(numThreads, 0);
+
+            for (unsigned int t = 0; t < numThreads; ++t)
             {
-                // 方块中心在 3D 空间的近似坐标
-                double bu = vec3Dot(Vec3(blk.x * sp - camPos.x, blk.z * sp - camPos.z, blk.w * sp - camPos.w), plane.p);
-                double bv = vec3Dot(Vec3(blk.x * sp - camPos.x, blk.z * sp - camPos.z, blk.w * sp - camPos.w), plane.q);
-                double by = blk.y * sp - camPos.y;
+                size_t start = t * totalBlk / numThreads;
+                size_t end = (t + 1) * totalBlk / numThreads;
 
-                // 变换到相机空间
-                double dU = bu - cam3d.posU;
-                double dV = bv - cam3d.posV;
-                double dY = by - cam3d.posY;
-                double camZ = cam3d.dirU * dU + cam3d.dirV * dV + cam3d.dirY * dY;
+                threadTris[t].reserve((end - start) * 12);
 
-                // 在相机后方或太远则跳过
-                if (camZ < cam3d.nearPlane || camZ > cam3d.farPlane) continue;
+                threads.emplace_back([&, t, start, end]()
+                {
+                    auto &localTris = threadTris[t];
+                    int localGeom = 0;
+                    for (size_t i = start; i < end; ++i)
+                    {
+                        const auto &blk = visibleBlocks[i];
 
-                // 视锥体水平/垂直检查（加 margin）
-                double margin = half * 3.0;
-                double camX = rU * dU + rV * dV;
-                double camY = upU * dU + upV * dV + upY * dY;
-                double halfH = std::tan(cam3d.fov * 0.5) * camZ;
-                double halfW = halfH * m_screenWidth / m_screenHeight;
-                if (camX < -halfW - margin || camX > halfW + margin) continue;
-                if (camY < -halfH - margin || camY > halfH + margin) continue;
+                        // 方块中心在 3D 空间的近似坐标
+                        double bu = vec3Dot(Vec3(blk.x * sp - camPos.x, blk.z * sp - camPos.z, blk.w * sp - camPos.w), plane.p);
+                        double bv = vec3Dot(Vec3(blk.x * sp - camPos.x, blk.z * sp - camPos.z, blk.w * sp - camPos.w), plane.q);
+                        double by = blk.y * sp - camPos.y;
 
-                clock_t t0 = clock();
-                int bt = world.get(blk);
-                int topId = blockTexId(bt, 0);
-                int sideId = blockTexId(bt, 1);
-                int bottomId = blockTexId(bt, 2);
-                size_t before = allTris.size();
-                blockToTriangles(blk.x, blk.y, blk.z, blk.w, cam, plane, topId, sideId, bottomId, allTris, world);
-                if (allTris.size() > before) ++m_diagGeom;
-                tBlock2Tri += clock() - t0;
+                        double dU = bu - cam3d.posU;
+                        double dV = bv - cam3d.posV;
+                        double dY = by - cam3d.posY;
+                        double camZ = cam3d.dirU * dU + cam3d.dirV * dV + cam3d.dirY * dY;
+
+                        if (camZ < cam3d.nearPlane || camZ > cam3d.farPlane) continue;
+
+                        double margin = half * 3.0;
+                        double camX = rU * dU + rV * dV;
+                        double camY = upU * dU + upV * dV + upY * dY;
+                        double halfH = std::tan(cam3d.fov * 0.5) * camZ;
+                        double halfW = halfH * m_screenWidth / m_screenHeight;
+                        if (camX < -halfW - margin || camX > halfW + margin) continue;
+                        if (camY < -halfH - margin || camY > halfH + margin) continue;
+
+                        int bt = world.get(blk);
+                        int topId = blockTexId(bt, 0);
+                        int sideId = blockTexId(bt, 1);
+                        int bottomId = blockTexId(bt, 2);
+                        size_t before = localTris.size();
+                        blockToTriangles(blk.x, blk.y, blk.z, blk.w, cam, plane,
+                            topId, sideId, bottomId, localTris, world);
+                        if (localTris.size() > before) ++localGeom;
+                    }
+                    threadGeom[t] = localGeom;
+                });
             }
-            m_msFrustum = static_cast<double>((clock() - tLoop) - tBlock2Tri) * 1000.0 / CLOCKS_PER_SEC;
-            m_msBlock2Tri = static_cast<double>(tBlock2Tri) * 1000.0 / CLOCKS_PER_SEC;
+
+            m_diagThreads = (int) numThreads;
+            for (auto &th : threads) th.join();
+
+            // 合并结果
+            m_diagGeom = 0;
+            for (unsigned int t = 0; t < numThreads; ++t)
+            {
+                m_diagGeom += threadGeom[t];
+                auto &src = threadTris[t];
+                if (!src.empty())
+                    allTris.insert(allTris.end(), src.begin(), src.end());
+            }
+
+            m_msBlock2Tri = static_cast<double>(clock() - tLoop) * 1000.0 / CLOCKS_PER_SEC;
+            m_msFrustum = 0.0;  // 视锥裁剪已融入多线程时间
 
             m_diagFaces = static_cast<int>(allTris.size());
 
             if (!allTris.empty())
             {
-                // 7. 光栅化
+                // 7. Tile 并行光栅化
                 clock_t t2 = clock();
-                rasterizeTriangles(allTris, cam3d);
+                unsigned int numTiles = std::thread::hardware_concurrency();
+                if (numTiles < 1) numTiles = 1;
+                if (numTiles > 8) numTiles = 8;
+                if (allTris.size() < 16) numTiles = 1;  // 三角形太少不并行
+
+                std::vector<std::thread> tileThreads;
+                for (unsigned int t = 0; t < numTiles; ++t)
+                {
+                    int ty0 = t * m_screenHeight / numTiles;
+                    int ty1 = (t + 1) * m_screenHeight / numTiles;
+                    tileThreads.emplace_back([&, ty0, ty1]()
+                    {
+                        rasterizeTriangles(allTris, cam3d, ty0, ty1);
+                    });
+                }
+                m_diagTiles = (int) numTiles;
+                for (auto &th : tileThreads) th.join();
+
                 m_msRaster = static_cast<double>(clock() - t2) * 1000.0 / CLOCKS_PER_SEC;
             }
         }
@@ -725,15 +782,15 @@ void Renderer::drawHUD(const Camera4D &cam)
         TextOutW(hdc, m_screenWidth - 200, 84, buf, (int) wcslen(buf));
         swprintf(buf, 256, L"渲染面数: %d", m_diagFaces);
         TextOutW(hdc, m_screenWidth - 200, 102, buf, (int) wcslen(buf));
-        swprintf(buf, 256, L"面剔除: %d", m_diagFaceCull);
+        swprintf(buf, 256, L"面剔除: %d", m_diagFaceCull.load());
         TextOutW(hdc, m_screenWidth - 200, 120, buf, (int) wcslen(buf));
         swprintf(buf, 256, L"区块: %d/%d", m_diagChunkPass, m_diagChunkTotal);
         TextOutW(hdc, m_screenWidth - 200, 138, buf, (int) wcslen(buf));
+        swprintf(buf, 256, L"线程: tri=%d tile=%d", m_diagThreads, m_diagTiles);
+        TextOutW(hdc, m_screenWidth - 200, 156, buf, (int) wcslen(buf));
 
         settextcolor(RGB(180, 220, 255));
         swprintf(buf, 256, L"收集: %.1fms", m_msCollect);
-        TextOutW(hdc, m_screenWidth - 200, 156, buf, (int) wcslen(buf));
-        swprintf(buf, 256, L"视锥裁剪: %.1fms", m_msFrustum);
         TextOutW(hdc, m_screenWidth - 200, 174, buf, (int) wcslen(buf));
         swprintf(buf, 256, L"方块->三角形: %.1fms", m_msBlock2Tri);
         TextOutW(hdc, m_screenWidth - 200, 192, buf, (int) wcslen(buf));
@@ -1066,13 +1123,14 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
 // ============================================================================
 
 void Renderer::rasterizeTriangles(const std::vector<Tri3D> &tris,
-    const Camera3D &cam3d)
+    const Camera3D &cam3d, int tileYMin, int tileYMax)
 {
     for (const auto &tri : tris)
-        rasterizeTriangle(tri, cam3d);
+        rasterizeTriangle(tri, cam3d, tileYMin, tileYMax);
 }
 
-void Renderer::rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d)
+void Renderer::rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d,
+    int tileYMin, int tileYMax)
 {
     int sx[3], sy[3];
     double sz[3];
@@ -1104,7 +1162,8 @@ void Renderer::rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d)
     double tvz0 = tv0 / z0, tvz1 = tv1 / z1, tvz2 = tv2 / z2;
     double ooz0 = 1.0 / z0, ooz1 = 1.0 / z1, ooz2 = 1.0 / z2;
 
-    if (y2 < 0 || y0 >= m_screenHeight) return;
+    // 三角形完全在 Tile 之外 → 跳过
+    if (y2 < tileYMin || y0 >= tileYMax) return;
     if (y0 == y2) return;
 
     // 上半部分：y0 → y1
@@ -1120,8 +1179,8 @@ void Renderer::rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d)
         double dtvL = (tvz1 - tvz0) * invDyTop, dtvR = (tvz2 - tvz0) * invDyFull;
         double doL = (ooz1 - ooz0) * invDyTop, doR = (ooz2 - ooz0) * invDyFull;
 
-        int yStart = std::max(y0, 0);
-        int yEnd = std::min(y1, m_screenHeight);
+        int yStart = std::max({ y0, 0, tileYMin });
+        int yEnd = std::min({ y1, m_screenHeight, tileYMax });
 
         for (int y = yStart; y < yEnd; ++y)
         {
@@ -1133,7 +1192,7 @@ void Renderer::rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d)
             double tvL = tvz0 + dtvL * t, tvR = tvz0 + dtvR * t;
             double ooL = ooz0 + doL * t, ooR = ooz0 + doR * t;
             if (xL > xR) { std::swap(xL, xR); std::swap(zL, zR); std::swap(tuL, tuR); std::swap(tvL, tvR); std::swap(ooL, ooR); }
-            drawScanline(y, xL, xR, zL, zR, tuL, tvL, ooL, tuR, tvR, ooR, tri.texId, tri.color);
+            drawScanline(y, xL, xR, zL, zR, tuL, tvL, ooL, tuR, tvR, ooR, tri.texId, tri.color, tileYMin, tileYMax);
         }
     }
 
@@ -1150,8 +1209,8 @@ void Renderer::rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d)
         double dtvL = (tvz2 - tvz0) * invDyFull, dtvR = (tvz2 - tvz1) * invDyBot;
         double doL = (ooz2 - ooz0) * invDyFull, doR = (ooz2 - ooz1) * invDyBot;
 
-        int yStart = std::max(y1, 0);
-        int yEnd = std::min(y2, m_screenHeight);
+        int yStart = std::max({ y1, 0, tileYMin });
+        int yEnd = std::min({ y2, m_screenHeight, tileYMax });
 
         for (int y = yStart; y < yEnd; ++y)
         {
@@ -1164,15 +1223,16 @@ void Renderer::rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d)
             double tvL = tvz0 + dtvL * tFull, tvR = tvz1 + dtvR * tBot;
             double ooL = ooz0 + doL * tFull, ooR = ooz1 + doR * tBot;
             if (xL > xR) { std::swap(xL, xR); std::swap(zL, zR); std::swap(tuL, tuR); std::swap(tvL, tvR); std::swap(ooL, ooR); }
-            drawScanline(y, xL, xR, zL, zR, tuL, tvL, ooL, tuR, tvR, ooR, tri.texId, tri.color);
+            drawScanline(y, xL, xR, zL, zR, tuL, tvL, ooL, tuR, tvR, ooR, tri.texId, tri.color, tileYMin, tileYMax);
         }
     }
 }
 
 void Renderer::drawScanline(int y, int x0, int x1, double z0, double z1,
     double tu0, double tv0, double ooz0, double tu1, double tv1, double ooz1,
-    int texId, COLORREF color)
+    int texId, COLORREF color, int tileYMin, int tileYMax)
 {
+    if (y < tileYMin || y >= tileYMax) return;
     if (y < 0 || y >= m_screenHeight) return;
 
     // 裁剪到屏幕边界，同时修正插值参数

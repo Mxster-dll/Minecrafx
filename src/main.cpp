@@ -136,7 +136,7 @@ int main()
         return (int) std::floor(h);
     };
 
-    constexpr int MX = 24, MZ = 24, MW = 12;
+    constexpr int MX = 48, MZ = 48, MW = 24;
     for (int x = 0; x < MX; ++x)
         for (int z = 0; z < MZ; ++z)
             for (int w = 0; w < MW; ++w)
@@ -153,7 +153,7 @@ int main()
 
     // ---- 4D 树木 ----
     srand(42);  // 固定种子保证可复现
-    for (int i = 0; i < 40; ++i)
+    for (int i = 0; i < 120; ++i)
     {
         int tx = rand() % (MX - 2) + 1;
         int tz = rand() % (MZ - 2) + 1;

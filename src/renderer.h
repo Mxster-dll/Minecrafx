@@ -9,6 +9,7 @@
 #include <vector>
 #include <deque>
 #include <unordered_set>
+#include <atomic>
 #include <ctime>
 
 /**
@@ -134,9 +135,11 @@ private:
     int m_diagOccl;
     int m_diagGeom;
     int m_diagFaces;
-    int m_diagFaceCull;  // 面剔除跳过的面数
+    std::atomic<int> m_diagFaceCull;  // 面剔除跳过的面数（多线程安全）
     int m_diagChunkTotal; // 区块总数
     int m_diagChunkPass;  // 通过视平面检测的区块
+    int m_diagThreads;    // 三角形生成线程数
+    int m_diagTiles;      // 光栅化 Tile 数
     double m_msCollect;
     double m_msFrustum;
     double m_msBlock2Tri;
@@ -205,19 +208,20 @@ private:
         const World &world);
 
     /**
-     * @brief 3D→2D：光栅化所有三角形
+     * @brief 3D→2D：光栅化所有三角形（支持 Tile 范围）
      */
     void rasterizeTriangles(const std::vector<Tri3D> &tris,
-        const Camera3D &cam3d);
+        const Camera3D &cam3d, int tileYMin = 0, int tileYMax = 99999);
 
     /** @brief 光栅化单个三角形 */
-    void rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d);
+    void rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d,
+        int tileYMin = 0, int tileYMax = 99999);
 
     /** @brief 扫描线填充（透视校正纹理） */
     void drawScanline(int y, int x0, int x1, double z0, double z1,
         double tuz0, double tvz0, double ooz0,
         double tuz1, double tvz1, double ooz1,
-        int texId, COLORREF color);
+        int texId, COLORREF color, int tileYMin = 0, int tileYMax = 99999);
 
     /** @brief 绘制一条经深度测试的 3D 线段到 DIB */
     void drawOutlineEdge3D(double u0, double v0, double y0,
