@@ -159,6 +159,29 @@ int InputHandler::getMouseWheel()
     return delta;
 }
 
+POINT InputHandler::getMouseScreenPos() const
+{
+    POINT pt;
+    GetCursorPos(&pt);
+    ScreenToClient(m_hwnd, &pt);
+    return pt;
+}
+
+bool InputHandler::isMouseButtonDown(int button) const
+{
+    if (button < 0 || button >= MOUSE_BUTTON_COUNT)
+        return false;
+    return m_mouseCurr[button];
+}
+
+void InputHandler::showMouseCursor(bool visible)
+{
+    if (visible)
+        m_mouse.showCursor();
+    else
+        m_mouse.hideCursor();
+}
+
 // ============================================================================
 // 射线检测
 // ============================================================================

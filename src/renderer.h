@@ -59,6 +59,39 @@ public:
         m_sbGrid.insert(sb.pos());
     }
 
+    /** @brief 获取原始像素缓冲区指针 */
+    DWORD *getPixelBits() const { return m_pBits; }
+    int getScreenWidth() const { return m_screenWidth; }
+    int getScreenHeight() const { return m_screenHeight; }
+    bool isDibReady() const { return m_dibReady; }
+
+    /** @brief 从 DIB 捕获当前帧到背景缓冲区 */
+    void captureBackground();
+
+    /** @brief 对背景缓冲区应用高斯模糊 */
+    void applyGaussianBlur();
+
+    /** @brief 将模糊背景绘制到 DIB */
+    void drawBackground();
+
+    /** @brief 将 DIB 内容刷新到屏幕 */
+    void flushToScreen();
+
+    /** @brief 在屏幕正中央绘制一张图片（已加载的 IMAGE） */
+    void drawImageCentered(IMAGE *img);
+
+    /**
+     * @brief 绘制按钮
+     * @param x, y, w, h  按钮区域（屏幕坐标）
+     * @param imgNormal, imgHover, imgActive  三种状态的贴图（可为 nullptr，则用纯色填充）
+     * @param text        按钮文字
+     * @param hovered     当前鼠标是否悬停
+     * @param pressed     当前鼠标是否按下
+     */
+    void drawButton(int x, int y, int w, int h,
+        IMAGE *imgNormal, IMAGE *imgHover, IMAGE *imgActive,
+        const wchar_t *text, bool hovered, bool pressed);
+
 private:
     // ---- 屏幕参数 ----
     int m_screenWidth, m_screenHeight;
@@ -111,6 +144,10 @@ private:
     // ---- 超方块 ----
     std::vector<SuperBlock> m_superBlocks;
     std::unordered_set<IVec4> m_sbGrid;
+
+    // ---- GUI 背景 ----
+    std::vector<DWORD> m_background;
+    bool m_backgroundReady = false;
 
     // ---- 内部方法 ----
 

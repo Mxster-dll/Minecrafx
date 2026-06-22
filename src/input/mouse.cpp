@@ -73,3 +73,25 @@ std::pair<int, int> MouseInput::getDelta()
 
     return { dx, dy };
 }
+
+void MouseInput::showCursor()
+{
+    // 恢复原窗口类光标
+    SetClassLongPtr(m_hwnd, GCLP_HCURSOR, (LONG_PTR) m_hOldCursor);
+    SetCursor(LoadCursor(NULL, IDC_ARROW));
+    ShowCursor(TRUE);
+    ClipCursor(NULL);
+}
+
+void MouseInput::hideCursor()
+{
+    ShowCursor(FALSE);
+    SetClassLongPtr(m_hwnd, GCLP_HCURSOR, (LONG_PTR) m_hBlankCursor);
+    SetCursor(m_hBlankCursor);
+    ClipCursor(&m_clipRect);
+
+    // 复位鼠标到窗口中心
+    m_center = getWindowCenter(m_hwnd);
+    m_lastPos = m_center;
+    SetCursorPos(m_center.x, m_center.y);
+}

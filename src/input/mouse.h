@@ -30,6 +30,12 @@ public:
      */
     std::pair<int, int> getDelta();
 
+    /** @brief 显示普通鼠标光标（恢复原窗口类光标，解除裁剪） */
+    void showCursor();
+
+    /** @brief 隐藏鼠标光标（设为空白光标，重新裁剪到窗口内） */
+    void hideCursor();
+
 private:
     HWND m_hwnd;
     HCURSOR m_hBlankCursor;

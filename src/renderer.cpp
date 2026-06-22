@@ -949,3 +949,235 @@ void Renderer::drawScanline(int y, int x0, int x1, double z0, double z1,
         }
     }
 }
+
+// ============================================================================
+// GUI：背景捕获与高斯模糊
+// ============================================================================
+
+void Renderer::captureBackground()
+{
+    if (!m_dibReady) return;
+
+    int total = m_screenWidth * m_screenHeight;
+    m_background.resize(total);
+    for (int i = 0; i < total; ++i)
+        m_background[i] = m_pBits[i];
+    m_backgroundReady = true;
+}
+
+void Renderer::applyGaussianBlur()
+{
+    if (!m_backgroundReady) return;
+
+    int w = m_screenWidth, h = m_screenHeight;
+    std::vector<DWORD> temp(w * h);
+
+    // 7-tap binomial kernel: [1, 6, 15, 20, 15, 6, 1] / 64
+    // 4 次完整迭代 → 等效于 ~25-tap 核，sigma ≈ 3.5，强模糊
+    constexpr int K = 7;
+    constexpr int weights[K] = { 1, 6, 15, 20, 15, 6, 1 };
+    constexpr int radius = K / 2;
+    constexpr int ITERATIONS = 4;
+
+    for (int iter = 0; iter < ITERATIONS; ++iter)
+    {
+        // ---- 水平模糊 ----
+        for (int y = 0; y < h; ++y)
+        {
+            int rowBase = y * w;
+            for (int x = 0; x < w; ++x)
+            {
+                int sumR = 0, sumG = 0, sumB = 0;
+                int weightSum = 0;
+                for (int k = -radius; k <= radius; ++k)
+                {
+                    int sx = x + k;
+                    if (sx < 0) sx = 0;
+                    if (sx >= w) sx = w - 1;
+                    DWORD c = m_background[rowBase + sx];
+                    int wt = weights[k + radius];
+                    sumR += GetRValue(c) * wt;
+                    sumG += GetGValue(c) * wt;
+                    sumB += GetBValue(c) * wt;
+                    weightSum += wt;
+                }
+                sumR /= weightSum;
+                sumG /= weightSum;
+                sumB /= weightSum;
+                temp[rowBase + x] = RGB(sumR, sumG, sumB);
+            }
+        }
+
+        // ---- 垂直模糊 ----
+        for (int y = 0; y < h; ++y)
+        {
+            int rowBase = y * w;
+            for (int x = 0; x < w; ++x)
+            {
+                int sumR = 0, sumG = 0, sumB = 0;
+                int weightSum = 0;
+                for (int k = -radius; k <= radius; ++k)
+                {
+                    int sy = y + k;
+                    if (sy < 0) sy = 0;
+                    if (sy >= h) sy = h - 1;
+                    DWORD c = temp[sy * w + x];
+                    int wt = weights[k + radius];
+                    sumR += GetRValue(c) * wt;
+                    sumG += GetGValue(c) * wt;
+                    sumB += GetBValue(c) * wt;
+                    weightSum += wt;
+                }
+                sumR /= weightSum;
+                sumG /= weightSum;
+                sumB /= weightSum;
+                m_background[rowBase + x] = RGB(sumR, sumG, sumB);
+            }
+        }
+    }
+}
+
+void Renderer::drawBackground()
+{
+    if (!m_backgroundReady || !m_dibReady) return;
+    int total = m_screenWidth * m_screenHeight;
+    for (int i = 0; i < total; ++i)
+        m_pBits[i] = m_background[i];
+}
+
+void Renderer::flushToScreen()
+{
+    if (!m_dibReady) return;
+    HDC hdc = GetImageHDC();
+    BitBlt(hdc, 0, 0, m_screenWidth, m_screenHeight, m_memDC, 0, 0, SRCCOPY);
+}
+
+// ============================================================================
+// GUI：图片绘制
+// ============================================================================
+
+void Renderer::drawImageCentered(IMAGE *img)
+{
+    if (!img || !m_dibReady) return;
+
+    DWORD *buf = GetImageBuffer(img);
+    int iw = img->getwidth();
+    int ih = img->getheight();
+    if (!buf || iw <= 0 || ih <= 0) return;
+
+    int ox = (m_screenWidth - iw) / 2;
+    int oy = (m_screenHeight - ih) / 2;
+
+    for (int y = 0; y < ih; ++y)
+    {
+        int py = oy + y;
+        if (py < 0 || py >= m_screenHeight) continue;
+        int srcRow = y * iw;
+        int dstRow = py * m_screenWidth;
+        for (int x = 0; x < iw; ++x)
+        {
+            int px = ox + x;
+            if (px < 0 || px >= m_screenWidth) continue;
+            DWORD c = buf[srcRow + x];
+            // 跳过全透明（黑色背景也算——如果图片有 alpha，EasyX 会预乘到黑色）
+            // 这里简单跳过纯黑像素，适用于 Minecraft 风格 GUI
+            if (c == 0 || c == RGB(0, 0, 0)) continue;
+            m_pBits[dstRow + px] = c;
+        }
+    }
+}
+
+// ============================================================================
+// GUI：按钮绘制
+// ============================================================================
+
+void Renderer::drawButton(int x, int y, int w, int h,
+    IMAGE *imgNormal, IMAGE *imgHover, IMAGE *imgActive,
+    const wchar_t *text, bool hovered, bool pressed)
+{
+    if (!m_dibReady) return;
+
+    IMAGE *useImg = imgNormal;
+    if (pressed && imgActive) useImg = imgActive;
+    else if (hovered && imgHover) useImg = imgHover;
+
+    if (useImg)
+    {
+        // 拉伸贴图到按钮大小
+        DWORD *buf = GetImageBuffer(useImg);
+        int iw = useImg->getwidth();
+        int ih = useImg->getheight();
+        if (buf && iw > 0 && ih > 0)
+        {
+            for (int dy = 0; dy < h; ++dy)
+            {
+                int sy = dy * ih / h;
+                if (sy >= ih) sy = ih - 1;
+                int py = y + dy;
+                if (py < 0 || py >= m_screenHeight) continue;
+                int srcRow = sy * iw;
+                int dstRow = py * m_screenWidth;
+                for (int dx = 0; dx < w; ++dx)
+                {
+                    int sx = dx * iw / w;
+                    if (sx >= iw) sx = iw - 1;
+                    int px = x + dx;
+                    if (px < 0 || px >= m_screenWidth) continue;
+                    DWORD c = buf[srcRow + sx];
+                    if (c == 0 || c == RGB(0, 0, 0)) continue;
+                    m_pBits[dstRow + px] = c;
+                }
+            }
+        }
+    }
+    else
+    {
+        // 无贴图时绘制纯色按钮
+        COLORREF bg = pressed ? RGB(80, 80, 80) : (hovered ? RGB(140, 140, 140) : RGB(100, 100, 100));
+        for (int dy = 0; dy < h; ++dy)
+        {
+            int py = y + dy;
+            if (py < 0 || py >= m_screenHeight) continue;
+            int dstRow = py * m_screenWidth;
+            for (int dx = 0; dx < w; ++dx)
+            {
+                int px = x + dx;
+                if (px < 0 || px >= m_screenWidth) continue;
+                m_pBits[dstRow + px] = bg;
+            }
+        }
+        // 边框
+        COLORREF border = hovered ? RGB(255, 255, 255) : RGB(180, 180, 180);
+        for (int dx = 0; dx < w; ++dx)
+        {
+            if (y >= 0 && y < m_screenHeight) m_pBits[y * m_screenWidth + (x + dx)] = border;
+            int by = y + h - 1;
+            if (by >= 0 && by < m_screenHeight) m_pBits[by * m_screenWidth + (x + dx)] = border;
+        }
+        for (int dy = 0; dy < h; ++dy)
+        {
+            if (y + dy >= 0 && y + dy < m_screenHeight) m_pBits[(y + dy) * m_screenWidth + x] = border;
+            int bx = x + w - 1;
+            if (bx >= 0 && bx < m_screenWidth) m_pBits[(y + dy) * m_screenWidth + bx] = border;
+        }
+    }
+
+    // 绘制文字
+    if (text && text[0])
+    {
+        int tx = x + w / 2;
+        int ty = y + h / 2;
+        // 使用 GDI 在 DIB 内存 DC 上绘制文字
+        HFONT hFont = CreateFontW(24, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Microsoft YaHei");
+        HFONT oldFont = (HFONT) SelectObject(m_memDC, hFont);
+        SetBkMode(m_memDC, TRANSPARENT);
+        SetTextColor(m_memDC, RGB(255, 255, 255));
+        SIZE textSize;
+        GetTextExtentPoint32W(m_memDC, text, (int) wcslen(text), &textSize);
+        TextOutW(m_memDC, tx - textSize.cx / 2, ty - textSize.cy / 2, text, (int) wcslen(text));
+        SelectObject(m_memDC, oldFont);
+        DeleteObject(hFont);
+    }
+}

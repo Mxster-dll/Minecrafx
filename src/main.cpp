@@ -26,7 +26,15 @@
 #include "constant.h"
 #include "input/input_handler.h"
 
- // 方块过程色（哈希）
+ // ---- 游戏状态 ----
+enum class GameState
+{
+    Gameplay,   // 正常游戏
+    Inventory,  // 背包界面（E 键打开）
+    Paused      // 暂停菜单（Esc 键打开）
+};
+
+// 方块过程色（哈希）
 static COLORREF blockColor(int x, int y, int z, int w)
 {
     unsigned int h = (unsigned int) (x * 73856093 + y * 19349663 + z * 83492791 + w * 39916801);
@@ -216,14 +224,105 @@ int main()
 
     SetWindowText(hwnd, L"Minecrafx");
 
-    for (auto &input : InputHandler(hwnd))
+    // ---- 预加载 GUI 图片 ----
+    IMAGE imgInventory, imgButton, imgButtonHover, imgButtonActive;
+    // 先获取原图尺寸，再用 loadimage 自带缩放加载为 2 倍
+    loadimage(&imgInventory, L"../assert/gui/inventory.png");
+    int invW = imgInventory.getwidth(), invH = imgInventory.getheight();
+    loadimage(&imgInventory, L"../assert/gui/inventory.png", invW * 2, invH * 2, true);
+    loadimage(&imgButton, L"../assert/gui/button.png");
+    loadimage(&imgButtonHover, L"../assert/gui/button_hover.png");
+    loadimage(&imgButtonActive, L"../assert/gui/button_active.png");
+
+    // ---- 游戏状态 ----
+    GameState state = GameState::Gameplay;
+
+    InputHandler input(hwnd);
+    while (!input.isQuitRequested())
     {
+        input.update();
+
         // ---- 帧间隔 ----
         clock_t nowFrame = clock();
         double dt = static_cast<double>(nowFrame - lastFrame) / CLOCKS_PER_SEC;
         lastFrame = nowFrame;
         if (dt > 0.1) dt = 0.1;
         if (dt <= 0.0) dt = 0.001;
+
+        // ================================================================
+        // 非 Gameplay 状态处理
+        // ================================================================
+        if (state == GameState::Inventory)
+        {
+            if (input.isPressed(Key::Esc) || input.isPressed(Key::E))
+            {
+                state = GameState::Gameplay;
+                input.showMouseCursor(false);
+                input.getMouseDelta();  // 丢弃首帧增量，防止视角跳跃
+                continue;
+            }
+            // 渲染背包界面
+            cleardevice();
+            setbkcolor(RGB(10, 10, 30));
+            renderer.drawBackground();
+            renderer.drawImageCentered(&imgInventory);
+            renderer.flushToScreen();
+            FlushBatchDraw();
+            continue;
+        }
+
+        if (state == GameState::Paused)
+        {
+            if (input.isPressed(Key::Esc))
+            {
+                state = GameState::Gameplay;
+                input.showMouseCursor(false);
+                input.getMouseDelta();  // 丢弃首帧增量，防止视角跳跃
+                continue;
+            }
+
+            // 按钮交互
+            constexpr int BTN_W = 200, BTN_H = 50;
+            int btnX = (SCREEN_WIDTH - BTN_W) / 2;
+            int btnY = SCREEN_HEIGHT / 2 + 40;
+            POINT mp = input.getMouseScreenPos();
+            bool hovered = (mp.x >= btnX && mp.x < btnX + BTN_W &&
+                mp.y >= btnY && mp.y < btnY + BTN_H);
+            bool lbtnDown = input.isMouseButtonDown(0);
+            if (input.getMouseClick(0) && hovered)
+                input.requestQuit();
+
+            // 渲染暂停界面
+            cleardevice();
+            setbkcolor(RGB(10, 10, 30));
+            renderer.drawBackground();
+            renderer.drawButton(btnX, btnY, BTN_W, BTN_H,
+                &imgButton, &imgButtonHover, &imgButtonActive,
+                L"退出游戏", hovered, lbtnDown);
+            renderer.flushToScreen();
+            FlushBatchDraw();
+            continue;
+        }
+
+        // ================================================================
+        // Gameplay 状态下的模式切换检测
+        // ================================================================
+        if (input.isPressed(Key::Esc))
+        {
+            state = GameState::Paused;
+            renderer.captureBackground();
+            renderer.applyGaussianBlur();
+            input.showMouseCursor(true);
+            continue;
+        }
+        if (input.isPressed(Key::E))
+        {
+            state = GameState::Inventory;
+            renderer.captureBackground();
+            renderer.applyGaussianBlur();
+            input.showMouseCursor(true);
+            continue;
+        }
 
         // ---- 键盘移动（3D 空间，方向由 4D 相机基向量投影决定） ----
         {
@@ -393,13 +492,11 @@ int main()
         if (input.isPressed(Key::Num5)) selectedSlot = 4;
         if (input.isPressed(Key::Num6)) selectedSlot = 5;
 
-        // ---- Q/E/滚轮：重建地图 ----
+        // ---- 滚轮：重建地图 ----
         {
             double inputDesire = 0.0;
             int wheel = input.getMouseWheel();
             if (wheel != 0) inputDesire += (wheel / (double) WHEEL_DELTA) * SLICE_STEP;
-            if (input.isKeyDown(Key::E)) inputDesire += SLICE_STEP;
-            if (input.isKeyDown(Key::Q)) inputDesire -= SLICE_STEP;
             sliceVelocity += (inputDesire - sliceVelocity) * SLICE_SMOOTH;
 
             if (std::abs(sliceVelocity) > 1e-10)
@@ -453,7 +550,7 @@ int main()
                 {
                     if (raycast3D(hitPos, prevPos))
                     {
-                        world.set(hitPos, 0); changed = true; interactCooldown = 15;
+                        world.set(hitPos, 0); changed = true; interactCooldown = 8;
                         playSFX(digPath[rand() % 4]);
                     }
                 }

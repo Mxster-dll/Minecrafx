@@ -48,10 +48,10 @@ public:
             return *this;
         }
 
-        /** @brief 与 Sentinel 比较：Esc 按下时结束 */
+        /** @brief 与 Sentinel 比较：调用 requestQuit() 时结束 */
         bool operator!=(Sentinel) const
         {
-            return !m_handler.isPressed(Key::Esc);
+            return !m_handler.m_quitRequested;
         }
 
     private:
@@ -102,6 +102,33 @@ public:
     bool getMouseClick(int button);
 
     /**
+     * @brief 获取鼠标在窗口客户区中的屏幕坐标
+     */
+    POINT getMouseScreenPos() const;
+
+    /**
+     * @brief 检测鼠标按键是否被按住
+     * @param button 0=左键, 1=右键, 2=中键
+     */
+    bool isMouseButtonDown(int button) const;
+
+    /**
+     * @brief 显示/隐藏鼠标光标
+     * @param visible true=显示普通光标+解除裁剪, false=隐藏为空白光标+重新裁剪
+     */
+    void showMouseCursor(bool visible);
+
+    /**
+     * @brief 请求退出游戏（结束主循环）
+     */
+    void requestQuit() { m_quitRequested = true; }
+
+    /**
+     * @brief 是否已请求退出
+     */
+    bool isQuitRequested() const { return m_quitRequested; }
+
+    /**
      * @brief 获取并清空本帧累积的鼠标滚轮增量
      * @return 滚轮增量（正值向上/远离，负值向下/靠近，WHEEL_DELTA=120）
      */
@@ -119,6 +146,12 @@ private:
 
     // 鼠标滚轮累积
     int m_wheelDelta;
+
+    // 退出请求标志
+    bool m_quitRequested = false;
+
+    // ---- Iterator 友元（访问 m_quitRequested） ----
+    friend class Iterator;
 
     // ---- 窗口子类化（拦截 WM_MOUSEWHEEL） ----
     WNDPROC m_oldWndProc;
