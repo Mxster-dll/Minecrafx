@@ -57,6 +57,8 @@ Renderer::Renderer(int screenWidth, int screenHeight)
     , m_diagGeom(0)
     , m_diagFaces(0)
     , m_diagFaceCull(0)
+    , m_diagChunkTotal(0)
+    , m_diagChunkPass(0)
     , m_msCollect(0.0)
     , m_msFrustum(0.0)
     , m_msBlock2Tri(0.0)
@@ -725,16 +727,18 @@ void Renderer::drawHUD(const Camera4D &cam)
         TextOutW(hdc, m_screenWidth - 200, 102, buf, (int) wcslen(buf));
         swprintf(buf, 256, L"面剔除: %d", m_diagFaceCull);
         TextOutW(hdc, m_screenWidth - 200, 120, buf, (int) wcslen(buf));
+        swprintf(buf, 256, L"区块: %d/%d", m_diagChunkPass, m_diagChunkTotal);
+        TextOutW(hdc, m_screenWidth - 200, 138, buf, (int) wcslen(buf));
 
         settextcolor(RGB(180, 220, 255));
         swprintf(buf, 256, L"收集: %.1fms", m_msCollect);
-        TextOutW(hdc, m_screenWidth - 200, 122, buf, (int) wcslen(buf));
+        TextOutW(hdc, m_screenWidth - 200, 156, buf, (int) wcslen(buf));
         swprintf(buf, 256, L"视锥裁剪: %.1fms", m_msFrustum);
-        TextOutW(hdc, m_screenWidth - 200, 140, buf, (int) wcslen(buf));
+        TextOutW(hdc, m_screenWidth - 200, 174, buf, (int) wcslen(buf));
         swprintf(buf, 256, L"方块->三角形: %.1fms", m_msBlock2Tri);
-        TextOutW(hdc, m_screenWidth - 200, 158, buf, (int) wcslen(buf));
+        TextOutW(hdc, m_screenWidth - 200, 192, buf, (int) wcslen(buf));
         swprintf(buf, 256, L"光栅化: %.1fms", m_msRaster);
-        TextOutW(hdc, m_screenWidth - 200, 176, buf, (int) wcslen(buf));
+        TextOutW(hdc, m_screenWidth - 200, 210, buf, (int) wcslen(buf));
         settextcolor(RGB(255, 255, 255));
     } // m_showHUD
 
@@ -792,10 +796,37 @@ std::vector<IVec4> Renderer::collectVisibleBlocks(const World &world,
     const Vec4 &camPos = cam.getPos();
     double sp = m_blockHalf * 2.0;
 
-    // ---- 遍历所有区块及其方块 ----
+    // ---- 遍历所有区块：先做 Chunk 级平面交会快测 ----
+    int chunksTotal = 0, chunksPass = 0;
     for (const auto &[chunkPos, chunk] : world.getChunks())
     {
         if (chunk.empty()) continue;
+        ++chunksTotal;
+
+        // Chunk xzw 包围盒 vs 视平面
+        {
+            double half = m_blockHalf;
+            int sz = World::CHUNK_SIZE;
+            double cx0 = (chunk.cx() * sz) * sp - camPos.x - half;
+            double cx1 = (chunk.cx() * sz + sz - 1) * sp - camPos.x + half;
+            double cz0 = (chunk.cz() * sz) * sp - camPos.z - half;
+            double cz1 = (chunk.cz() * sz + sz - 1) * sp - camPos.z + half;
+            double cw0 = (chunk.cw() * sz) * sp - camPos.w - half;
+            double cw1 = (chunk.cw() * sz + sz - 1) * sp - camPos.w + half;
+
+            double cmin = 0, cmax = 0;
+            double nx = plane.n.x, nz = plane.n.z, nw = plane.n.w;
+            if (nx > 0) { cmin += nx * cx0; cmax += nx * cx1; }
+            else { cmin += nx * cx1; cmax += nx * cx0; }
+            if (nz > 0) { cmin += nz * cz0; cmax += nz * cz1; }
+            else { cmin += nz * cz1; cmax += nz * cz0; }
+            if (nw > 0) { cmin += nw * cw0; cmax += nw * cw1; }
+            else { cmin += nw * cw1; cmax += nw * cw0; }
+
+            if (cmin > 0.0 || cmax < 0.0) continue;  // 区块不与视平面相交
+        }
+        ++chunksPass;
+
         for (const auto &[localPos, type] : chunk.blocks())
         {
             IVec4 blk = chunk.localToWorld(localPos.x, localPos.y, localPos.z, localPos.w);
@@ -819,6 +850,9 @@ std::vector<IVec4> Renderer::collectVisibleBlocks(const World &world,
             result.push_back(IVec4(bx, by, bz, bw));
         } // inner: chunk blocks
     } // outer: world chunks
+
+    m_diagChunkTotal = chunksTotal;
+    m_diagChunkPass = chunksPass;
 
     return result;
 }

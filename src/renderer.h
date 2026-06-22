@@ -135,6 +135,8 @@ private:
     int m_diagGeom;
     int m_diagFaces;
     int m_diagFaceCull;  // 面剔除跳过的面数
+    int m_diagChunkTotal; // 区块总数
+    int m_diagChunkPass;  // 通过视平面检测的区块
     double m_msCollect;
     double m_msFrustum;
     double m_msBlock2Tri;
