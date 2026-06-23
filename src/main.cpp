@@ -26,6 +26,7 @@
 #include "constant.h"
 #include "input/input_handler.h"
 #include "inventory.h"
+#include "crafting.h"
 
  // ---- 游戏状态 ----
 enum class GameState
@@ -240,7 +241,8 @@ int main()
 
     // ---- 游戏状态 ----
     GameState state = GameState::Gameplay;
-    Inventory inventory;  // 背包 + 快捷栏
+    Inventory inventory;
+    CraftingManager craftMgr;  // 合成配方
 
     InputHandler input(hwnd);
     while (!input.isQuitRequested())
@@ -291,25 +293,52 @@ int main()
                 invDispX, invDispY, invDispW, invDispH,
                 invNativeW, invNativeH);
 
+            bool shiftHeld = input.isKeyDown(Key::LShift) || input.isKeyDown(Key::RShift);
+            constexpr int CRAFT_BASE_SLOT = Inventory::HOTBAR_SLOTS + Inventory::BACKPACK_SLOTS;
+            constexpr int OUTPUT_SLOT = CRAFT_BASE_SLOT + Inventory::CRAFT_INPUT;
+
             if (mouseDown && hoveredSlot >= 0)
             {
+                bool wasCraft = (hoveredSlot >= CRAFT_BASE_SLOT);
                 if (inventory.isDragging())
                 {
-                    // 手上有物品 → 与目标格子交换
-                    inventory.placeInto(hoveredSlot);
+                    // 手上已有物品
+                    if (hoveredSlot == OUTPUT_SLOT)
+                        inventory.takeCraftOutput(craftMgr);  // 同种累加，异种忽略
+                    else if (shiftHeld)
+                        inventory.addToDrag(hoveredSlot, 1);  // Shift+点击：只取 1 个累加
+                    else
+                        inventory.placeInto(hoveredSlot);     // 正常放入
+                }
+                else if (hoveredSlot == OUTPUT_SLOT)
+                {
+                    // 手上无物品 → 拿取合成产物
+                    inventory.takeCraftOutput(craftMgr);
                 }
                 else
                 {
-                    // 手上无物品 → 拿起
-                    inventory.pickup(hoveredSlot);
+                    int count = shiftHeld ? 1 : -1;  // Shift: 只拿 1 个
+                    inventory.pickup(hoveredSlot, count);
                 }
+                if (wasCraft)
+                    inventory.updateCraftingResult(craftMgr);
             }
             else if (mouseUp && inventory.isDragging())
             {
+                bool wasCraft = (hoveredSlot >= CRAFT_BASE_SLOT);
                 if (hoveredSlot >= 0)
-                    inventory.placeInto(hoveredSlot);
+                {
+                    if (hoveredSlot == OUTPUT_SLOT)
+                        inventory.takeCraftOutput(craftMgr);  // 同种累加
+                    else if (shiftHeld)
+                        inventory.addToDrag(hoveredSlot, 1);
+                    else
+                        inventory.placeInto(hoveredSlot);
+                }
                 else
                     inventory.cancelDrag();
+                if (wasCraft)
+                    inventory.updateCraftingResult(craftMgr);
             }
 
             // 渲染背包界面
@@ -328,14 +357,15 @@ int main()
                     invDispX, invDispY, invDispW, invDispH,
                     invNativeW, invNativeH,
                     sx, sy, sw, sh);
-                renderer.drawBlockIcon(sx, sy, sh, slot.blockType);
+                renderer.drawBlockIcon(sx, sy, sh, slot.blockType, slot.count);
             }
 
             // 绘制拖拽中的物品（跟随鼠标）
             if (inventory.isDragging())
             {
-                int sz = (int) (16 * (double) invDispW / invNativeW);  // 槽位大小
-                renderer.drawBlockIcon(mp.x - sz / 2, mp.y - sz / 2, sz, inventory.dragBlockType());
+                int sz = (int) (16 * (double) invDispW / invNativeW);
+                renderer.drawBlockIcon(mp.x - sz / 2, mp.y - sz / 2, sz,
+                    inventory.dragBlockType(), inventory.dragCount());
             }
 
             renderer.flushToScreen();

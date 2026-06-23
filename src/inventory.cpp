@@ -1,4 +1,5 @@
 #include "inventory.h"
+#include "crafting.h"
 
 Inventory::Inventory()
 {
@@ -44,29 +45,37 @@ void Inventory::slotScreenRect(int index,
 {
     outX = outY = outW = outH = 0;
     if (imgNativeW <= 0 || imgNativeH <= 0) return;
+    double sx = (double) imgDispW / imgNativeW;
+    double sy = (double) imgDispH / imgNativeH;
 
-    double scaleX = (double) imgDispW / imgNativeW;
-    double scaleY = (double) imgDispH / imgNativeH;
-
-    int nativeX, nativeY;
+    int nx = 0, ny = 0;
     if (index < HOTBAR_SLOTS)
     {
-        nativeX = BP_ORIGIN_X + index * SLOT_STEP;
-        nativeY = HB_INV_Y;
+        nx = BP_ORIGIN_X + index * SLOT_STEP;
+        ny = HB_INV_Y;
+    }
+    else if (index < CRAFT_BASE)
+    {
+        int bp = index - HOTBAR_SLOTS;
+        nx = BP_ORIGIN_X + (bp % BACKPACK_COLS) * SLOT_STEP;
+        ny = BP_ORIGIN_Y + (bp / BACKPACK_COLS) * SLOT_STEP;
+    }
+    else if (index < CRAFT_OUTPUT_IDX)
+    {
+        int ci = index - CRAFT_BASE;
+        nx = CRAFT_X + (ci % 2) * SLOT_STEP;
+        ny = (ci / 2) ? CRAFT_Y1 : CRAFT_Y0;
     }
     else
     {
-        int bpIdx = index - HOTBAR_SLOTS;
-        int row = bpIdx / BACKPACK_COLS;
-        int col = bpIdx % BACKPACK_COLS;
-        nativeX = BP_ORIGIN_X + col * SLOT_STEP;
-        nativeY = BP_ORIGIN_Y + row * SLOT_STEP;
+        nx = OUTPUT_X;
+        ny = OUTPUT_Y;
     }
 
-    outX = imgDispX + (int) (nativeX * scaleX);
-    outY = imgDispY + (int) (nativeY * scaleY);
-    outW = (int) (SLOT_SIZE * scaleX);
-    outH = (int) (SLOT_SIZE * scaleY);
+    outX = imgDispX + (int) (nx * sx);
+    outY = imgDispY + (int) (ny * sy);
+    outW = (int) (SLOT_SIZE * sx);
+    outH = (int) (SLOT_SIZE * sy);
 }
 
 int Inventory::hitTest(int screenX, int screenY,
@@ -74,46 +83,110 @@ int Inventory::hitTest(int screenX, int screenY,
     int imgNativeW, int imgNativeH) const
 {
     if (imgNativeW <= 0 || imgNativeH <= 0) return -1;
+    double sx = (double) imgDispW / imgNativeW;
+    double sy = (double) imgDispH / imgNativeH;
+    double nx = (screenX - imgDispX) / sx;
+    double ny = (screenY - imgDispY) / sy;
 
-    double scaleX = (double) imgDispW / imgNativeW;
-    double scaleY = (double) imgDispH / imgNativeH;
+    // 输出区（优先命中，因为面积大）
+    if (nx >= OUTPUT_X && nx < OUTPUT_X + SLOT_SIZE &&
+        ny >= OUTPUT_Y && ny < OUTPUT_Y + SLOT_SIZE)
+        return CRAFT_OUTPUT_IDX;
 
-    double nativeX = (screenX - imgDispX) / scaleX;
-    double nativeY = (screenY - imgDispY) / scaleY;
+    // 合成区 2×2
+    for (int ci = 0; ci < CRAFT_INPUT; ++ci)
+    {
+        int cx = CRAFT_X + (ci % 2) * SLOT_STEP;
+        int cy = (ci / 2) ? CRAFT_Y1 : CRAFT_Y0;
+        if (nx >= cx && nx < cx + SLOT_SIZE && ny >= cy && ny < cy + SLOT_SIZE)
+            return CRAFT_BASE + ci;
+    }
 
+    // 快捷栏
     for (int i = 0; i < HOTBAR_SLOTS; ++i)
     {
-        int nx = BP_ORIGIN_X + i * SLOT_STEP;
-        int ny = HB_INV_Y;
-        if (nativeX >= nx && nativeX < nx + SLOT_SIZE &&
-            nativeY >= ny && nativeY < ny + SLOT_SIZE)
+        int hx = BP_ORIGIN_X + i * SLOT_STEP;
+        if (nx >= hx && nx < hx + SLOT_SIZE && ny >= HB_INV_Y && ny < HB_INV_Y + SLOT_SIZE)
             return i;
     }
-    for (int row = 0; row < BACKPACK_ROWS; ++row)
-    {
-        for (int col = 0; col < BACKPACK_COLS; ++col)
+
+    // 背包
+    for (int r = 0; r < BACKPACK_ROWS; ++r)
+        for (int c = 0; c < BACKPACK_COLS; ++c)
         {
-            int nx = BP_ORIGIN_X + col * SLOT_STEP;
-            int ny = BP_ORIGIN_Y + row * SLOT_STEP;
-            if (nativeX >= nx && nativeX < nx + SLOT_SIZE &&
-                nativeY >= ny && nativeY < ny + SLOT_SIZE)
-                return HOTBAR_SLOTS + row * BACKPACK_COLS + col;
+            int bx = BP_ORIGIN_X + c * SLOT_STEP;
+            int by = BP_ORIGIN_Y + r * SLOT_STEP;
+            if (nx >= bx && nx < bx + SLOT_SIZE && ny >= by && ny < by + SLOT_SIZE)
+                return HOTBAR_SLOTS + r * BACKPACK_COLS + c;
         }
-    }
+
     return -1;
 }
 
-bool Inventory::pickup(int slotIndex)
+void Inventory::updateCraftingResult(const CraftingManager &craftMgr)
+{
+    // 将 2×2 合成区填入 3×3 左上角
+    int grid[3][3] = {};
+    for (int ci = 0; ci < CRAFT_INPUT; ++ci)
+    {
+        int row = ci / 2, col = ci % 2;
+        grid[row][col] = m_slots[CRAFT_BASE + ci].blockType;
+    }
+
+    CraftResult r = craftMgr.match(grid);
+    auto &out = m_slots[CRAFT_OUTPUT_IDX];
+    if (r.valid)
+    {
+        out.blockType = r.outputType;
+        out.count = r.outputCount;
+    }
+    else
+    {
+        out.blockType = BLOCK_AIR;
+        out.count = 0;
+    }
+}
+
+bool Inventory::pickup(int slotIndex, int count /* = -1 */)
 {
     if (slotIndex < 0 || slotIndex >= TOTAL_SLOTS) return false;
+    if (isDragging()) return false;  // 手上已有物品，请用 addToDrag 或 placeInto
     auto &s = m_slots[slotIndex];
     if (s.blockType == BLOCK_AIR || s.count <= 0) return false;
 
+    int take = (count < 0 || count > s.count) ? s.count : count;
+    if (take <= 0) return false;
+
     m_dragging = slotIndex;
     m_dragType = s.blockType;
-    m_dragCount = s.count;
-    s.blockType = BLOCK_AIR;
-    s.count = 0;
+    m_dragCount = take;
+
+    s.count -= take;
+    if (s.count <= 0)
+    {
+        s.blockType = BLOCK_AIR;
+        s.count = 0;
+    }
+    return true;
+}
+
+bool Inventory::addToDrag(int slotIndex, int count)
+{
+    if (!isDragging()) return false;
+    if (slotIndex < 0 || slotIndex >= TOTAL_SLOTS) return false;
+    auto &s = m_slots[slotIndex];
+    if (s.blockType != m_dragType || s.count <= 0) return false;
+
+    int take = (count > s.count) ? s.count : count;
+    if (take <= 0) return false;
+
+    m_dragCount += take;
+    s.count -= take;
+    if (s.count <= 0)
+    {
+        s.blockType = BLOCK_AIR;
+        s.count = 0;
+    }
     return true;
 }
 
@@ -121,6 +194,9 @@ bool Inventory::placeInto(int slotIndex)
 {
     if (!isDragging()) return false;
     if (slotIndex < 0 || slotIndex >= TOTAL_SLOTS) { cancelDrag(); return false; }
+
+    // 不能放入输出区
+    if (slotIndex == CRAFT_OUTPUT_IDX) return false;
 
     auto &s = m_slots[slotIndex];
     if (s.blockType == BLOCK_AIR)
@@ -136,12 +212,12 @@ bool Inventory::placeInto(int slotIndex)
         m_dragging = -1;
         return true;
     }
-    // 不同物品：交换
-    int tmpType = s.blockType, tmpCount = s.count;
+    // 交换
+    int tt = s.blockType, tc = s.count;
     s.blockType = m_dragType;
     s.count = m_dragCount;
-    m_dragType = tmpType;
-    m_dragCount = tmpCount;
+    m_dragType = tt;
+    m_dragCount = tc;
     return true;
 }
 
@@ -152,4 +228,42 @@ void Inventory::cancelDrag()
     s.blockType = m_dragType;
     s.count = m_dragCount;
     m_dragging = -1;
+}
+
+bool Inventory::takeCraftOutput(const CraftingManager &craftMgr)
+{
+    auto &out = m_slots[CRAFT_OUTPUT_IDX];
+    if (out.blockType == BLOCK_AIR || out.count <= 0) return false;
+
+    if (isDragging())
+    {
+        // 手上已有物品 → 必须同种才能累加
+        if (m_dragType != out.blockType) return false;
+        m_dragCount += out.count;
+    }
+    else
+    {
+        // 拿起产物
+        m_dragging = CRAFT_OUTPUT_IDX;
+        m_dragType = out.blockType;
+        m_dragCount = out.count;
+    }
+    out.blockType = BLOCK_AIR;
+    out.count = 0;
+
+    // 消耗合成区材料（每个非空格减 1）
+    for (int ci = 0; ci < CRAFT_INPUT; ++ci)
+    {
+        auto &s = m_slots[CRAFT_BASE + ci];
+        if (s.blockType != BLOCK_AIR && s.count > 0)
+        {
+            --s.count;
+            if (s.count <= 0)
+                s.blockType = BLOCK_AIR;
+        }
+    }
+
+    // 重新计算合成结果
+    updateCraftingResult(craftMgr);
+    return true;
 }

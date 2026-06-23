@@ -62,8 +62,8 @@ public:
     /** @brief 绘制热键栏 */
     void drawHotbar(int selectedSlot, const int *hotbarBlockTypes = nullptr);
 
-    /** @brief 在屏幕 (x,y) 处绘制一个 sz×sz 的方块图标 */
-    void drawBlockIcon(int screenX, int screenY, int size, int blockType);
+    /** @brief 在屏幕 (x,y) 处绘制一个 sz×sz 的方块图标，count>1 时显示数字 */
+    void drawBlockIcon(int screenX, int screenY, int size, int blockType, int count = 1);
 
     /** @brief 加载背包页大图标（32×32） */
     void loadInventoryIcons();

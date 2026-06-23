@@ -456,13 +456,12 @@ void Renderer::loadInventoryIcons()
     }
 }
 
-void Renderer::drawBlockIcon(int screenX, int screenY, int size, int blockType)
+void Renderer::drawBlockIcon(int screenX, int screenY, int size, int blockType, int count)
 {
     if (blockType <= 0 || blockType > 6) return;
     const auto &pixels = m_invIcons[blockType];
     if (pixels.empty()) return;
 
-    // 缩放绘制：源 32×32 → 目标 size×size
     for (int dy = 0; dy < size; ++dy)
     {
         int py = screenY + dy;
@@ -480,6 +479,25 @@ void Renderer::drawBlockIcon(int screenX, int screenY, int size, int blockType)
             if (c == 0) continue;
             m_pBits[dstRow + px] = alphaBlend(m_pBits[dstRow + px], c);
         }
+    }
+
+    // 数量文字（右下角）
+    if (count > 1)
+    {
+        wchar_t buf[8];
+        swprintf(buf, 8, L"%d", count);
+        SetBkMode(m_memDC, TRANSPARENT);
+        SetTextColor(m_memDC, RGB(255, 255, 255));
+        // 使用小号字体（临时切换到更小的字号）
+        HFONT smallFont = CreateFontW(12, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Minecraft AE");
+        HFONT oldF = (HFONT) SelectObject(m_memDC, smallFont);
+        SIZE ts;
+        GetTextExtentPoint32W(m_memDC, buf, (int) wcslen(buf), &ts);
+        TextOutW(m_memDC, screenX + size - ts.cx - 1, screenY + size - ts.cy + 1, buf, (int) wcslen(buf));
+        SelectObject(m_memDC, oldF);
+        DeleteObject(smallFont);
     }
 }
 
