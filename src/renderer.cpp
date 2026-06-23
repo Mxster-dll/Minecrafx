@@ -429,9 +429,66 @@ void Renderer::loadHotbar()
     m_hotbarLoaded = bgOk;  // 仅背景加载成功才允许绘制
 }
 
-void Renderer::drawHotbar(int selectedSlot)
+void Renderer::loadInventoryIcons()
+{
+    // 和 hotbar 图标相同的路径，但加载为 32×32
+    static const wchar_t *invIconPaths[] = {
+        L"../assert/gui/item/grass_block.png",
+        L"../assert/gui/item/dirt.png",
+        L"../assert/gui/item/oak_log.png",
+        L"../assert/gui/item/oak_leaves.png",
+        L"../assert/gui/item/stone.png",
+        L"../assert/gui/item/oak_planks.png"
+    };
+    for (int i = 0; i < 6; ++i)
+    {
+        IMAGE img;
+        loadimage(&img, invIconPaths[i], INV_ICON_SIZE, INV_ICON_SIZE, true);
+        DWORD *buf = GetImageBuffer(&img);
+        int srcW = img.getwidth();
+        if (buf && srcW > 0)
+        {
+            m_invIcons[i + 1].resize(INV_ICON_SIZE * INV_ICON_SIZE);
+            for (int y = 0; y < INV_ICON_SIZE; ++y)
+                for (int x = 0; x < INV_ICON_SIZE; ++x)
+                    m_invIcons[i + 1][y * INV_ICON_SIZE + x] = buf[y * srcW + x];
+        }
+    }
+}
+
+void Renderer::drawBlockIcon(int screenX, int screenY, int size, int blockType)
+{
+    if (blockType <= 0 || blockType > 6) return;
+    const auto &pixels = m_invIcons[blockType];
+    if (pixels.empty()) return;
+
+    // 缩放绘制：源 32×32 → 目标 size×size
+    for (int dy = 0; dy < size; ++dy)
+    {
+        int py = screenY + dy;
+        if (py < 0 || py >= m_screenHeight) continue;
+        int sy = dy * INV_ICON_SIZE / size;
+        if (sy >= INV_ICON_SIZE) sy = INV_ICON_SIZE - 1;
+        int dstRow = py * m_screenWidth;
+        for (int dx = 0; dx < size; ++dx)
+        {
+            int px = screenX + dx;
+            if (px < 0 || px >= m_screenWidth) continue;
+            int sx = dx * INV_ICON_SIZE / size;
+            if (sx >= INV_ICON_SIZE) sx = INV_ICON_SIZE - 1;
+            COLORREF c = pixels[sy * INV_ICON_SIZE + sx];
+            if (c == 0) continue;
+            m_pBits[dstRow + px] = alphaBlend(m_pBits[dstRow + px], c);
+        }
+    }
+}
+
+void Renderer::drawHotbar(int selectedSlot, const int *hotbarBlockTypes)
 {
     if (!m_hotbarLoaded || !m_dibReady || m_hbBgW <= 0 || m_hbBgH <= 0) return;
+
+    // 使用传入的方块类型，否则回退到硬编码
+    const int *types = hotbarBlockTypes ? hotbarBlockTypes : m_hotbarBlockTypes;
 
     // 按高度 44 缩放，宽度自适应（保持比例）
     double scale = (double) HB_HEIGHT / m_hbBgH;
@@ -457,10 +514,14 @@ void Renderer::drawHotbar(int selectedSlot)
         }
     }
 
-    // 绘制每个槽位的图标（loadimage 已预缩放到显示尺寸，1:1 复制）
+    // 绘制每个槽位的图标
     for (int slot = 0; slot < HOTBAR_SLOTS; ++slot)
     {
-        if (m_hotbarIcons[slot].empty()) continue;
+        int bt = types[slot];
+        if (bt <= 0 || bt > 6) continue;  // 空气或未知类型
+        int iconIdx = bt - 1;  // BLOCK_GRASS=1 → index 0
+        if (m_hotbarIcons[iconIdx].empty()) continue;
+
         int nativeX = HB_SLOT_ORIGIN_X + slot * HB_SLOT_STEP;
         int nativeY = HB_SLOT_ORIGIN_Y;
         int screenX = hbX + (int) (nativeX * scale);
@@ -475,7 +536,7 @@ void Renderer::drawHotbar(int selectedSlot)
             int srcRow = dy * sz;
             for (int dx = 0; dx < sz; ++dx)
             {
-                COLORREF c = m_hotbarIcons[slot][srcRow + dx];
+                COLORREF c = m_hotbarIcons[iconIdx][srcRow + dx];
                 if (c == 0) continue;
                 int px = screenX + dx;
                 if (px >= 0 && px < m_screenWidth)
@@ -508,21 +569,28 @@ void Renderer::drawHotbar(int selectedSlot)
         }
     }
 
-    // 右下角显示当前选中方块（32x32，loadimage 缩放）
-    if (!m_hotbarIconsBig[selectedSlot].empty())
+    // 右下角显示当前选中方块
     {
-        const int BIG = HB_ICON_SIZE * 2;
-        int bx = m_screenWidth - BIG - 8;
-        int by = m_screenHeight - BIG - 8;
-        for (int dy = 0; dy < BIG; ++dy)
+        int bt = types[selectedSlot];
+        if (bt > 0 && bt <= 6)
         {
-            for (int dx = 0; dx < BIG; ++dx)
+            int iconIdx = bt - 1;
+            if (!m_hotbarIconsBig[iconIdx].empty())
             {
-                COLORREF c = m_hotbarIconsBig[selectedSlot][dy * BIG + dx];
-                if (c == 0) continue;
-                int px = bx + dx, py = by + dy;
-                if (px >= 0 && px < m_screenWidth && py >= 0 && py < m_screenHeight)
-                    m_pBits[py * m_screenWidth + px] = alphaBlend(m_pBits[py * m_screenWidth + px], c);
+                const int BIG = HB_ICON_SIZE * 2;
+                int bx = m_screenWidth - BIG - 8;
+                int by = m_screenHeight - BIG - 8;
+                for (int dy = 0; dy < BIG; ++dy)
+                {
+                    for (int dx = 0; dx < BIG; ++dx)
+                    {
+                        COLORREF c = m_hotbarIconsBig[iconIdx][dy * BIG + dx];
+                        if (c == 0) continue;
+                        int px = bx + dx, py = by + dy;
+                        if (px >= 0 && px < m_screenWidth && py >= 0 && py < m_screenHeight)
+                            m_pBits[py * m_screenWidth + px] = alphaBlend(m_pBits[py * m_screenWidth + px], c);
+                    }
+                }
             }
         }
     }

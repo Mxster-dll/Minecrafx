@@ -3,6 +3,12 @@
 #include "camera.h"
 #include <cmath>
 #include <algorithm>
+#include <cstdio>
+#include <vector>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 // ============================================================================
 // Vec3 运算
@@ -192,32 +198,21 @@ PolyOnPlane intersectCubePlane(
         double u, v;
         plane.project(pt, u, v);
 
-        // 去重（与已收集的点比较）
-        bool dup = false;
-        for (int i = 0; i < count; ++i)
-        {
-            double du = uArr[i] - u, dv = vArr[i] - v;
-            if (du * du + dv * dv < 1e-12) { dup = true; break; }
-        }
-        if (!dup && count < 12)
-        {
-            uArr[count] = u;
-            vArr[count] = v;
-            oxArr[count] = pt.x;
-            ozArr[count] = pt.z;
-            owArr[count] = pt.w;
-            ++count;
-        }
+        uArr[count] = u;
+        vArr[count] = v;
+        oxArr[count] = pt.x;
+        ozArr[count] = pt.z;
+        owArr[count] = pt.w;
+        ++count;
     }
 
-    if (count < 3) return result;  // 无有效多边形
+    if (count < 3) return result;
 
     // 按角度排序顶点（绕中心逆时针）
     double cu = 0, cv = 0;
     for (int i = 0; i < count; ++i) { cu += uArr[i]; cv += vArr[i]; }
     cu /= count; cv /= count;
 
-    // 索引数组用于排序
     int idx[12];
     double ang[12];
     for (int i = 0; i < count; ++i)
@@ -226,6 +221,23 @@ PolyOnPlane intersectCubePlane(
         ang[i] = std::atan2(vArr[i] - cv, uArr[i] - cu);
     }
     std::sort(idx, idx + count, [&](int a, int b) { return ang[a] < ang[b]; });
+
+    // 排序后线性去重
+    int unique = 0;
+    for (int i = 0; i < count; ++i)
+    {
+        int ii = idx[i];
+        if (unique > 0)
+        {
+            int prev = idx[unique - 1];
+            double du = uArr[ii] - uArr[prev];
+            double dv = vArr[ii] - vArr[prev];
+            if (du * du + dv * dv < 1e-10) continue;
+        }
+        idx[unique++] = ii;
+    }
+    count = unique;
+    if (count < 3) return result;
 
     result.n = count;
     result.u.resize(count);
@@ -324,47 +336,126 @@ Map3D generateMap3D(const World &world, const Camera4D &cam4D,
     Plane2D camPlane = map.plane;
     camPlane.offset = 0.0;
 
+    // ---- Phase 1: 收集通过廉价预判的候选方块 ----
+    struct Candidate { int bx, by, bz, bw; };
+    std::vector<Candidate> candidates;
+    candidates.reserve(20000);
+
     for (const auto &[chunkPos, chunk] : world.getChunks())
     {
         if (chunk.empty()) continue;
+        // Chunk 级快测
+        {
+            int sz = World::CHUNK_SIZE;
+            double cx0 = (chunk.cx() * sz) * sp - camPos.x - blockHalf;
+            double cx1 = (chunk.cx() * sz + sz - 1) * sp - camPos.x + blockHalf;
+            double cz0 = (chunk.cz() * sz) * sp - camPos.z - blockHalf;
+            double cz1 = (chunk.cz() * sz + sz - 1) * sp - camPos.z + blockHalf;
+            double cw0 = (chunk.cw() * sz) * sp - camPos.w - blockHalf;
+            double cw1 = (chunk.cw() * sz + sz - 1) * sp - camPos.w + blockHalf;
+            double cmin = 0, cmax = 0;
+            double nx = camPlane.n.x, nz = camPlane.n.z, nw = camPlane.n.w;
+            if (nx > 0) { cmin += nx * cx0; cmax += nx * cx1; }
+            else { cmin += nx * cx1; cmax += nx * cx0; }
+            if (nz > 0) { cmin += nz * cz0; cmax += nz * cz1; }
+            else { cmin += nz * cz1; cmax += nz * cz0; }
+            if (nw > 0) { cmin += nw * cw0; cmax += nw * cw1; }
+            else { cmin += nw * cw1; cmax += nw * cw0; }
+            if (cmin > 0.0 || cmax < 0.0) continue;
+        }
         for (const auto &[localPos, type] : chunk.blocks())
         {
             IVec4 blk = chunk.localToWorld(localPos.x, localPos.y, localPos.z, localPos.w);
             int bx = blk.x, by = blk.y, bz = blk.z, bw = blk.w;
-
-            // 相机相对 xzw 包围盒
+            // 方块级廉价预判
             double x0 = bx * sp - camPos.x - blockHalf;
             double x1 = bx * sp - camPos.x + blockHalf;
             double z0 = bz * sp - camPos.z - blockHalf;
             double z1 = bz * sp - camPos.z + blockHalf;
             double w0 = bw * sp - camPos.w - blockHalf;
             double w1 = bw * sp - camPos.w + blockHalf;
+            double cmin = 0, cmax = 0;
+            double nx = camPlane.n.x, nz = camPlane.n.z, nw = camPlane.n.w;
+            if (nx > 0) { cmin += nx * x0; cmax += nx * x1; }
+            else { cmin += nx * x1; cmax += nx * x0; }
+            if (nz > 0) { cmin += nz * z0; cmax += nz * z1; }
+            else { cmin += nz * z1; cmax += nz * z0; }
+            if (nw > 0) { cmin += nw * w0; cmax += nw * w1; }
+            else { cmin += nw * w1; cmax += nw * w0; }
+            if (cmin > 0.0 || cmax < 0.0) continue;
+            candidates.push_back({ bx, by, bz, bw });
+        }
+    }
+
+    // ---- Phase 2: OpenMP 并行求交 ----
+    size_t N = candidates.size();
+    int nThreads = 1;
+#ifdef _OPENMP
+    nThreads = omp_get_max_threads();
+    if (nThreads > 16) nThreads = 16;
+    if (N < 64) nThreads = 1;
+#endif
+
+    std::vector<std::vector<Prism3D>> threadPrisms(nThreads);
+    std::vector<std::vector<Map3D::AABB>> threadAABBs(nThreads);
+
+#pragma omp parallel if(nThreads > 1) num_threads(nThreads)
+    {
+        int tid = 0;
+#ifdef _OPENMP
+        tid = omp_get_thread_num();
+#endif
+        auto &prisms = threadPrisms[tid];
+        auto &aabbs = threadAABBs[tid];
+        prisms.reserve(N / nThreads + 64);
+        aabbs.reserve(N / nThreads + 64);
+
+#pragma omp for schedule(static)
+        for (size_t i = 0; i < N; ++i)
+        {
+            auto &c = candidates[i];
+            double x0 = c.bx * sp - camPos.x - blockHalf;
+            double x1 = c.bx * sp - camPos.x + blockHalf;
+            double z0 = c.bz * sp - camPos.z - blockHalf;
+            double z1 = c.bz * sp - camPos.z + blockHalf;
+            double w0 = c.bw * sp - camPos.w - blockHalf;
+            double w1 = c.bw * sp - camPos.w + blockHalf;
 
             PolyOnPlane poly = intersectCubePlane(x0, x1, z0, z1, w0, w1, camPlane);
             if (!poly.valid()) continue;
 
             Prism3D p;
             p.u = poly.u; p.v = poly.v;
-            p.yLow = by * sp - camPos.y - blockHalf;
-            p.yHigh = by * sp - camPos.y + blockHalf;
-            p.color = getColor(bx, by, bz, bw);
-            map.prisms.push_back(p);
+            p.yLow = c.by * sp - camPos.y - blockHalf;
+            p.yHigh = c.by * sp - camPos.y + blockHalf;
+            p.color = getColor(c.bx, c.by, c.bz, c.bw);
+            prisms.push_back(p);
 
-            // 碰撞 AABB
             Map3D::AABB ab;
             ab.uMin = ab.uMax = poly.u[0];
             ab.vMin = ab.vMax = poly.v[0];
-            for (int i = 1; i < poly.n; ++i)
+            for (int k = 1; k < poly.n; ++k)
             {
-                if (poly.u[i] < ab.uMin) ab.uMin = poly.u[i];
-                if (poly.u[i] > ab.uMax) ab.uMax = poly.u[i];
-                if (poly.v[i] < ab.vMin) ab.vMin = poly.v[i];
-                if (poly.v[i] > ab.vMax) ab.vMax = poly.v[i];
+                if (poly.u[k] < ab.uMin) ab.uMin = poly.u[k];
+                if (poly.u[k] > ab.uMax) ab.uMax = poly.u[k];
+                if (poly.v[k] < ab.vMin) ab.vMin = poly.v[k];
+                if (poly.v[k] > ab.vMax) ab.vMax = poly.v[k];
             }
             ab.yMin = p.yLow; ab.yMax = p.yHigh;
-            map.aabbs.push_back(ab);
-        } // inner chunk blocks
-    } // outer chunks
+            aabbs.push_back(ab);
+        }
+    }
+
+    // ---- Phase 3: 合并 ----
+    size_t total = 0;
+    for (auto &tp : threadPrisms) total += tp.size();
+    map.prisms.reserve(total);
+    map.aabbs.reserve(total);
+    for (int t = 0; t < nThreads; ++t)
+    {
+        map.prisms.insert(map.prisms.end(), threadPrisms[t].begin(), threadPrisms[t].end());
+        map.aabbs.insert(map.aabbs.end(), threadAABBs[t].begin(), threadAABBs[t].end());
+    }
 
     map.valid = true;
     return map;

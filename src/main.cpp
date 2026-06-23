@@ -25,6 +25,7 @@
 #include "renderer.h"
 #include "constant.h"
 #include "input/input_handler.h"
+#include "inventory.h"
 
  // ---- 游戏状态 ----
 enum class GameState
@@ -121,6 +122,7 @@ int main()
     // ---- 加载方块贴图 ----
     renderer.loadBlockTextures();
     renderer.loadHotbar();
+    renderer.loadInventoryIcons();
 
     // ---- 4D 丘陵地貌 ----
     // 使用多层正弦波模拟自然地形
@@ -238,6 +240,7 @@ int main()
 
     // ---- 游戏状态 ----
     GameState state = GameState::Gameplay;
+    Inventory inventory;  // 背包 + 快捷栏
 
     InputHandler input(hwnd);
     while (!input.isQuitRequested())
@@ -258,16 +261,83 @@ int main()
         {
             if (input.isPressed(Key::Esc) || input.isPressed(Key::E))
             {
+                if (inventory.isDragging()) inventory.cancelDrag();
                 state = GameState::Gameplay;
                 input.showMouseCursor(false);
-                input.getMouseDelta();  // 丢弃首帧增量，防止视角跳跃
+                input.getMouseDelta();
                 continue;
             }
+
+            // 计算 inventory 图片显示区域
+            int invDispW = imgInventory.getwidth();
+            int invDispH = imgInventory.getheight();
+            int invDispX = (SCREEN_WIDTH - invDispW) / 2;
+            int invDispY = (SCREEN_HEIGHT - invDispH) / 2;
+            // 原生尺寸（加载 2x 前）
+            int invNativeW = invDispW / 2;
+            int invNativeH = invDispH / 2;
+
+            // 鼠标事件
+            POINT mp = input.getMouseScreenPos();
+            bool mouseDown = input.getMouseClick(0);
+            bool mouseUp = false;  // 上升沿需额外追踪
+            // 简易：用 isMouseButtonDown 判断释放
+            static bool wasDown = false;
+            bool isDown = input.isMouseButtonDown(0);
+            if (wasDown && !isDown) mouseUp = true;
+            wasDown = isDown;
+
+            int hoveredSlot = inventory.hitTest(mp.x, mp.y,
+                invDispX, invDispY, invDispW, invDispH,
+                invNativeW, invNativeH);
+
+            if (mouseDown && hoveredSlot >= 0)
+            {
+                if (inventory.isDragging())
+                {
+                    // 手上有物品 → 与目标格子交换
+                    inventory.placeInto(hoveredSlot);
+                }
+                else
+                {
+                    // 手上无物品 → 拿起
+                    inventory.pickup(hoveredSlot);
+                }
+            }
+            else if (mouseUp && inventory.isDragging())
+            {
+                if (hoveredSlot >= 0)
+                    inventory.placeInto(hoveredSlot);
+                else
+                    inventory.cancelDrag();
+            }
+
             // 渲染背包界面
             cleardevice();
             setbkcolor(RGB(10, 10, 30));
             renderer.drawBackground();
             renderer.drawImageCentered(&imgInventory);
+
+            // 绘制所有槽位的物品图标
+            for (int i = 0; i < Inventory::TOTAL_SLOTS; ++i)
+            {
+                const auto &slot = inventory.getSlot(i);
+                if (slot.blockType == BLOCK_AIR || slot.count <= 0) continue;
+                int sx, sy, sw, sh;
+                inventory.slotScreenRect(i,
+                    invDispX, invDispY, invDispW, invDispH,
+                    invNativeW, invNativeH,
+                    sx, sy, sw, sh);
+                renderer.drawBlockIcon(sx, sy, sh, slot.blockType);
+            }
+
+            // 绘制拖拽中的物品（跟随鼠标）
+            if (inventory.isDragging())
+            {
+                int sz = (int) (16 * (double) invDispW / invNativeW);  // 槽位大小
+                renderer.drawBlockIcon(mp.x - sz / 2, mp.y - sz / 2, sz, inventory.dragBlockType());
+            }
+
             renderer.flushToScreen();
             FlushBatchDraw();
             continue;
@@ -571,7 +641,7 @@ int main()
                     if (raycast3D(hitPos, prevPos))
                     {
                         // 临时放置，检查是否会与摄像机碰撞
-                        int placeType = renderer.getHotbarBlockType(selectedSlot);
+                        int placeType = inventory.hotbarBlockType(selectedSlot);
                         world.set(prevPos, placeType);
                         Map3D testMap = generateMap3D(world, camera, 0.5,
                             [](int bx, int by, int bz, int bw)->COLORREF { return blockColor(bx, by, bz, bw); });
@@ -645,7 +715,10 @@ int main()
                 renderer.clearTargetBlock();
 
             renderer.renderWorld(world, camera);
-            renderer.drawHotbar(selectedSlot);
+            // 快捷栏类型从 Inventory 读取
+            int hbTypes[9];
+            for (int i = 0; i < 9; ++i) hbTypes[i] = inventory.getSlot(i).blockType;
+            renderer.drawHotbar(selectedSlot, hbTypes);
             renderer.drawCrosshair();
             renderer.drawHUD(camera);
 

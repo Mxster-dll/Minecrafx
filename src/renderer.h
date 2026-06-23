@@ -60,7 +60,13 @@ public:
     void loadHotbar();
 
     /** @brief 绘制热键栏 */
-    void drawHotbar(int selectedSlot);
+    void drawHotbar(int selectedSlot, const int *hotbarBlockTypes = nullptr);
+
+    /** @brief 在屏幕 (x,y) 处绘制一个 sz×sz 的方块图标 */
+    void drawBlockIcon(int screenX, int screenY, int size, int blockType);
+
+    /** @brief 加载背包页大图标（32×32） */
+    void loadInventoryIcons();
 
     /** @brief 获取热键栏槽位对应的方块类型 */
     int getHotbarBlockType(int slot) const;
@@ -174,6 +180,11 @@ private:
     // 选中框
     std::vector<COLORREF> m_selectPixels;  // select.png 像素（预缩放）
     int m_selectW = 0, m_selectH = 0;      // select 显示尺寸
+
+    // ---- 背包页图标（32×32） ----
+    static constexpr int INV_ICON_SIZE = 32;
+    std::vector<COLORREF> m_invIcons[7];  // 索引 = blockType (1~6)
+
     bool m_hotbarLoaded = false;
 
     // ---- 超方块 ----
