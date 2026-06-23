@@ -994,6 +994,19 @@ std::vector<IVec4> Renderer::collectVisibleBlocks(const World &world,
     m_diagChunkTotal = chunksTotal;
     m_diagChunkPass = chunksPass;
 
+    // 十六分法：按 over 方向排序，前→后，最大化 z-buffer 早期拒绝
+    if (result.size() > 1)
+    {
+        Vec4 over = cam.getOver();
+        std::sort(result.begin(), result.end(),
+            [&over](const IVec4 &a, const IVec4 &b)
+        {
+            double da = a.x * over.x + a.y * over.y + a.z * over.z + a.w * over.w;
+            double db = b.x * over.x + b.y * over.y + b.z * over.z + b.w * over.w;
+            return da < db;
+        });
+    }
+
     return result;
 }
 
