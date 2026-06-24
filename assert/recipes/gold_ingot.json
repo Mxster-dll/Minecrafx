@@ -1,0 +1,18 @@
+{
+  "shaped": [
+    {
+      "count": 1,
+      "recipe": [
+        ["gold_nugget", "gold_nugget", "gold_nugget"],
+        ["gold_nugget", "gold_nugget", "gold_nugget"],
+        ["gold_nugget", "gold_nugget", "gold_nugget"]
+      ]
+    }
+  ],
+  "shapeless": [
+    {
+      "recipe": { "gold_block": 1 },
+      "count": 9
+    }
+  ]
+}

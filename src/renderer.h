@@ -1,5 +1,6 @@
 #pragma once
 
+#include "constant.h"
 #include "world.h"
 #include "camera.h"
 #include "linalg.h"
@@ -157,33 +158,31 @@ private:
     double m_msRaster;
 
     // ---- 方块贴图 ----
-    static constexpr int MAX_TEX = 24;
-    COLORREF m_texPixels[MAX_TEX][16][16];  // 像素数据（最多 16×16）
+    static constexpr int MAX_TEX = 42;
+    COLORREF m_texPixels[MAX_TEX][16][16];
     int m_texW[MAX_TEX], m_texH[MAX_TEX];
     bool m_blockTexLoaded;
 
     // ---- 热键栏 ----
     static constexpr int HOTBAR_SLOTS = 9;
-    static constexpr int HB_ICON_SIZE = 16;      // 图标显示大小
-    static constexpr int HB_HEIGHT = 44;          // 热键栏显示高度
-    // 每个槽位在 hotbar 原图中的位置：x = 3 + slot*20, y = 3, 大小 16×16
+    static constexpr int HB_ICON_SIZE = 16;
+    static constexpr int HB_HEIGHT = 44;
     static constexpr int HB_SLOT_ORIGIN_X = 3;
     static constexpr int HB_SLOT_ORIGIN_Y = 3;
     static constexpr int HB_SLOT_STEP = 20;
     static constexpr int HB_SLOT_SIZE = 16;
     int m_hotbarBlockTypes[HOTBAR_SLOTS];
-    std::vector<COLORREF> m_hotbarBg;             // 热键栏背景像素（堆分配）
-    int m_hbBgW = 0, m_hbBgH = 0;                  // 背景原始宽高
-    std::vector<COLORREF> m_hotbarIcons[HOTBAR_SLOTS]; // 槽位图标像素（预缩放至显示尺寸）
-    std::vector<COLORREF> m_hotbarIconsBig[HOTBAR_SLOTS]; // 右下角大图标
-    int m_hbIconDisplaySize = 0;  // 槽位图标实际显示尺寸（像素）
-    // 选中框
-    std::vector<COLORREF> m_selectPixels;  // select.png 像素（预缩放）
-    int m_selectW = 0, m_selectH = 0;      // select 显示尺寸
+    std::vector<COLORREF> m_hotbarBg;
+    int m_hbBgW = 0, m_hbBgH = 0;
+    std::vector<COLORREF> m_hotbarIcons[MAX_BLOCK_TYPE];    // 索引 = blockType
+    std::vector<COLORREF> m_hotbarIconsBig[MAX_BLOCK_TYPE]; // 右下角大图标
+    int m_hbIconDisplaySize = 0;
+    std::vector<COLORREF> m_selectPixels;
+    int m_selectW = 0, m_selectH = 0;
 
     // ---- 背包页图标（32×32） ----
     static constexpr int INV_ICON_SIZE = 32;
-    std::vector<COLORREF> m_invIcons[9];  // 索引 = blockType (1~8)
+    std::vector<COLORREF> m_invIcons[MAX_BLOCK_TYPE];  // 索引 = blockType
 
     bool m_hotbarLoaded = false;
 

@@ -1,0 +1,9 @@
+{
+  "shaped": [],
+  "shapeless": [
+    {
+      "recipe": { "diamond_block": 1 },
+      "count": 9
+    }
+  ]
+}

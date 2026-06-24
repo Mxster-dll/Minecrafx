@@ -1,0 +1,21 @@
+{
+  "shaped": [
+    {
+      "count": 1,
+      "recipe": [
+        ["diamond", "diamond", null],
+        [null, "stick", null],
+        [null, "stick", null]
+      ]
+    },
+    {
+      "count": 1,
+      "recipe": [
+        [null, "diamond", "diamond"],
+        [null, "stick", null],
+        [null, "stick", null]
+      ]
+    }
+  ],
+  "shapeless": []
+}

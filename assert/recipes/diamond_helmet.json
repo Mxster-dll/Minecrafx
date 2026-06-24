@@ -1,0 +1,13 @@
+{
+  "shaped": [
+    {
+      "count": 1,
+      "recipe": [
+        ["diamond", "diamond", "diamond"],
+        ["diamond", null, "diamond"],
+        [null, null, null]
+      ]
+    }
+  ],
+  "shapeless": []
+}

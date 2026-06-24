@@ -1,0 +1,18 @@
+{
+  "shaped": [
+    {
+      "count": 1,
+      "recipe": [
+        ["iron_nugget", "iron_nugget", "iron_nugget"],
+        ["iron_nugget", "iron_nugget", "iron_nugget"],
+        ["iron_nugget", "iron_nugget", "iron_nugget"]
+      ]
+    }
+  ],
+  "shapeless": [
+    {
+      "recipe": { "iron_block": 1 },
+      "count": 9
+    }
+  ]
+}

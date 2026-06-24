@@ -1,0 +1,21 @@
+{
+  "shaped": [
+    {
+      "count": 1,
+      "recipe": [
+        ["iron_ingot", "iron_ingot", null],
+        ["iron_ingot", "stick", null],
+        [null, "stick", null]
+      ]
+    },
+    {
+      "count": 1,
+      "recipe": [
+        [null, "iron_ingot", "iron_ingot"],
+        [null, "stick", "iron_ingot"],
+        [null, "stick", null]
+      ]
+    }
+  ],
+  "shapeless": []
+}

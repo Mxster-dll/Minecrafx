@@ -52,7 +52,72 @@ static int parseBlockType(const std::string &name)
         {"air", BLOCK_AIR}, {"grass", BLOCK_GRASS}, {"dirt", BLOCK_DIRT},
         {"log", BLOCK_LOG}, {"leaves", BLOCK_LEAVES}, {"stone", BLOCK_STONE},
         {"planks", BLOCK_PLANKS}, {"stick", BLOCK_STICK},
-        {"crafting_table", BLOCK_CRAFTING_TABLE}
+        {"crafting_table", BLOCK_CRAFTING_TABLE},
+        // 矿石
+        {"diamond_ore", BLOCK_DIAMOND_ORE},
+        {"gold_ore", BLOCK_GOLD_ORE},
+        {"iron_ore", BLOCK_IRON_ORE},
+        // 矿物块
+        {"diamond_block", BLOCK_DIAMOND_BLOCK},
+        {"gold_block", BLOCK_GOLD_BLOCK},
+        {"iron_block", BLOCK_IRON_BLOCK},
+        // 矿物材料
+        {"diamond", BLOCK_DIAMOND},
+        {"gold_ingot", BLOCK_GOLD_INGOT},
+        {"iron_ingot", BLOCK_IRON_INGOT},
+        {"gold_nugget", BLOCK_GOLD_NUGGET},
+        {"iron_nugget", BLOCK_IRON_NUGGET},
+        // 食物
+        {"apple", BLOCK_APPLE},
+        {"golden_apple", BLOCK_GOLDEN_APPLE},
+        // 木工具
+        {"wooden_pickaxe", BLOCK_WOODEN_PICKAXE},
+        {"wooden_axe", BLOCK_WOODEN_AXE},
+        {"wooden_shovel", BLOCK_WOODEN_SHOVEL},
+        {"wooden_sword", BLOCK_WOODEN_SWORD},
+        {"wooden_hoe", BLOCK_WOODEN_HOE},
+        // 石工具
+        {"stone_pickaxe", BLOCK_STONE_PICKAXE},
+        {"stone_axe", BLOCK_STONE_AXE},
+        {"stone_shovel", BLOCK_STONE_SHOVEL},
+        {"stone_sword", BLOCK_STONE_SWORD},
+        {"stone_hoe", BLOCK_STONE_HOE},
+        // 铁工具
+        {"iron_pickaxe", BLOCK_IRON_PICKAXE},
+        {"iron_axe", BLOCK_IRON_AXE},
+        {"iron_shovel", BLOCK_IRON_SHOVEL},
+        {"iron_sword", BLOCK_IRON_SWORD},
+        {"iron_hoe", BLOCK_IRON_HOE},
+        // 铁护甲
+        {"iron_helmet", BLOCK_IRON_HELMET},
+        {"iron_chestplate", BLOCK_IRON_CHESTPLATE},
+        {"iron_leggings", BLOCK_IRON_LEGGINGS},
+        {"iron_boots", BLOCK_IRON_BOOTS},
+        // 金工具
+        {"golden_pickaxe", BLOCK_GOLDEN_PICKAXE},
+        {"golden_axe", BLOCK_GOLDEN_AXE},
+        {"golden_shovel", BLOCK_GOLDEN_SHOVEL},
+        {"golden_sword", BLOCK_GOLDEN_SWORD},
+        {"golden_hoe", BLOCK_GOLDEN_HOE},
+        // 金护甲
+        {"golden_helmet", BLOCK_GOLDEN_HELMET},
+        {"golden_chestplate", BLOCK_GOLDEN_CHESTPLATE},
+        {"golden_leggings", BLOCK_GOLDEN_LEGGINGS},
+        {"golden_boots", BLOCK_GOLDEN_BOOTS},
+        // 钻石工具
+        {"diamond_pickaxe", BLOCK_DIAMOND_PICKAXE},
+        {"diamond_axe", BLOCK_DIAMOND_AXE},
+        {"diamond_shovel", BLOCK_DIAMOND_SHOVEL},
+        {"diamond_sword", BLOCK_DIAMOND_SWORD},
+        {"diamond_hoe", BLOCK_DIAMOND_HOE},
+        // 钻石护甲
+        {"diamond_helmet", BLOCK_DIAMOND_HELMET},
+        {"diamond_chestplate", BLOCK_DIAMOND_CHESTPLATE},
+        {"diamond_leggings", BLOCK_DIAMOND_LEGGINGS},
+        {"diamond_boots", BLOCK_DIAMOND_BOOTS},
+        // 下界合金工具
+        {"netherite_pickaxe", BLOCK_NETHERITE_PICKAXE},
+        {"netherite_axe", BLOCK_NETHERITE_AXE},
     };
     auto it = map.find(name);
     return (it != map.end()) ? it->second : BLOCK_AIR;

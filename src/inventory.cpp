@@ -3,12 +3,43 @@
 
 Inventory::Inventory()
 {
+    // 热键栏：常用方块
     m_slots[0] = { BLOCK_GRASS,  64 };
     m_slots[1] = { BLOCK_DIRT,   64 };
-    m_slots[2] = { BLOCK_LOG,    64 };
-    m_slots[3] = { BLOCK_LEAVES, 64 };
-    m_slots[4] = { BLOCK_STONE,  64 };
-    m_slots[5] = { BLOCK_PLANKS, 64 };
+    m_slots[2] = { BLOCK_STONE,  64 };
+    m_slots[3] = { BLOCK_LOG,    64 };
+    m_slots[4] = { BLOCK_PLANKS, 64 };
+    m_slots[5] = { BLOCK_LEAVES, 64 };
+    m_slots[6] = { BLOCK_CRAFTING_TABLE, 1 };
+    m_slots[7] = { BLOCK_STICK,  64 };
+
+    // 背包第一行：矿物材料 + 工具
+    m_slots[9] = { BLOCK_DIAMOND_ORE, 64 };
+    m_slots[10] = { BLOCK_GOLD_ORE,    64 };
+    m_slots[11] = { BLOCK_IRON_ORE,    64 };
+    m_slots[12] = { BLOCK_DIAMOND,     64 };
+    m_slots[13] = { BLOCK_GOLD_INGOT,  64 };
+    m_slots[14] = { BLOCK_IRON_INGOT,  64 };
+    m_slots[15] = { BLOCK_GOLD_NUGGET, 64 };
+    m_slots[16] = { BLOCK_IRON_NUGGET, 64 };
+    m_slots[17] = { BLOCK_APPLE,       64 };
+
+    // 背包第二行：矿物块 + 护甲
+    m_slots[18] = { BLOCK_DIAMOND_BLOCK, 64 };
+    m_slots[19] = { BLOCK_GOLD_BLOCK,    64 };
+    m_slots[20] = { BLOCK_IRON_BLOCK,    64 };
+    m_slots[21] = { BLOCK_DIAMOND_PICKAXE, 1 };
+    m_slots[22] = { BLOCK_DIAMOND_AXE,     1 };
+    m_slots[23] = { BLOCK_DIAMOND_SWORD,   1 };
+    m_slots[24] = { BLOCK_DIAMOND_SHOVEL,  1 };
+    m_slots[25] = { BLOCK_DIAMOND_HOE,     1 };
+    m_slots[26] = { BLOCK_GOLDEN_APPLE,   64 };
+
+    // 背包第三行：全套钻石护甲
+    m_slots[27] = { BLOCK_DIAMOND_HELMET,      1 };
+    m_slots[28] = { BLOCK_DIAMOND_CHESTPLATE,  1 };
+    m_slots[29] = { BLOCK_DIAMOND_LEGGINGS,    1 };
+    m_slots[30] = { BLOCK_DIAMOND_BOOTS,       1 };
 }
 
 Inventory::Slot &Inventory::getSlot(int index)

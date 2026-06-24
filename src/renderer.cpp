@@ -252,43 +252,83 @@ static void loadTexPixels(const wchar_t *path, COLORREF out[16][16], int &w, int
 void Renderer::loadBlockTextures()
 {
     int tw, th;
-    // 草方块
+    // 草方块 0-2
     loadTexPixels(L"../assert/texture/grass_block_top.png", m_texPixels[0], tw, th); m_texW[0] = tw; m_texH[0] = th;
     loadTexPixels(L"../assert/texture/grass_block_side.png", m_texPixels[1], tw, th); m_texW[1] = tw; m_texH[1] = th;
     loadTexPixels(L"../assert/texture/grass_block_bottom.png", m_texPixels[2], tw, th); m_texW[2] = tw; m_texH[2] = th;
-    // 泥土
+    // 泥土 3-5
     loadTexPixels(L"../assert/texture/dirt_top.png", m_texPixels[3], tw, th); m_texW[3] = tw; m_texH[3] = th;
     loadTexPixels(L"../assert/texture/dirt_side.png", m_texPixels[4], tw, th); m_texW[4] = tw; m_texH[4] = th;
     loadTexPixels(L"../assert/texture/dirt_bottom.png", m_texPixels[5], tw, th); m_texW[5] = tw; m_texH[5] = th;
-    // 树干
+    // 树干 6-8
     loadTexPixels(L"../assert/texture/oak_log_top.png", m_texPixels[6], tw, th); m_texW[6] = tw; m_texH[6] = th;
     loadTexPixels(L"../assert/texture/oak_log_side.png", m_texPixels[7], tw, th); m_texW[7] = tw; m_texH[7] = th;
     loadTexPixels(L"../assert/texture/oak_log_bottom.png", m_texPixels[8], tw, th); m_texW[8] = tw; m_texH[8] = th;
-    // 树叶
+    // 树叶 9-11
     loadTexPixels(L"../assert/texture/oak_leaves_top.png", m_texPixels[9], tw, th); m_texW[9] = tw; m_texH[9] = th;
     loadTexPixels(L"../assert/texture/oak_leaves_side.png", m_texPixels[10], tw, th); m_texW[10] = tw; m_texH[10] = th;
     loadTexPixels(L"../assert/texture/oak_leaves_bottom.png", m_texPixels[11], tw, th); m_texW[11] = tw; m_texH[11] = th;
-    // 石头
+    // 石头 12-14
     loadTexPixels(L"../assert/texture/stone_top.png", m_texPixels[12], tw, th); m_texW[12] = tw; m_texH[12] = th;
     loadTexPixels(L"../assert/texture/stone_side.png", m_texPixels[13], tw, th); m_texW[13] = tw; m_texH[13] = th;
     loadTexPixels(L"../assert/texture/stone_bottom.png", m_texPixels[14], tw, th); m_texW[14] = tw; m_texH[14] = th;
-    // 木板
+    // 木板 15-17
     loadTexPixels(L"../assert/texture/oak_planks_top.png", m_texPixels[15], tw, th); m_texW[15] = tw; m_texH[15] = th;
     loadTexPixels(L"../assert/texture/oak_planks_side.png", m_texPixels[16], tw, th); m_texW[16] = tw; m_texH[16] = th;
     loadTexPixels(L"../assert/texture/oak_planks_bottom.png", m_texPixels[17], tw, th); m_texW[17] = tw; m_texH[17] = th;
-    // 木棍（无方块贴图，跳过）
-    // 工作台
+    // 木棍 18-20（无方块贴图）
+    // 工作台 21-23
     loadTexPixels(L"../assert/texture/crafting_table_top.png", m_texPixels[21], tw, th); m_texW[21] = tw; m_texH[21] = th;
     loadTexPixels(L"../assert/texture/crafting_table_front.png", m_texPixels[22], tw, th); m_texW[22] = tw; m_texH[22] = th;
     loadTexPixels(L"../assert/texture/crafting_table_bottom.png", m_texPixels[23], tw, th); m_texW[23] = tw; m_texH[23] = th;
+    // 钻石矿 24-26
+    loadTexPixels(L"../assert/texture/diamond_ore_top.png", m_texPixels[24], tw, th); m_texW[24] = tw; m_texH[24] = th;
+    loadTexPixels(L"../assert/texture/diamond_ore_side.png", m_texPixels[25], tw, th); m_texW[25] = tw; m_texH[25] = th;
+    loadTexPixels(L"../assert/texture/diamond_ore_bottom.png", m_texPixels[26], tw, th); m_texW[26] = tw; m_texH[26] = th;
+    // 金矿 27-29
+    loadTexPixels(L"../assert/texture/gold_ore_top.png", m_texPixels[27], tw, th); m_texW[27] = tw; m_texH[27] = th;
+    loadTexPixels(L"../assert/texture/gold_ore_side.png", m_texPixels[28], tw, th); m_texW[28] = tw; m_texH[28] = th;
+    loadTexPixels(L"../assert/texture/gold_ore_bottom.png", m_texPixels[29], tw, th); m_texW[29] = tw; m_texH[29] = th;
+    // 铁矿 30-32
+    loadTexPixels(L"../assert/texture/iron_ore_top.png", m_texPixels[30], tw, th); m_texW[30] = tw; m_texH[30] = th;
+    loadTexPixels(L"../assert/texture/iron_ore_side.png", m_texPixels[31], tw, th); m_texW[31] = tw; m_texH[31] = th;
+    loadTexPixels(L"../assert/texture/iron_ore_bottom.png", m_texPixels[32], tw, th); m_texW[32] = tw; m_texH[32] = th;
+    // 钻石块 33-35
+    loadTexPixels(L"../assert/texture/diamond_block_top.png", m_texPixels[33], tw, th); m_texW[33] = tw; m_texH[33] = th;
+    loadTexPixels(L"../assert/texture/diamond_block_side.png", m_texPixels[34], tw, th); m_texW[34] = tw; m_texH[34] = th;
+    loadTexPixels(L"../assert/texture/diamond_block_bottom.png", m_texPixels[35], tw, th); m_texW[35] = tw; m_texH[35] = th;
+    // 金块 36-38
+    loadTexPixels(L"../assert/texture/gold_block_top.png", m_texPixels[36], tw, th); m_texW[36] = tw; m_texH[36] = th;
+    loadTexPixels(L"../assert/texture/gold_block_side.png", m_texPixels[37], tw, th); m_texW[37] = tw; m_texH[37] = th;
+    loadTexPixels(L"../assert/texture/gold_block_bottom.png", m_texPixels[38], tw, th); m_texW[38] = tw; m_texH[38] = th;
+    // 铁块 39-41
+    loadTexPixels(L"../assert/texture/iron_block_top.png", m_texPixels[39], tw, th); m_texW[39] = tw; m_texH[39] = th;
+    loadTexPixels(L"../assert/texture/iron_block_side.png", m_texPixels[40], tw, th); m_texW[40] = tw; m_texH[40] = th;
+    loadTexPixels(L"../assert/texture/iron_block_bottom.png", m_texPixels[41], tw, th); m_texW[41] = tw; m_texH[41] = th;
 
     m_blockTexLoaded = true;
 }
 
 int Renderer::blockTexId(int blockType, int face)
 {
-    if (blockType <= 0 || blockType > 8) return -1;
-    return (blockType - 1) * 3 + face;  // face: 0=顶,1=侧,2=底
+    // 只有可放置的实体方块才有贴图
+    switch (blockType)
+    {
+        case BLOCK_GRASS:           return 0 + face;
+        case BLOCK_DIRT:            return 3 + face;
+        case BLOCK_LOG:             return 6 + face;
+        case BLOCK_LEAVES:          return 9 + face;
+        case BLOCK_STONE:           return 12 + face;
+        case BLOCK_PLANKS:          return 15 + face;
+        case BLOCK_CRAFTING_TABLE:  return 21 + face;
+        case BLOCK_DIAMOND_ORE:     return 24 + face;
+        case BLOCK_GOLD_ORE:        return 27 + face;
+        case BLOCK_IRON_ORE:        return 30 + face;
+        case BLOCK_DIAMOND_BLOCK:   return 33 + face;
+        case BLOCK_GOLD_BLOCK:      return 36 + face;
+        case BLOCK_IRON_BLOCK:      return 39 + face;
+        default: return -1;
+    }
 }
 
 COLORREF Renderer::sampleTexture(int texId, double tu, double tv) const
@@ -314,28 +354,105 @@ COLORREF Renderer::sampleTexture(int texId, double tu, double tv) const
 // 热键栏
 // ============================================================================
 
-static const wchar_t *kHotbarIcons[9] = {
-    L"../assert/gui/item/grass_block.png",
-    L"../assert/gui/item/dirt.png",
-    L"../assert/gui/item/oak_log.png",
-    L"../assert/gui/item/oak_leaves.png",
-    L"../assert/gui/item/stone.png",
-    L"../assert/gui/item/oak_planks.png",
-    L"../assert/gui/item/stick.png",              // BLOCK_STICK
-    L"../assert/gui/widget/crafting_table.png",   // BLOCK_CRAFTING_TABLE
-    L""   // 槽位 9（空）
+// 图标路径数组，索引 = blockType（1~60），0 未使用
+static const wchar_t *kHotbarIcons[MAX_BLOCK_TYPE] = {
+    L"",  // 0: AIR
+    L"../assert/gui/item/grass_block.png",        // 1
+    L"../assert/gui/item/dirt.png",                // 2
+    L"../assert/gui/item/oak_log.png",             // 3
+    L"../assert/gui/item/oak_leaves.png",          // 4
+    L"../assert/gui/item/stone.png",               // 5
+    L"../assert/gui/item/oak_planks.png",          // 6
+    L"../assert/gui/item/stick.png",               // 7
+    L"../assert/gui/item/crafting_table.png",      // 8
+    L"../assert/gui/item/diamond_ore.png",         // 9
+    L"../assert/gui/item/gold_ore.png",            // 10
+    L"../assert/gui/item/iron_ore.png",            // 11
+    L"../assert/gui/item/diamond_block.png",       // 12
+    L"../assert/gui/item/gold_block.png",          // 13
+    L"../assert/gui/item/iron_block.png",          // 14
+    L"../assert/gui/item/diamond.png",             // 15
+    L"../assert/gui/item/gold_ingot.png",          // 16
+    L"../assert/gui/item/iron_ingot.png",          // 17
+    L"../assert/gui/item/gold_nugget.png",         // 18
+    L"../assert/gui/item/iron_nugget.png",         // 19
+    L"../assert/gui/item/apple.png",               // 20
+    L"../assert/gui/item/golden_apple.png",        // 21
+    L"../assert/gui/item/wooden_pickaxe.png",      // 22
+    L"../assert/gui/item/wooden_axe.png",          // 23
+    L"../assert/gui/item/wooden_shovel.png",       // 24
+    L"../assert/gui/item/wooden_sword.png",        // 25
+    L"../assert/gui/item/wooden_hoe.png",          // 26
+    L"../assert/gui/item/stone_pickaxe.png",       // 27
+    L"../assert/gui/item/stone_axe.png",           // 28
+    L"../assert/gui/item/stone_shovel.png",        // 29
+    L"../assert/gui/item/stone_sword.png",         // 30
+    L"../assert/gui/item/stone_hoe.png",           // 31
+    L"../assert/gui/item/iron_pickaxe.png",        // 32
+    L"../assert/gui/item/iron_axe.png",            // 33
+    L"../assert/gui/item/iron_shovel.png",         // 34
+    L"../assert/gui/item/iron_sword.png",          // 35
+    L"../assert/gui/item/iron_hoe.png",            // 36
+    L"../assert/gui/item/iron_helmet.png",         // 37
+    L"../assert/gui/item/iron_chestplate.png",     // 38
+    L"../assert/gui/item/iron_leggings.png",       // 39
+    L"../assert/gui/item/iron_boots.png",          // 40
+    L"../assert/gui/item/golden_pickaxe.png",      // 41
+    L"../assert/gui/item/golden_axe.png",          // 42
+    L"../assert/gui/item/golden_shovel.png",       // 43
+    L"../assert/gui/item/golden_sword.png",        // 44
+    L"../assert/gui/item/golden_hoe.png",          // 45
+    L"../assert/gui/item/golden_helmet.png",       // 46
+    L"../assert/gui/item/golden_chestplate.png",   // 47
+    L"../assert/gui/item/golden_leggings.png",     // 48
+    L"../assert/gui/item/golden_boots.png",        // 49
+    L"../assert/gui/item/diamond_pickaxe.png",     // 50
+    L"../assert/gui/item/diamond_axe.png",         // 51
+    L"../assert/gui/item/diamond_shovel.png",      // 52
+    L"../assert/gui/item/diamond_sword.png",       // 53
+    L"../assert/gui/item/diamond_hoe.png",         // 54
+    L"../assert/gui/item/diamond_helmet.png",      // 55
+    L"../assert/gui/item/diamond_chestplate.png",  // 56
+    L"../assert/gui/item/diamond_leggings.png",    // 57
+    L"../assert/gui/item/diamond_boots.png",       // 58
+    L"../assert/gui/item/netherite_pickaxe.png",   // 59 (复用钻石镐图标)
+    L"../assert/gui/item/netherite_axe.png",       // 60 (复用钻石斧图标)
 };
 
-static const wchar_t *kBigIconPaths[9] = {
-    L"../assert/gui/block/grass_block.png",
-    L"../assert/gui/block/dirt.png",
-    L"../assert/gui/block/oak_log.png",
-    L"../assert/gui/block/oak_leaves.png",
-    L"../assert/gui/block/stone.png",
-    L"../assert/gui/block/oak_planks.png",
-    L"../assert/gui/item/stick.png",              // BLOCK_STICK
-    L"../assert/gui/item/crafting_table.png",   // BLOCK_CRAFTING_TABLE
-    L""
+static const wchar_t *kBigIconPaths[MAX_BLOCK_TYPE] = {
+    L"", L"../assert/gui/item/grass_block.png", L"../assert/gui/item/dirt.png",
+    L"../assert/gui/item/oak_log.png", L"../assert/gui/item/oak_leaves.png",
+    L"../assert/gui/item/stone.png", L"../assert/gui/item/oak_planks.png",
+    L"../assert/gui/item/stick.png", L"../assert/gui/item/crafting_table.png",
+    L"../assert/gui/item/diamond_ore.png", L"../assert/gui/item/gold_ore.png",
+    L"../assert/gui/item/iron_ore.png", L"../assert/gui/item/diamond_block.png",
+    L"../assert/gui/item/gold_block.png", L"../assert/gui/item/iron_block.png",
+    L"../assert/gui/item/diamond.png", L"../assert/gui/item/gold_ingot.png",
+    L"../assert/gui/item/iron_ingot.png", L"../assert/gui/item/gold_nugget.png",
+    L"../assert/gui/item/iron_nugget.png", L"../assert/gui/item/apple.png",
+    L"../assert/gui/item/golden_apple.png",
+    L"../assert/gui/item/wooden_pickaxe.png", L"../assert/gui/item/wooden_axe.png",
+    L"../assert/gui/item/wooden_shovel.png", L"../assert/gui/item/wooden_sword.png",
+    L"../assert/gui/item/wooden_hoe.png",
+    L"../assert/gui/item/stone_pickaxe.png", L"../assert/gui/item/stone_axe.png",
+    L"../assert/gui/item/stone_shovel.png", L"../assert/gui/item/stone_sword.png",
+    L"../assert/gui/item/stone_hoe.png",
+    L"../assert/gui/item/iron_pickaxe.png", L"../assert/gui/item/iron_axe.png",
+    L"../assert/gui/item/iron_shovel.png", L"../assert/gui/item/iron_sword.png",
+    L"../assert/gui/item/iron_hoe.png",
+    L"../assert/gui/item/iron_helmet.png", L"../assert/gui/item/iron_chestplate.png",
+    L"../assert/gui/item/iron_leggings.png", L"../assert/gui/item/iron_boots.png",
+    L"../assert/gui/item/golden_pickaxe.png", L"../assert/gui/item/golden_axe.png",
+    L"../assert/gui/item/golden_shovel.png", L"../assert/gui/item/golden_sword.png",
+    L"../assert/gui/item/golden_hoe.png",
+    L"../assert/gui/item/golden_helmet.png", L"../assert/gui/item/golden_chestplate.png",
+    L"../assert/gui/item/golden_leggings.png", L"../assert/gui/item/golden_boots.png",
+    L"../assert/gui/item/diamond_pickaxe.png", L"../assert/gui/item/diamond_axe.png",
+    L"../assert/gui/item/diamond_shovel.png", L"../assert/gui/item/diamond_sword.png",
+    L"../assert/gui/item/diamond_hoe.png",
+    L"../assert/gui/item/diamond_helmet.png", L"../assert/gui/item/diamond_chestplate.png",
+    L"../assert/gui/item/diamond_leggings.png", L"../assert/gui/item/diamond_boots.png",
+    L"../assert/gui/item/netherite_pickaxe.png", L"../assert/gui/item/netherite_axe.png",
 };
 
 void Renderer::loadHotbar()
@@ -363,11 +480,11 @@ void Renderer::loadHotbar()
     if (iconSz < 1) iconSz = 1;
     m_hbIconDisplaySize = iconSz;
 
-    for (int i = 0; i < HOTBAR_SLOTS; ++i)
+    for (int i = 1; i < MAX_BLOCK_TYPE; ++i)
     {
-        if (kHotbarIcons[i][0] == L'\0') continue;  // 空槽位跳过
+        if (kHotbarIcons[i][0] == L'\0') continue;
         IMAGE img;
-        loadimage(&img, kHotbarIcons[i], iconSz, iconSz, true);  // loadimage 缩放
+        loadimage(&img, kHotbarIcons[i], iconSz, iconSz, true);
         DWORD *buf = GetImageBuffer(&img);
         int srcW = img.getwidth();
         if (buf && srcW > 0)
@@ -380,7 +497,7 @@ void Renderer::loadHotbar()
     }
     // 加载右下角大图标（loadimage 缩放至 32x32）
     const int BIG = HB_ICON_SIZE * 2;
-    for (int i = 0; i < HOTBAR_SLOTS; ++i)
+    for (int i = 1; i < MAX_BLOCK_TYPE; ++i)
     {
         if (kBigIconPaths[i][0] == L'\0') continue;
         IMAGE img;
@@ -436,36 +553,26 @@ void Renderer::loadHotbar()
 
 void Renderer::loadInventoryIcons()
 {
-    // 和 hotbar 图标相同的路径，但加载为 32×32
-    static const wchar_t *invIconPaths[] = {
-        L"../assert/gui/item/grass_block.png",
-        L"../assert/gui/item/dirt.png",
-        L"../assert/gui/item/oak_log.png",
-        L"../assert/gui/item/oak_leaves.png",
-        L"../assert/gui/item/stone.png",
-        L"../assert/gui/item/oak_planks.png",
-        L"../assert/gui/item/stick.png",
-        L"../assert/gui/item/crafting_table.png"
-    };
-    for (int i = 0; i < 8; ++i)
+    for (int i = 1; i < MAX_BLOCK_TYPE; ++i)
     {
+        if (kHotbarIcons[i][0] == L'\0') continue;
         IMAGE img;
-        loadimage(&img, invIconPaths[i], INV_ICON_SIZE, INV_ICON_SIZE, true);
+        loadimage(&img, kHotbarIcons[i], INV_ICON_SIZE, INV_ICON_SIZE, true);
         DWORD *buf = GetImageBuffer(&img);
         int srcW = img.getwidth();
         if (buf && srcW > 0)
         {
-            m_invIcons[i + 1].resize(INV_ICON_SIZE * INV_ICON_SIZE);
+            m_invIcons[i].resize(INV_ICON_SIZE * INV_ICON_SIZE);
             for (int y = 0; y < INV_ICON_SIZE; ++y)
                 for (int x = 0; x < INV_ICON_SIZE; ++x)
-                    m_invIcons[i + 1][y * INV_ICON_SIZE + x] = buf[y * srcW + x];
+                    m_invIcons[i][y * INV_ICON_SIZE + x] = buf[y * srcW + x];
         }
     }
 }
 
 void Renderer::drawBlockIcon(int screenX, int screenY, int size, int blockType, int count)
 {
-    if (blockType <= 0 || blockType > 8) return;
+    if (blockType <= 0 || blockType >= MAX_BLOCK_TYPE) return;
     const auto &pixels = m_invIcons[blockType];
     if (pixels.empty()) return;
 
@@ -543,9 +650,8 @@ void Renderer::drawHotbar(int selectedSlot, const int *hotbarBlockTypes)
     for (int slot = 0; slot < HOTBAR_SLOTS; ++slot)
     {
         int bt = types[slot];
-        if (bt <= 0 || bt > 8) continue;  // 空气或未知类型
-        int iconIdx = bt - 1;  // BLOCK_GRASS=1 → index 0
-        if (m_hotbarIcons[iconIdx].empty()) continue;
+        if (bt <= 0 || bt >= MAX_BLOCK_TYPE) continue;
+        if (m_hotbarIcons[bt].empty()) continue;
 
         int nativeX = HB_SLOT_ORIGIN_X + slot * HB_SLOT_STEP;
         int nativeY = HB_SLOT_ORIGIN_Y;
@@ -561,7 +667,7 @@ void Renderer::drawHotbar(int selectedSlot, const int *hotbarBlockTypes)
             int srcRow = dy * sz;
             for (int dx = 0; dx < sz; ++dx)
             {
-                COLORREF c = m_hotbarIcons[iconIdx][srcRow + dx];
+                COLORREF c = m_hotbarIcons[bt][srcRow + dx];
                 if (c == 0) continue;
                 int px = screenX + dx;
                 if (px >= 0 && px < m_screenWidth)
