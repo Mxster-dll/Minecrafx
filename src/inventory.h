@@ -37,9 +37,9 @@ public:
     // ---- crafting_table.png 的合成区坐标（3×3） ----
     static constexpr int CT_CRAFT_X = 30;
     static constexpr int CT_CRAFT_Y = 17;
-    static constexpr int CT_OUTPUT_X = 120;
-    static constexpr int CT_OUTPUT_Y = 31;
-    static constexpr int CT_OUTPUT_SIZE = 24;  // 输出格比合成格大
+    static constexpr int CT_OUTPUT_X = 124;
+    static constexpr int CT_OUTPUT_Y = 35;
+    static constexpr int CT_OUTPUT_SIZE = 16;  // 输出格 16×16
 
     struct Slot
     {

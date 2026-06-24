@@ -483,33 +483,45 @@ void Renderer::loadHotbar()
     for (int i = 1; i < MAX_BLOCK_TYPE; ++i)
     {
         if (kHotbarIcons[i][0] == L'\0') continue;
-        IMAGE img;
-        loadimage(&img, kHotbarIcons[i], iconSz, iconSz, true);
-        DWORD *buf = GetImageBuffer(&img);
-        int srcW = img.getwidth();
-        if (buf && srcW > 0)
+        IMAGE imgNative;
+        loadimage(&imgNative, kHotbarIcons[i]);
+        DWORD *nbuf = GetImageBuffer(&imgNative);
+        int nw = imgNative.getwidth(), nh = imgNative.getheight();
+        if (nbuf && nw > 0 && nh > 0)
         {
             m_hotbarIcons[i].resize(iconSz * iconSz);
             for (int y = 0; y < iconSz; ++y)
+            {
+                int sy = y * nh / iconSz;
                 for (int x = 0; x < iconSz; ++x)
-                    m_hotbarIcons[i][y * iconSz + x] = buf[y * srcW + x];
+                {
+                    int sx = x * nw / iconSz;
+                    m_hotbarIcons[i][y * iconSz + x] = nbuf[sy * nw + sx];
+                }
+            }
         }
     }
-    // 加载右下角大图标（loadimage 缩放至 32x32）
+    // 加载大图标（最邻近采样至 32x32）
     const int BIG = HB_ICON_SIZE * 2;
     for (int i = 1; i < MAX_BLOCK_TYPE; ++i)
     {
         if (kBigIconPaths[i][0] == L'\0') continue;
-        IMAGE img;
-        loadimage(&img, kBigIconPaths[i], BIG, BIG, true);
-        DWORD *buf = GetImageBuffer(&img);
-        int srcW = img.getwidth();
-        if (buf && srcW > 0)
+        IMAGE imgNative;
+        loadimage(&imgNative, kBigIconPaths[i]);
+        DWORD *nbuf = GetImageBuffer(&imgNative);
+        int nw = imgNative.getwidth(), nh = imgNative.getheight();
+        if (nbuf && nw > 0 && nh > 0)
         {
             m_hotbarIconsBig[i].resize(BIG * BIG);
             for (int y = 0; y < BIG; ++y)
+            {
+                int sy = y * nh / BIG;
                 for (int x = 0; x < BIG; ++x)
-                    m_hotbarIconsBig[i][y * BIG + x] = buf[y * srcW + x];
+                {
+                    int sx = x * nw / BIG;
+                    m_hotbarIconsBig[i][y * BIG + x] = nbuf[sy * nw + sx];
+                }
+            }
         }
     }
     m_hotbarBlockTypes[0] = BLOCK_GRASS;
@@ -556,16 +568,22 @@ void Renderer::loadInventoryIcons()
     for (int i = 1; i < MAX_BLOCK_TYPE; ++i)
     {
         if (kHotbarIcons[i][0] == L'\0') continue;
-        IMAGE img;
-        loadimage(&img, kHotbarIcons[i], INV_ICON_SIZE, INV_ICON_SIZE, true);
-        DWORD *buf = GetImageBuffer(&img);
-        int srcW = img.getwidth();
-        if (buf && srcW > 0)
+        IMAGE imgNative;
+        loadimage(&imgNative, kHotbarIcons[i]);
+        DWORD *nbuf = GetImageBuffer(&imgNative);
+        int nw = imgNative.getwidth(), nh = imgNative.getheight();
+        if (nbuf && nw > 0 && nh > 0)
         {
             m_invIcons[i].resize(INV_ICON_SIZE * INV_ICON_SIZE);
             for (int y = 0; y < INV_ICON_SIZE; ++y)
+            {
+                int sy = y * nh / INV_ICON_SIZE;
                 for (int x = 0; x < INV_ICON_SIZE; ++x)
-                    m_invIcons[i][y * INV_ICON_SIZE + x] = buf[y * srcW + x];
+                {
+                    int sx = x * nw / INV_ICON_SIZE;
+                    m_invIcons[i][y * INV_ICON_SIZE + x] = nbuf[sy * nw + sx];
+                }
+            }
         }
     }
 }

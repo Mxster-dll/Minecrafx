@@ -31,11 +31,29 @@
  // ---- 游戏状态 ----
 enum class GameState
 {
+    Login,         // 登录页（选择模式）
     Gameplay,      // 正常游戏
     Inventory,     // 背包界面（E 键打开，2×2 合成）
     CraftingTable, // 工作台界面（右键工作台打开，3×3 合成）
     Paused         // 暂停菜单（Esc 键打开）
 };
+
+// 整数倍最邻近放大（像素无后期处理）
+static void nearestScale(IMAGE &dst, const IMAGE &src, int scale)
+{
+    int srcW = src.getwidth(), srcH = src.getheight();
+    if (srcW <= 0 || srcH <= 0 || scale <= 1) { dst = src; return; }
+    Resize(&dst, srcW * scale, srcH * scale);
+    DWORD *s = GetImageBuffer(const_cast<IMAGE *>(&src));
+    DWORD *d = GetImageBuffer(&dst);
+    if (s && d)
+    {
+        int dstW = srcW * scale;
+        for (int y = 0; y < dst.getheight(); ++y)
+            for (int x = 0; x < dstW; ++x)
+                d[y * dstW + x] = s[(y / scale) * srcW + (x / scale)];
+    }
+}
 
 // 方块过程色（哈希）
 static COLORREF blockColor(int x, int y, int z, int w)
@@ -126,8 +144,7 @@ int main()
     renderer.loadHotbar();
     renderer.loadInventoryIcons();
 
-    // ---- 4D 丘陵地貌 ----
-    // 使用多层正弦波模拟自然地形
+    // ---- 地形高度函数（两种模式共用） ----
     auto terrainHeight = [](int x, int z, int w) -> int
     {
         double h = 0.0;
@@ -136,62 +153,13 @@ int main()
         h += std::sin((x + z) * 0.35) * 3.0;
         h += std::cos(w * 0.40) * std::sin(x * 0.50 + z * 0.30) * 2.5;
         h += std::sin(x * 0.70 - z * 0.60) * std::cos(w * 0.50) * 2.0;
-        h += 5.0;  // 基础高度
+        h += 5.0;
         return (int) std::floor(h);
     };
 
     constexpr int MX = 48, MZ = 48, MW = 24;
-    for (int x = 0; x < MX; ++x)
-        for (int z = 0; z < MZ; ++z)
-            for (int w = 0; w < MW; ++w)
-            {
-                int ht = terrainHeight(x, z, w);
-                if (ht < 1) ht = 1;
-                for (int y = 0; y < ht; ++y)
-                {
-                    int type = BLOCK_DIRT;
-                    if (y == ht - 1) type = BLOCK_GRASS;  // 表面草方块
-                    world.set(IVec4(x, y, z, w), type);
-                }
-            }
 
-    // ---- 4D 树木 ----
-    srand(42);  // 固定种子保证可复现
-    for (int i = 0; i < 120; ++i)
-    {
-        int tx = rand() % (MX - 2) + 1;
-        int tz = rand() % (MZ - 2) + 1;
-        int tw = rand() % (MW - 2) + 1;
-        int groundY = terrainHeight(tx, tz, tw);
-        if (groundY < 2) continue;
-
-        // 树干：3~5 格高
-        int trunkH = 3 + rand() % 3;
-        for (int ty = groundY; ty < groundY + trunkH; ++ty)
-            world.set(IVec4(tx, ty, tz, tw), BLOCK_LOG);
-
-        // 树叶：在 x/z/w 三个方向围绕树冠展开
-        int leafBase = groundY + trunkH - 1;
-        for (int dx = -1; dx <= 1; ++dx)
-            for (int dz = -1; dz <= 1; ++dz)
-                for (int dw = -1; dw <= 1; ++dw)
-                {
-                    int lx = tx + dx, lz = tz + dz, lw = tw + dw;
-                    if (lx < 0 || lx >= MX || lz < 0 || lz >= MZ || lw < 0 || lw >= MW) continue;
-                    // 树干位置不替换
-                    if (dx == 0 && dz == 0 && dw == 0) continue;
-                    // 角落稀疏化
-                    int corner = (dx != 0) + (dz != 0) + (dw != 0);
-                    if (corner >= 2 && (rand() % 3) != 0) continue;
-                    for (int ly = leafBase; ly <= leafBase + 2; ++ly)
-                    {
-                        if (ly >= 20) continue;
-                        world.set(IVec4(lx, ly, lz, lw), BLOCK_LEAVES);
-                    }
-                }
-    }
-
-    // 移动模式：飞行 / 行走
+    // ---- 移动模式 ----
     bool flyMode = true;
     double verticalVel = 0.0;
     bool onGround = false;
@@ -205,40 +173,25 @@ int main()
     int selectedSlot = 0;      // 热键栏选中槽位
     clock_t lastStepTime = 0;  // 上次脚步声时间
 
-    // ---- 3D 地图 + 3D 摄像机 ----
+    // ---- 3D 地图 + 3D 摄像机（选模式后初始化） ----
     Map3D map3D;
-    double cam3U = 0, cam3V = 0, cam3Y = 0;   // 3D 位置（地图坐标系）
-    double cam3Yaw = 0, cam3Pitch = 0;          // 3D 朝向
-
-    // 初次生成地图
-    map3D = generateMap3D(world, camera, 0.5,
-        [](int bx, int by, int bz, int bw) -> COLORREF
-    {
-        return blockColor(bx, by, bz, bw);
-    });
-    // 从 4D 相机计算 3D 初始位置
-    {
-        Plane2D pl = camera.getViewPlane();
-        Vec3 cXZW = Vec3::fromVec4(camera.getPos());
-        cam3U = vec3Dot(cXZW, pl.p) - vec3Dot(Vec3::fromVec4(map3D.camRef4D), pl.p);
-        cam3V = vec3Dot(cXZW, pl.q) - vec3Dot(Vec3::fromVec4(map3D.camRef4D), pl.q);
-        cam3Y = camera.getPos().y - map3D.camRef4D.y;
-        cam3Yaw = 0; cam3Pitch = 0;
-    }
+    double cam3U = 0, cam3V = 0, cam3Y = 0;
+    double cam3Yaw = 0, cam3Pitch = 0;
 
     SetWindowText(hwnd, L"Minecrafx");
 
     // ---- 预加载 GUI 图片 ----
     IMAGE imgInventory, imgCraftingTable, imgButton, imgButtonHover, imgButtonActive;
-    // 先获取原图尺寸，再用 loadimage 自带缩放加载为 2 倍
-    loadimage(&imgInventory, L"../assert/gui/widget/inventory.png");
-    int invW = imgInventory.getwidth(), invH = imgInventory.getheight();
-    loadimage(&imgInventory, L"../assert/gui/widget/inventory.png", invW * 2, invH * 2, true);
-    // 工作台界面（尺寸与背包相同，但合成区是 3×3）
-    IMAGE imgCT;
-    loadimage(&imgCT, L"../assert/gui/widget/crafting_table.png");
-    int ctW = imgCT.getwidth(), ctH = imgCT.getheight();
-    loadimage(&imgCraftingTable, L"../assert/gui/widget/crafting_table.png", ctW * 2, ctH * 2, true);
+    IMAGE imgIsles;  // 登录页背景
+    loadimage(&imgIsles, L"../assert/start.png");
+    // 加载原图 → 3x 最邻近放大（无后期处理）
+    {
+        IMAGE imgInvNative, imgCTNative;
+        loadimage(&imgInvNative, L"../assert/gui/widget/inventory.png");
+        loadimage(&imgCTNative, L"../assert/gui/widget/crafting_table.png");
+        nearestScale(imgInventory, imgInvNative, 3);
+        nearestScale(imgCraftingTable, imgCTNative, 3);
+    }
     // 按钮贴图：用 loadimage 缩放至目标尺寸
     constexpr int BTN_W = 200, BTN_H = 50;
     loadimage(&imgButton, L"../assert/gui/widget/button.png", BTN_W, BTN_H, true);
@@ -246,11 +199,12 @@ int main()
     loadimage(&imgButtonActive, L"../assert/gui/widget/button_active.png", BTN_W, BTN_H, true);
 
     // ---- 游戏状态 ----
-    GameState state = GameState::Gameplay;
+    GameState state = GameState::Login;
     Inventory inventory;
     CraftingManager craftMgr;  // 合成配方
 
     InputHandler input(hwnd);
+    input.showMouseCursor(true);  // 登录页显示鼠标
     while (!input.isQuitRequested())
     {
         input.update();
@@ -261,6 +215,142 @@ int main()
         lastFrame = nowFrame;
         if (dt > 0.1) dt = 0.1;
         if (dt <= 0.0) dt = 0.001;
+
+        // ================================================================
+        // 登录页：选择模式
+        // ================================================================
+        if (state == GameState::Login)
+        {
+            // 绘制背景（拉伸铺满至 DIB）
+            {
+                DWORD *bgBuf = GetImageBuffer(&imgIsles);
+                int bgW = imgIsles.getwidth(), bgH = imgIsles.getheight();
+                DWORD *bits = renderer.getPixelBits();
+                if (bgBuf && bgW > 0 && bgH > 0 && bits)
+                {
+                    for (int y = 0; y < SCREEN_HEIGHT; ++y)
+                    {
+                        int sy = y * bgH / SCREEN_HEIGHT;
+                        for (int x = 0; x < SCREEN_WIDTH; ++x)
+                        {
+                            int sx = x * bgW / SCREEN_WIDTH;
+                            DWORD c = bgBuf[sy * bgW + sx];
+                            if (c != 0 && c != RGB(0, 0, 0))
+                                bits[y * SCREEN_WIDTH + x] = c;
+                        }
+                    }
+                }
+            }
+
+            // 两个按钮
+            constexpr int LOGIN_BTN_W = 200, LOGIN_BTN_H = 50;
+            int btn1X = (SCREEN_WIDTH - LOGIN_BTN_W) / 2;
+            int btn1Y = SCREEN_HEIGHT / 2 - 10;
+            int btn2X = btn1X;
+            int btn2Y = btn1Y + LOGIN_BTN_H + 15;
+
+            POINT mp = input.getMouseScreenPos();
+            bool hover1 = (mp.x >= btn1X && mp.x < btn1X + LOGIN_BTN_W && mp.y >= btn1Y && mp.y < btn1Y + LOGIN_BTN_H);
+            bool hover2 = (mp.x >= btn2X && mp.x < btn2X + LOGIN_BTN_W && mp.y >= btn2Y && mp.y < btn2Y + LOGIN_BTN_H);
+            bool mouseClick = input.getMouseClick(0);
+            bool click1 = mouseClick && hover1;
+            bool click2 = mouseClick && hover2;
+
+            // 生存模式
+            if (click1)
+            {
+                // 生成丘陵地形
+                for (int x = 0; x < MX; ++x)
+                    for (int z = 0; z < MZ; ++z)
+                        for (int w = 0; w < MW; ++w)
+                        {
+                            int ht = terrainHeight(x, z, w);
+                            if (ht < 1) ht = 1;
+                            for (int y = 0; y < ht; ++y)
+                            {
+                                int type = BLOCK_DIRT;
+                                if (y == ht - 1) type = BLOCK_GRASS;
+                                world.set(IVec4(x, y, z, w), type);
+                            }
+                        }
+                // 树木
+                srand(42);
+                for (int i = 0; i < 120; ++i)
+                {
+                    int tx = rand() % (MX - 2) + 1, tz = rand() % (MZ - 2) + 1, tw = rand() % (MW - 2) + 1;
+                    int groundY = terrainHeight(tx, tz, tw);
+                    if (groundY < 2) continue;
+                    int trunkH = 3 + rand() % 3;
+                    for (int ty = groundY; ty < groundY + trunkH; ++ty)
+                        world.set(IVec4(tx, ty, tz, tw), BLOCK_LOG);
+                    int leafBase = groundY + trunkH - 1;
+                    for (int dx = -1; dx <= 1; ++dx)
+                        for (int dz = -1; dz <= 1; ++dz)
+                            for (int dw = -1; dw <= 1; ++dw)
+                            {
+                                int lx = tx + dx, lz = tz + dz, lw = tw + dw;
+                                if (lx < 0 || lx >= MX || lz < 0 || lz >= MZ || lw < 0 || lw >= MW) continue;
+                                if (dx == 0 && dz == 0 && dw == 0) continue;
+                                if ((dx != 0) + (dz != 0) + (dw != 0) >= 2 && (rand() % 3) != 0) continue;
+                                for (int ly = leafBase; ly <= leafBase + 2; ++ly)
+                                    if (ly < 20) world.set(IVec4(lx, ly, lz, lw), BLOCK_LEAVES);
+                            }
+                }
+                // 矿物生成
+                srand(12345);
+                for (int i = 0; i < 800; ++i)
+                {
+                    int ox = rand() % MX, oz = rand() % MZ, ow = rand() % MW;
+                    int oy = rand() % 5 + 1;  // 地下 1~5 层
+                    int oreType = BLOCK_DIAMOND_ORE;
+                    int r = rand() % 100;
+                    if (r < 60) oreType = BLOCK_IRON_ORE;
+                    else if (r < 90) oreType = BLOCK_GOLD_ORE;
+                    int clusterSize = 2 + rand() % 4;
+                    for (int j = 0; j < clusterSize; ++j)
+                    {
+                        int dx = (rand() % 3) - 1, dy = (rand() % 3) - 1, dz = (rand() % 3) - 1, dw = (rand() % 3) - 1;
+                        int nx = ox + dx, ny = oy + dy, nz = oz + dz, nw = ow + dw;
+                        if (nx >= 0 && nx < MX && nz >= 0 && nz < MZ && nw >= 0 && nw < MW && ny >= 0 && ny < terrainHeight(nx, nz, nw) - 1)
+                            if (world.get(IVec4(nx, ny, nz, nw)) == BLOCK_DIRT)
+                                world.set(IVec4(nx, ny, nz, nw), oreType);
+                    }
+                }
+                // 初始地图
+                map3D = generateMap3D(world, camera, 0.5, [](int bx, int by, int bz, int bw)->COLORREF { return blockColor(bx, by, bz, bw); });
+                { Plane2D pl = camera.getViewPlane(); Vec3 cXZW = Vec3::fromVec4(camera.getPos()); cam3U = vec3Dot(cXZW, pl.p) - vec3Dot(Vec3::fromVec4(map3D.camRef4D), pl.p); cam3V = vec3Dot(cXZW, pl.q) - vec3Dot(Vec3::fromVec4(map3D.camRef4D), pl.q); cam3Y = camera.getPos().y - map3D.camRef4D.y; }
+                state = GameState::Gameplay;
+                input.showMouseCursor(false);
+                input.getMouseDelta();
+                continue;
+            }
+
+            // 创造模式（超平坦）
+            if (click2)
+            {
+                constexpr int CF_X = 16, CF_Z = 16, CF_W = 16;
+                for (int x = 0; x < CF_X; ++x)
+                    for (int z = 0; z < CF_Z; ++z)
+                        for (int w = 0; w < CF_W; ++w)
+                            world.set(IVec4(x, 0, z, w), BLOCK_GRASS);
+                map3D = generateMap3D(world, camera, 0.5, [](int bx, int by, int bz, int bw)->COLORREF { return blockColor(bx, by, bz, bw); });
+                { Plane2D pl = camera.getViewPlane(); Vec3 cXZW = Vec3::fromVec4(camera.getPos()); cam3U = vec3Dot(cXZW, pl.p) - vec3Dot(Vec3::fromVec4(map3D.camRef4D), pl.p); cam3V = vec3Dot(cXZW, pl.q) - vec3Dot(Vec3::fromVec4(map3D.camRef4D), pl.q); cam3Y = camera.getPos().y - map3D.camRef4D.y; }
+                state = GameState::Gameplay;
+                input.showMouseCursor(false);
+                input.getMouseDelta();
+                continue;
+            }
+
+            // 渲染按钮
+            renderer.drawButton(btn1X, btn1Y, LOGIN_BTN_W, LOGIN_BTN_H,
+                &imgButton, &imgButtonHover, &imgButtonActive, L"生存模式", hover1, hover1 && input.isMouseButtonDown(0));
+            renderer.drawButton(btn2X, btn2Y, LOGIN_BTN_W, LOGIN_BTN_H,
+                &imgButton, &imgButtonHover, &imgButtonActive, L"创造模式", hover2, hover2 && input.isMouseButtonDown(0));
+
+            renderer.flushToScreen();   // DIB → 屏幕
+            FlushBatchDraw();
+            continue;
+        }
 
         // ================================================================
         // 非 Gameplay 状态处理
@@ -281,9 +371,9 @@ int main()
             int invDispH = imgInventory.getheight();
             int invDispX = (SCREEN_WIDTH - invDispW) / 2;
             int invDispY = (SCREEN_HEIGHT - invDispH) / 2;
-            // 原生尺寸（加载 2x 前）
-            int invNativeW = invDispW / 2;
-            int invNativeH = invDispH / 2;
+            // 原生尺寸（加载 3x 前）
+            int invNativeW = invDispW / 3;
+            int invNativeH = invDispH / 3;
 
             // 鼠标事件（边沿触发）
             POINT mp = input.getMouseScreenPos();
@@ -444,8 +534,8 @@ int main()
             int ctDispH = imgCraftingTable.getheight();
             int ctDispX = (SCREEN_WIDTH - ctDispW) / 2;
             int ctDispY = (SCREEN_HEIGHT - ctDispH) / 2;
-            int ctNativeW = ctDispW / 2;
-            int ctNativeH = ctDispH / 2;
+            int ctNativeW = ctDispW / 3;
+            int ctNativeH = ctDispH / 3;
 
             POINT mp = input.getMouseScreenPos();
             bool mouseDown = input.getMouseClick(0);
@@ -577,27 +667,42 @@ int main()
             {
                 state = GameState::Gameplay;
                 input.showMouseCursor(false);
-                input.getMouseDelta();  // 丢弃首帧增量，防止视角跳跃
+                input.getMouseDelta();
                 continue;
             }
 
             // 按钮交互
             int btnX = (SCREEN_WIDTH - BTN_W) / 2;
-            int btnY = SCREEN_HEIGHT / 2 + 40;
+            int btn1Y = SCREEN_HEIGHT / 2 - 15;       // 返回标题页
+            int btn2Y = btn1Y + BTN_H + 15;            // 退出游戏
             POINT mp = input.getMouseScreenPos();
-            bool hovered = (mp.x >= btnX && mp.x < btnX + BTN_W &&
-                mp.y >= btnY && mp.y < btnY + BTN_H);
-            bool lbtnDown = input.isMouseButtonDown(0);
-            if (input.getMouseClick(0) && hovered)
+            bool hover1 = (mp.x >= btnX && mp.x < btnX + BTN_W && mp.y >= btn1Y && mp.y < btn1Y + BTN_H);
+            bool hover2 = (mp.x >= btnX && mp.x < btnX + BTN_W && mp.y >= btn2Y && mp.y < btn2Y + BTN_H);
+            bool mouseClick = input.getMouseClick(0);
+            if (mouseClick && hover2)
                 input.requestQuit();
+            if (mouseClick && hover1)
+            {
+                // 返回标题页：清空世界，重置状态
+                world = World();
+                camera = Camera4D();
+                map3D.valid = false;
+                cam3U = cam3V = cam3Y = cam3Yaw = cam3Pitch = 0;
+                selectedSlot = 0;
+                state = GameState::Login;
+                continue;
+            }
 
             // 渲染暂停界面
             cleardevice();
             setbkcolor(RGB(10, 10, 30));
             renderer.drawBackground();
-            renderer.drawButton(btnX, btnY, BTN_W, BTN_H,
+            renderer.drawButton(btnX, btn1Y, BTN_W, BTN_H,
                 &imgButton, &imgButtonHover, &imgButtonActive,
-                L"退出游戏", hovered, lbtnDown);
+                L"返回标题页", hover1, hover1 && input.isMouseButtonDown(0));
+            renderer.drawButton(btnX, btn2Y, BTN_W, BTN_H,
+                &imgButton, &imgButtonHover, &imgButtonActive,
+                L"退出游戏", hover2, hover2 && input.isMouseButtonDown(0));
             renderer.flushToScreen();
             FlushBatchDraw();
             continue;
