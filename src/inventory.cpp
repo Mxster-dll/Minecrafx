@@ -48,6 +48,14 @@ void Inventory::slotScreenRect(int index,
     double sx = (double) imgDispW / imgNativeW;
     double sy = (double) imgDispH / imgNativeH;
 
+    bool isCT = (m_craftMode == CM_CraftingTable3x3);
+    int craftW = isCT ? 3 : 2;
+    int craftX = isCT ? CT_CRAFT_X : INV_CRAFT_X;
+    int craftY = isCT ? CT_CRAFT_Y : INV_CRAFT_Y0;
+    int outX0 = isCT ? CT_OUTPUT_X : INV_OUTPUT_X;
+    int outY0 = isCT ? CT_OUTPUT_Y : INV_OUTPUT_Y;
+    int outSz = isCT ? CT_OUTPUT_SIZE : SLOT_SIZE;
+
     int nx = 0, ny = 0;
     if (index < HOTBAR_SLOTS)
     {
@@ -63,19 +71,20 @@ void Inventory::slotScreenRect(int index,
     else if (index < CRAFT_OUTPUT_IDX)
     {
         int ci = index - CRAFT_BASE;
-        nx = CRAFT_X + (ci % 2) * SLOT_STEP;
-        ny = (ci / 2) ? CRAFT_Y1 : CRAFT_Y0;
+        nx = craftX + (ci % craftW) * SLOT_STEP;
+        ny = craftY + (ci / craftW) * SLOT_STEP;
     }
     else
     {
-        nx = OUTPUT_X;
-        ny = OUTPUT_Y;
+        nx = outX0;
+        ny = outY0;
     }
 
     outX = imgDispX + (int) (nx * sx);
     outY = imgDispY + (int) (ny * sy);
-    outW = (int) (SLOT_SIZE * sx);
-    outH = (int) (SLOT_SIZE * sy);
+    int slotSz = (index == CRAFT_OUTPUT_IDX) ? outSz : SLOT_SIZE;
+    outW = (int) (slotSz * sx);
+    outH = (int) (slotSz * sy);
 }
 
 int Inventory::hitTest(int screenX, int screenY,
@@ -88,16 +97,25 @@ int Inventory::hitTest(int screenX, int screenY,
     double nx = (screenX - imgDispX) / sx;
     double ny = (screenY - imgDispY) / sy;
 
+    bool isCT = (m_craftMode == CM_CraftingTable3x3);
+    int craftW = isCT ? 3 : 2;
+    int craftH = isCT ? 3 : 2;
+    int craftX = isCT ? CT_CRAFT_X : INV_CRAFT_X;
+    int craftY = isCT ? CT_CRAFT_Y : INV_CRAFT_Y0;
+    int outX0 = isCT ? CT_OUTPUT_X : INV_OUTPUT_X;
+    int outY0 = isCT ? CT_OUTPUT_Y : INV_OUTPUT_Y;
+    int outSz = isCT ? CT_OUTPUT_SIZE : SLOT_SIZE;
+
     // 输出区（优先命中，因为面积大）
-    if (nx >= OUTPUT_X && nx < OUTPUT_X + SLOT_SIZE &&
-        ny >= OUTPUT_Y && ny < OUTPUT_Y + SLOT_SIZE)
+    if (nx >= outX0 && nx < outX0 + outSz &&
+        ny >= outY0 && ny < outY0 + outSz)
         return CRAFT_OUTPUT_IDX;
 
-    // 合成区 2×2
-    for (int ci = 0; ci < CRAFT_INPUT; ++ci)
+    // 合成区（2×2 或 3×3）
+    for (int ci = 0; ci < craftW * craftH; ++ci)
     {
-        int cx = CRAFT_X + (ci % 2) * SLOT_STEP;
-        int cy = (ci / 2) ? CRAFT_Y1 : CRAFT_Y0;
+        int cx = craftX + (ci % craftW) * SLOT_STEP;
+        int cy = craftY + (ci / craftW) * SLOT_STEP;
         if (nx >= cx && nx < cx + SLOT_SIZE && ny >= cy && ny < cy + SLOT_SIZE)
             return CRAFT_BASE + ci;
     }
@@ -125,11 +143,14 @@ int Inventory::hitTest(int screenX, int screenY,
 
 void Inventory::updateCraftingResult(const CraftingManager &craftMgr)
 {
-    // 将 2×2 合成区填入 3×3 左上角
+    int craftW = (m_craftMode == CM_CraftingTable3x3) ? 3 : 2;
+    int craftH = (m_craftMode == CM_CraftingTable3x3) ? 3 : 2;
+
+    // 将合成区填入 3×3 网格（左上角对齐）
     int grid[3][3] = {};
-    for (int ci = 0; ci < CRAFT_INPUT; ++ci)
+    for (int ci = 0; ci < craftW * craftH; ++ci)
     {
-        int row = ci / 2, col = ci % 2;
+        int row = ci / craftW, col = ci % craftW;
         grid[row][col] = m_slots[CRAFT_BASE + ci].blockType;
     }
 
@@ -280,7 +301,9 @@ bool Inventory::takeCraftOutput(const CraftingManager &craftMgr)
     out.count = 0;
 
     // 消耗合成区材料（每个非空格减 1）
-    for (int ci = 0; ci < CRAFT_INPUT; ++ci)
+    int craftW = (m_craftMode == CM_CraftingTable3x3) ? 3 : 2;
+    int craftH = (m_craftMode == CM_CraftingTable3x3) ? 3 : 2;
+    for (int ci = 0; ci < craftW * craftH; ++ci)
     {
         auto &s = m_slots[CRAFT_BASE + ci];
         if (s.blockType != BLOCK_AIR && s.count > 0)

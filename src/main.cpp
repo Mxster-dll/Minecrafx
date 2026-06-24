@@ -31,9 +31,10 @@
  // ---- 游戏状态 ----
 enum class GameState
 {
-    Gameplay,   // 正常游戏
-    Inventory,  // 背包界面（E 键打开）
-    Paused      // 暂停菜单（Esc 键打开）
+    Gameplay,      // 正常游戏
+    Inventory,     // 背包界面（E 键打开，2×2 合成）
+    CraftingTable, // 工作台界面（右键工作台打开，3×3 合成）
+    Paused         // 暂停菜单（Esc 键打开）
 };
 
 // 方块过程色（哈希）
@@ -228,11 +229,16 @@ int main()
     SetWindowText(hwnd, L"Minecrafx");
 
     // ---- 预加载 GUI 图片 ----
-    IMAGE imgInventory, imgButton, imgButtonHover, imgButtonActive;
+    IMAGE imgInventory, imgCraftingTable, imgButton, imgButtonHover, imgButtonActive;
     // 先获取原图尺寸，再用 loadimage 自带缩放加载为 2 倍
     loadimage(&imgInventory, L"../assert/gui/widget/inventory.png");
     int invW = imgInventory.getwidth(), invH = imgInventory.getheight();
     loadimage(&imgInventory, L"../assert/gui/widget/inventory.png", invW * 2, invH * 2, true);
+    // 工作台界面（尺寸与背包相同，但合成区是 3×3）
+    IMAGE imgCT;
+    loadimage(&imgCT, L"../assert/gui/widget/crafting_table.png");
+    int ctW = imgCT.getwidth(), ctH = imgCT.getheight();
+    loadimage(&imgCraftingTable, L"../assert/gui/widget/crafting_table.png", ctW * 2, ctH * 2, true);
     // 按钮贴图：用 loadimage 缩放至目标尺寸
     constexpr int BTN_W = 200, BTN_H = 50;
     loadimage(&imgButton, L"../assert/gui/widget/button.png", BTN_W, BTN_H, true);
@@ -373,6 +379,152 @@ int main()
             continue;
         }
 
+        // ================================================================
+        // 工作台界面（3×3 合成，E / Esc 关闭）
+        // ================================================================
+        if (state == GameState::CraftingTable)
+        {
+            if (input.isPressed(Key::Esc) || input.isPressed(Key::E))
+            {
+                if (inventory.isDragging()) inventory.cancelDrag();
+                inventory.setCraftMode(Inventory::CM_Inventory2x2);
+                state = GameState::Gameplay;
+                input.showMouseCursor(false);
+                input.getMouseDelta();
+                continue;
+            }
+
+            int ctDispW = imgCraftingTable.getwidth();
+            int ctDispH = imgCraftingTable.getheight();
+            int ctDispX = (SCREEN_WIDTH - ctDispW) / 2;
+            int ctDispY = (SCREEN_HEIGHT - ctDispH) / 2;
+            int ctNativeW = ctDispW / 2;
+            int ctNativeH = ctDispH / 2;
+
+            POINT mp = input.getMouseScreenPos();
+            bool mouseDown = input.getMouseClick(0);
+            bool mouseUp = input.getMouseRelease(0);
+            bool rightClick = input.getMouseClick(1);
+
+            int hoveredSlot = inventory.hitTest(mp.x, mp.y,
+                ctDispX, ctDispY, ctDispW, ctDispH,
+                ctNativeW, ctNativeH);
+
+            constexpr int CRAFT_BASE_SLOT = Inventory::HOTBAR_SLOTS + Inventory::BACKPACK_SLOTS;
+            constexpr int OUTPUT_SLOT = CRAFT_BASE_SLOT + Inventory::CRAFT_INPUT;
+
+            static int  dragSrcSlot = -1;
+            static bool didAutoPickup = false;
+
+            // ── 左键按下 ──
+            if (mouseDown && hoveredSlot >= 0)
+            {
+                dragSrcSlot = hoveredSlot;
+                didAutoPickup = false;
+                bool wasCraft = (hoveredSlot >= CRAFT_BASE_SLOT);
+
+                if (!inventory.isDragging())
+                {
+                    if (hoveredSlot == OUTPUT_SLOT)
+                    {
+                        inventory.takeCraftOutput(craftMgr);
+                        didAutoPickup = inventory.isDragging();
+                    }
+                    else
+                    {
+                        didAutoPickup = inventory.pickup(hoveredSlot, -1);
+                    }
+                }
+                if (wasCraft)
+                    inventory.updateCraftingResult(craftMgr);
+            }
+
+            // ── 左键释放 ──
+            if (mouseUp)
+            {
+                bool wasCraft = (hoveredSlot >= CRAFT_BASE_SLOT);
+
+                if (inventory.isDragging())
+                {
+                    bool sameSlot = (hoveredSlot == dragSrcSlot);
+                    if (sameSlot && didAutoPickup)
+                    {
+                        // 点按拿起，保留物品
+                    }
+                    else if (hoveredSlot >= 0)
+                    {
+                        if (hoveredSlot == OUTPUT_SLOT)
+                            inventory.takeCraftOutput(craftMgr);
+                        else
+                            inventory.placeInto(hoveredSlot);
+                    }
+                }
+                else if (hoveredSlot >= 0)
+                {
+                    if (hoveredSlot == OUTPUT_SLOT)
+                        inventory.takeCraftOutput(craftMgr);
+                    else
+                        inventory.pickup(hoveredSlot, -1);
+                }
+
+                if (wasCraft)
+                    inventory.updateCraftingResult(craftMgr);
+            }
+
+            // ── 右键 ──
+            if (rightClick && hoveredSlot >= 0)
+            {
+                bool wasCraft = (hoveredSlot >= CRAFT_BASE_SLOT);
+
+                if (inventory.isDragging())
+                {
+                    if (hoveredSlot == OUTPUT_SLOT)
+                        inventory.takeCraftOutput(craftMgr);
+                    else
+                        inventory.placeOneInto(hoveredSlot);
+                }
+                else
+                {
+                    if (hoveredSlot == OUTPUT_SLOT)
+                        inventory.takeCraftOutput(craftMgr);
+                    else
+                        inventory.pickup(hoveredSlot, 1);
+                }
+
+                if (wasCraft)
+                    inventory.updateCraftingResult(craftMgr);
+            }
+
+            // 渲染工作台界面
+            cleardevice();
+            setbkcolor(RGB(10, 10, 30));
+            renderer.drawBackground();
+            renderer.drawImageCentered(&imgCraftingTable);
+
+            for (int i = 0; i < Inventory::TOTAL_SLOTS; ++i)
+            {
+                const auto &slot = inventory.getSlot(i);
+                if (slot.blockType == BLOCK_AIR || slot.count <= 0) continue;
+                int sx, sy, sw, sh;
+                inventory.slotScreenRect(i,
+                    ctDispX, ctDispY, ctDispW, ctDispH,
+                    ctNativeW, ctNativeH,
+                    sx, sy, sw, sh);
+                renderer.drawBlockIcon(sx, sy, sh, slot.blockType, slot.count);
+            }
+
+            if (inventory.isDragging())
+            {
+                int sz = (int) (16 * (double) ctDispW / ctNativeW);
+                renderer.drawBlockIcon(mp.x - sz / 2, mp.y - sz / 2, sz,
+                    inventory.dragBlockType(), inventory.dragCount());
+            }
+
+            renderer.flushToScreen();
+            FlushBatchDraw();
+            continue;
+        }
+
         if (state == GameState::Paused)
         {
             if (input.isPressed(Key::Esc))
@@ -418,6 +570,7 @@ int main()
         }
         if (input.isPressed(Key::E))
         {
+            inventory.setCraftMode(Inventory::CM_Inventory2x2);
             state = GameState::Inventory;
             renderer.captureBackground();
             renderer.applyGaussianBlur();
@@ -668,6 +821,17 @@ int main()
                 }
                 if (input.getMouseClick(1))
                 {
+                    // 右键工作台 → 打开工作台界面
+                    if (hasTarget && world.get(targetedBlock) == BLOCK_CRAFTING_TABLE)
+                    {
+                        inventory.setCraftMode(Inventory::CM_CraftingTable3x3);
+                        state = GameState::CraftingTable;
+                        renderer.captureBackground();
+                        renderer.applyGaussianBlur();
+                        input.showMouseCursor(true);
+                        continue;
+                    }
+
                     if (raycast3D(hitPos, prevPos))
                     {
                         // 临时放置，检查是否会与摄像机碰撞

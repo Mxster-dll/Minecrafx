@@ -5,7 +5,8 @@
 class CraftingManager;
 
 // ============================================================================
-// Inventory — 背包 + 快捷栏 + 合成区（共 41 格），支持拖拽
+// Inventory — 背包 + 快捷栏 + 合成区（热键栏 9 + 背包 27 + 合成输入 9 + 输出 1 = 46 格）
+// 支持两种合成模式：背包 2×2 和 工作台 3×3
 // ============================================================================
 class Inventory
 {
@@ -14,22 +15,31 @@ public:
     static constexpr int BACKPACK_ROWS = 3;
     static constexpr int BACKPACK_COLS = 9;
     static constexpr int BACKPACK_SLOTS = BACKPACK_ROWS * BACKPACK_COLS;
-    static constexpr int CRAFT_INPUT = 4;   // 2×2 合成台
+    static constexpr int CRAFT_INPUT = 9;   // 最多 3×3 合成台
     static constexpr int CRAFT_OUTPUT = 1;
     static constexpr int TOTAL_SLOTS = HOTBAR_SLOTS + BACKPACK_SLOTS + CRAFT_INPUT + CRAFT_OUTPUT;
 
-    // 槽位在 inventory.png 原生坐标中的参数
+    enum CraftMode { CM_Inventory2x2, CM_CraftingTable3x3 };
+
+    // ---- inventory.png 的合成区坐标（2×2） ----
     static constexpr int SLOT_SIZE = 16;
     static constexpr int SLOT_STEP = 18;
     static constexpr int BP_ORIGIN_X = 8;
     static constexpr int BP_ORIGIN_Y = 84;
     static constexpr int HB_INV_Y = 142;
-    // 合成区
-    static constexpr int CRAFT_X = 98;
-    static constexpr int CRAFT_Y0 = 18;   // 第一排 y
-    static constexpr int CRAFT_Y1 = 36;   // 第二排 y
-    static constexpr int OUTPUT_X = 154;
-    static constexpr int OUTPUT_Y = 28;
+    // 背包页 2×2 合成区
+    static constexpr int INV_CRAFT_X = 98;
+    static constexpr int INV_CRAFT_Y0 = 18;
+    static constexpr int INV_CRAFT_Y1 = 36;
+    static constexpr int INV_OUTPUT_X = 154;
+    static constexpr int INV_OUTPUT_Y = 28;
+
+    // ---- crafting_table.png 的合成区坐标（3×3） ----
+    static constexpr int CT_CRAFT_X = 30;
+    static constexpr int CT_CRAFT_Y = 17;
+    static constexpr int CT_OUTPUT_X = 120;
+    static constexpr int CT_OUTPUT_Y = 31;
+    static constexpr int CT_OUTPUT_SIZE = 24;  // 输出格比合成格大
 
     struct Slot
     {
@@ -45,7 +55,10 @@ public:
     int hotbarBlockType(int hotbarIndex) const;
     void setHotbar(int hotbarIndex, int blockType, int count);
 
-    // ---- 合成 ----
+    // ---- 合成模式 ----
+    void setCraftMode(CraftMode mode) { m_craftMode = mode; }
+    CraftMode craftMode() const { return m_craftMode; }
+
     /** @brief 当前合成输出（需每次合成区变化后调用） */
     void updateCraftingResult(const CraftingManager &craftMgr);
     int  craftOutputType()  const { return m_slots[CRAFT_OUTPUT_IDX].blockType; }
@@ -82,6 +95,8 @@ private:
     static constexpr int CRAFT_OUTPUT_IDX = CRAFT_BASE + CRAFT_INPUT;
 
     Slot m_slots[TOTAL_SLOTS];
+
+    CraftMode m_craftMode = CM_Inventory2x2;
 
     int m_dragging = -1;
     int m_dragType = BLOCK_AIR;
