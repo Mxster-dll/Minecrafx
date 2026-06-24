@@ -285,64 +285,110 @@ int main()
             int invNativeW = invDispW / 2;
             int invNativeH = invDispH / 2;
 
-            // 鼠标事件
+            // 鼠标事件（边沿触发）
             POINT mp = input.getMouseScreenPos();
-            bool mouseDown = input.getMouseClick(0);
-            bool mouseUp = false;  // 上升沿需额外追踪
-            // 简易：用 isMouseButtonDown 判断释放
-            static bool wasDown = false;
-            bool isDown = input.isMouseButtonDown(0);
-            if (wasDown && !isDown) mouseUp = true;
-            wasDown = isDown;
+            bool mouseDown = input.getMouseClick(0);     // 左键按下
+            bool mouseUp = input.getMouseRelease(0);    // 左键释放
+            bool rightClick = input.getMouseClick(1);      // 右键按下
 
             int hoveredSlot = inventory.hitTest(mp.x, mp.y,
                 invDispX, invDispY, invDispW, invDispH,
                 invNativeW, invNativeH);
 
-            bool shiftHeld = input.isKeyDown(Key::LShift) || input.isKeyDown(Key::RShift);
             constexpr int CRAFT_BASE_SLOT = Inventory::HOTBAR_SLOTS + Inventory::BACKPACK_SLOTS;
             constexpr int OUTPUT_SLOT = CRAFT_BASE_SLOT + Inventory::CRAFT_INPUT;
 
+            // 拖拽状态追踪
+            static int  dragSrcSlot = -1;
+            static bool didAutoPickup = false;
+
+            // ═══════════════════════════════════════════════════════
+            // 左键按下：记录起点；手空 → 自动拿起（长按起点）
+            // ═══════════════════════════════════════════════════════
             if (mouseDown && hoveredSlot >= 0)
             {
+                dragSrcSlot = hoveredSlot;
+                didAutoPickup = false;
                 bool wasCraft = (hoveredSlot >= CRAFT_BASE_SLOT);
-                if (inventory.isDragging())
+
+                if (!inventory.isDragging())
                 {
-                    // 手上已有物品
                     if (hoveredSlot == OUTPUT_SLOT)
-                        inventory.takeCraftOutput(craftMgr);  // 同种累加，异种忽略
-                    else if (shiftHeld)
-                        inventory.addToDrag(hoveredSlot, 1);  // Shift+点击：只取 1 个累加
+                    {
+                        inventory.takeCraftOutput(craftMgr);
+                        didAutoPickup = inventory.isDragging();
+                    }
                     else
-                        inventory.placeInto(hoveredSlot);     // 正常放入
-                }
-                else if (hoveredSlot == OUTPUT_SLOT)
-                {
-                    // 手上无物品 → 拿取合成产物
-                    inventory.takeCraftOutput(craftMgr);
-                }
-                else
-                {
-                    int count = shiftHeld ? 1 : -1;  // Shift: 只拿 1 个
-                    inventory.pickup(hoveredSlot, count);
+                    {
+                        didAutoPickup = inventory.pickup(hoveredSlot, -1);
+                    }
                 }
                 if (wasCraft)
                     inventory.updateCraftingResult(craftMgr);
             }
-            else if (mouseUp && inventory.isDragging())
+
+            // ═══════════════════════════════════════════════════════
+            // 左键释放
+            // ═══════════════════════════════════════════════════════
+            if (mouseUp)
             {
                 bool wasCraft = (hoveredSlot >= CRAFT_BASE_SLOT);
-                if (hoveredSlot >= 0)
+
+                if (inventory.isDragging())
                 {
+                    bool sameSlot = (hoveredSlot == dragSrcSlot);
+
+                    if (sameSlot && didAutoPickup)
+                    {
+                        // 同格 + 本周期拿起 → 点按拿起，保留物品
+                    }
+                    else if (hoveredSlot >= 0)
+                    {
+                        // 拖放终点 / 点按放下
+                        if (hoveredSlot == OUTPUT_SLOT)
+                            inventory.takeCraftOutput(craftMgr);
+                        else
+                            inventory.placeInto(hoveredSlot);
+                    }
+                    // 不在任何格子上 → 保留在手上，等下次点击再放
+                }
+                else if (hoveredSlot >= 0)
+                {
+                    // 手空 + 未自动拿起（如输出槽变空后点按）
                     if (hoveredSlot == OUTPUT_SLOT)
-                        inventory.takeCraftOutput(craftMgr);  // 同种累加
-                    else if (shiftHeld)
-                        inventory.addToDrag(hoveredSlot, 1);
+                        inventory.takeCraftOutput(craftMgr);
                     else
-                        inventory.placeInto(hoveredSlot);
+                        inventory.pickup(hoveredSlot, -1);
+                }
+
+                if (wasCraft)
+                    inventory.updateCraftingResult(craftMgr);
+            }
+
+            // ═══════════════════════════════════════════════════════
+            // 右键：拿起 1 个 / 放下 1 个
+            // ═══════════════════════════════════════════════════════
+            if (rightClick && hoveredSlot >= 0)
+            {
+                bool wasCraft = (hoveredSlot >= CRAFT_BASE_SLOT);
+
+                if (inventory.isDragging())
+                {
+                    // 手上有物品 → 放下 1 个
+                    if (hoveredSlot == OUTPUT_SLOT)
+                        inventory.takeCraftOutput(craftMgr);
+                    else
+                        inventory.placeOneInto(hoveredSlot);
                 }
                 else
-                    inventory.cancelDrag();
+                {
+                    // 手上空 → 拿起 1 个
+                    if (hoveredSlot == OUTPUT_SLOT)
+                        inventory.takeCraftOutput(craftMgr);
+                    else
+                        inventory.pickup(hoveredSlot, 1);
+                }
+
                 if (wasCraft)
                     inventory.updateCraftingResult(craftMgr);
             }
