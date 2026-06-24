@@ -68,38 +68,68 @@ static int parseInt(const std::string &s, size_t &pos)
     return val;
 }
 
-// 解析 3×3 模式：[[...],[...],[...]]
-static void parsePattern3x3(const std::string &s, size_t &pos, int pattern[3][3])
+// 解析可变尺寸配方：[[...],[...],...] → 存入 pattern[3][3] 左上角，返回 {w, h}
+// 支持 1×1 ~ 3×3 任意尺寸
+static void parsePattern(const std::string &s, size_t &pos,
+    int pattern[3][3], int &outW, int &outH)
 {
+    // 清零
+    for (int y = 0; y < 3; ++y)
+        for (int x = 0; x < 3; ++x)
+            pattern[y][x] = BLOCK_AIR;
+    outW = 0; outH = 0;
+
     skipWS(s, pos);
     if (pos >= s.size() || s[pos] != '[') return;
     ++pos;  // outer [
+
+    int rowCount = 0;
+    int maxCols = 0;
+
     for (int y = 0; y < 3; ++y)
     {
         skipWS(s, pos);
         if (pos >= s.size() || s[pos] != '[') break;
         ++pos;  // inner [
+        ++rowCount;
         skipWS(s, pos);
+
+        int colCount = 0;
         for (int x = 0; x < 3; ++x)
         {
             skipWS(s, pos);
+            if (pos >= s.size() || s[pos] == ']') break;
+
             if (isNull(s, pos))
             {
                 pattern[y][x] = BLOCK_AIR;
                 pos += 4;
             }
             else
+            {
                 pattern[y][x] = parseBlockType(parseStr(s, pos));
+            }
+            ++colCount;
+
             skipWS(s, pos);
             if (pos < s.size() && s[pos] == ',') ++pos;
         }
+
+        if (colCount > maxCols) maxCols = colCount;
+
         skipWS(s, pos);
-        if (pos < s.size() && s[pos] == ']') ++pos;
+        if (pos < s.size() && s[pos] == ']') ++pos;  // inner ]
         skipWS(s, pos);
         if (pos < s.size() && s[pos] == ',') ++pos;
     }
+
     skipWS(s, pos);
-    if (pos < s.size() && s[pos] == ']') ++pos;
+    if (pos < s.size() && s[pos] == ']') ++pos;  // outer ]
+
+    outH = rowCount;
+    outW = maxCols;
+    if (outW < 1) outW = 1;
+    if (outH < 1) outH = 1;
 }
 
 // 解析 shapeless 配方主体：{ "dirt": 9, "stone": 1 } → vector<int> (展平)
@@ -153,6 +183,7 @@ static void loadRecipeFile(const std::string &json, CraftingManager &mgr, int ta
 
             int count = 1;
             int pattern[3][3] = {};
+            int recipeW = 0, recipeH = 0;
             std::vector<int> shapelessInputs;
 
             while (pos < json.size() && json[pos] != '}')
@@ -169,7 +200,7 @@ static void loadRecipeFile(const std::string &json, CraftingManager &mgr, int ta
                 {
                     skipWS(json, pos);
                     if (pos < json.size() && json[pos] == '[')
-                        parsePattern3x3(json, pos, pattern);
+                        parsePattern(json, pos, pattern, recipeW, recipeH);
                     else if (pos < json.size() && json[pos] == '{')
                         shapelessInputs = parseShapelessBody(json, pos);
                 }
@@ -181,10 +212,10 @@ static void loadRecipeFile(const std::string &json, CraftingManager &mgr, int ta
             if (key == "shaped")
             {
                 bool hasContent = false;
-                for (int y = 0; y < 3; ++y)
-                    for (int x = 0; x < 3; ++x)
+                for (int y = 0; y < recipeH; ++y)
+                    for (int x = 0; x < recipeW; ++x)
                         if (pattern[y][x] != BLOCK_AIR) hasContent = true;
-                if (hasContent) mgr.addShaped(pattern, targetType, count);
+                if (hasContent) mgr.addShaped(pattern, recipeW, recipeH, targetType, count);
             }
             else if (key == "shapeless" && !shapelessInputs.empty())
                 mgr.addShapeless(shapelessInputs, targetType, count);
@@ -255,12 +286,14 @@ void CraftingManager::addShapeless(const std::vector<int> &inputs,
 }
 
 void CraftingManager::addShaped(const int pattern[3][3],
-    int outputType, int outputCount)
+    int w, int h, int outputType, int outputCount)
 {
     ShapedRecipe r;
     for (int y = 0; y < 3; ++y)
         for (int x = 0; x < 3; ++x)
             r.pattern[y][x] = pattern[y][x];
+    r.recipeW = w;
+    r.recipeH = h;
     r.outputType = outputType;
     r.outputCount = outputCount;
     m_shaped.push_back(r);
@@ -290,23 +323,43 @@ CraftResult CraftingManager::match(const int grid[3][3]) const
 {
     CraftResult result;
 
-    // ---- 优先匹配有序配方 ----
+    // ---- 优先匹配有序配方（滑动窗口） ----
     for (const auto &r : m_shaped)
     {
-        bool ok = true;
-        for (int y = 0; y < 3 && ok; ++y)
-            for (int x = 0; x < 3 && ok; ++x)
-            {
-                if (grid[y][x] != r.pattern[y][x])
-                    ok = false;
-            }
-        if (ok)
+        int maxOffY = 3 - r.recipeH;
+        int maxOffX = 3 - r.recipeW;
+
+        for (int offY = 0; offY <= maxOffY; ++offY)
         {
-            result.valid = true;
-            result.outputType = r.outputType;
-            result.outputCount = r.outputCount;
-            result.isShaped = true;
-            return result;
+            for (int offX = 0; offX <= maxOffX; ++offX)
+            {
+                bool ok = true;
+
+                // 1) 配方区域逐格匹配
+                for (int y = 0; y < r.recipeH && ok; ++y)
+                    for (int x = 0; x < r.recipeW && ok; ++x)
+                        if (grid[offY + y][offX + x] != r.pattern[y][x])
+                            ok = false;
+
+                // 2) 配方覆盖区域之外必须全空
+                for (int y = 0; y < 3 && ok; ++y)
+                    for (int x = 0; x < 3 && ok; ++x)
+                    {
+                        bool inRecipe = (y >= offY && y < offY + r.recipeH &&
+                            x >= offX && x < offX + r.recipeW);
+                        if (!inRecipe && grid[y][x] != BLOCK_AIR)
+                            ok = false;
+                    }
+
+                if (ok)
+                {
+                    result.valid = true;
+                    result.outputType = r.outputType;
+                    result.outputCount = r.outputCount;
+                    result.isShaped = true;
+                    return result;
+                }
+            }
         }
     }
 

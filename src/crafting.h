@@ -23,11 +23,13 @@ struct ShapelessRecipe
 };
 
 // ============================================================================
-// 有序配方：物品必须放在合成台 3×3 格子的正确位置
+// 有序配方：物品必须放在合成台格子的正确位置（任意子区域匹配）
 // ============================================================================
 struct ShapedRecipe
 {
-    int pattern[3][3];  // BLOCK_AIR = 该格子必须为空
+    int pattern[3][3];  // 配方图案（靠左上角存储，最大 3×3）
+    int recipeW;        // 配方实际宽度（1~3）
+    int recipeH;        // 配方实际高度（1~3）
     int outputType;
     int outputCount;
 };
@@ -54,8 +56,8 @@ public:
     /** @brief 添加无形状配方（只关心数量和种类） */
     void addShapeless(const std::vector<int> &inputs, int outputType, int outputCount);
 
-    /** @brief 添加有序配方（位置也必须对） */
-    void addShaped(const int pattern[3][3], int outputType, int outputCount);
+    /** @brief 添加有序配方（可任意尺寸 1×1 ~ 3×3，在合成区内滑动匹配） */
+    void addShaped(const int pattern[3][3], int w, int h, int outputType, int outputCount);
 
     /**
      * @brief 尝试匹配合成表
