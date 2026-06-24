@@ -221,6 +221,34 @@ bool Inventory::placeInto(int slotIndex)
     return true;
 }
 
+bool Inventory::placeOneInto(int slotIndex)
+{
+    if (!isDragging()) return false;
+    if (slotIndex < 0 || slotIndex >= TOTAL_SLOTS) return false;
+    if (slotIndex == CRAFT_OUTPUT_IDX) return false;
+
+    auto &s = m_slots[slotIndex];
+    if (s.blockType != BLOCK_AIR && s.blockType != m_dragType) return false;
+
+    if (s.blockType == BLOCK_AIR)
+    {
+        s.blockType = m_dragType;
+        s.count = 1;
+    }
+    else
+    {
+        s.count += 1;
+    }
+
+    m_dragCount -= 1;
+    if (m_dragCount <= 0)
+    {
+        m_dragType = BLOCK_AIR;
+        m_dragging = -1;
+    }
+    return true;
+}
+
 void Inventory::cancelDrag()
 {
     if (!isDragging()) return;

@@ -19,6 +19,8 @@ InputHandler::InputHandler(HWND hwnd)
     {
         m_mouseCurr[i] = false;
         m_mousePrev[i] = false;
+        m_clickConsumed[i] = false;
+        m_releaseConsumed[i] = false;
     }
 
     // 注册 Raw Input：直接从鼠标硬件读取滚轮数据，绕过消息队列
@@ -106,7 +108,15 @@ void InputHandler::update()
 
     // 备份上一帧鼠标按键状态
     for (int i = 0; i < MOUSE_BUTTON_COUNT; ++i)
+    {
         m_mousePrev[i] = m_mouseCurr[i];
+        // 按键释放时重置消费标记，允许下次边沿触发
+        if (!m_mouseCurr[i])
+        {
+            m_clickConsumed[i] = false;
+            m_releaseConsumed[i] = false;
+        }
+    }
 
     // 窗口失焦 → 清零
     if (GetForegroundWindow() != m_hwnd)
@@ -142,14 +152,29 @@ bool InputHandler::getMouseClick(int button)
     if (button < 0 || button >= MOUSE_BUTTON_COUNT)
         return false;
 
-    // 上升沿检测：当前按下且上一帧未按下
-    bool clicked = m_mouseCurr[button] && !m_mousePrev[button];
+    // 上升沿检测：当前按下且上一帧未按下，且本周期未消费
+    bool clicked = m_mouseCurr[button] && !m_mousePrev[button] && !m_clickConsumed[button];
 
-    // 触发后清除当前状态，防止重复触发
+    // 标记已消费，防止同一按下周期内重复触发
     if (clicked)
-        m_mouseCurr[button] = false;
+        m_clickConsumed[button] = true;
 
     return clicked;
+}
+
+bool InputHandler::getMouseRelease(int button)
+{
+    if (button < 0 || button >= MOUSE_BUTTON_COUNT)
+        return false;
+
+    // 下降沿检测：上一帧按下且当前帧未按下，且未消费
+    bool released = m_mousePrev[button] && !m_mouseCurr[button] && !m_releaseConsumed[button];
+
+    // 标记已消费，防止重复触发
+    if (released)
+        m_releaseConsumed[button] = true;
+
+    return released;
 }
 
 int InputHandler::getMouseWheel()

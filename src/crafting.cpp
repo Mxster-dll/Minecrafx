@@ -51,7 +51,8 @@ static int parseBlockType(const std::string &name)
     static std::unordered_map<std::string, int> map = {
         {"air", BLOCK_AIR}, {"grass", BLOCK_GRASS}, {"dirt", BLOCK_DIRT},
         {"log", BLOCK_LOG}, {"leaves", BLOCK_LEAVES}, {"stone", BLOCK_STONE},
-        {"planks", BLOCK_PLANKS}
+        {"planks", BLOCK_PLANKS}, {"stick", BLOCK_STICK},
+        {"crafting_table", BLOCK_CRAFTING_TABLE}
     };
     auto it = map.find(name);
     return (it != map.end()) ? it->second : BLOCK_AIR;

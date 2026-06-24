@@ -17,6 +17,8 @@ enum BlockType : int
     BLOCK_LEAVES = 4,
     BLOCK_STONE = 5,
     BLOCK_PLANKS = 6,
+    BLOCK_STICK = 7,
+    BLOCK_CRAFTING_TABLE = 8,
 };
 
 // 碰撞常量

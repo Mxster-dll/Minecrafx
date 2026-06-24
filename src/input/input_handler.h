@@ -107,7 +107,13 @@ public:
     POINT getMouseScreenPos() const;
 
     /**
-     * @brief 检测鼠标按键是否被按住
+     * @brief 检测鼠标释放事件（下降沿，触发后自动清除）
+     * @param button 0=左键, 1=右键
+     * @return 本帧是否发生释放（按下→抬起）
+     */
+    bool getMouseRelease(int button);
+
+    /** @brief 检测鼠标按键是否被按住
      * @param button 0=左键, 1=右键, 2=中键
      */
     bool isMouseButtonDown(int button) const;
@@ -143,6 +149,8 @@ private:
     static constexpr int MOUSE_BUTTON_COUNT = 3;
     bool m_mouseCurr[MOUSE_BUTTON_COUNT];
     bool m_mousePrev[MOUSE_BUTTON_COUNT];
+    bool m_clickConsumed[MOUSE_BUTTON_COUNT];   // 上升沿已消费（防重复触发）
+    bool m_releaseConsumed[MOUSE_BUTTON_COUNT];  // 下降沿已消费
 
     // 鼠标滚轮累积
     int m_wheelDelta;

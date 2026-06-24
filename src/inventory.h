@@ -68,6 +68,8 @@ public:
     bool pickup(int slotIndex, int count = -1);
     /** @brief 将手上物品放入槽位 */
     bool placeInto(int slotIndex);
+    /** @brief 将手上 1 个物品放入槽位（右键用） */
+    bool placeOneInto(int slotIndex);
     /** @brief 拖拽时从槽位取 count 个物品累加到手上（类型必须相同） */
     bool addToDrag(int slotIndex, int count);
     bool isDragging()  const { return m_dragging != -1; }

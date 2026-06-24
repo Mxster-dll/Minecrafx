@@ -1,0 +1,13 @@
+{
+  "shaped": [
+    {
+      "count": 4,
+      "recipe": [
+        ["planks", null, null],
+        ["planks", null, null],
+        [null, null, null]
+      ]
+    }
+  ],
+  "shapeless": []
+}

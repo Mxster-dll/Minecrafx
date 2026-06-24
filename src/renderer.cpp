@@ -276,13 +276,18 @@ void Renderer::loadBlockTextures()
     loadTexPixels(L"../assert/texture/oak_planks_top.png", m_texPixels[15], tw, th); m_texW[15] = tw; m_texH[15] = th;
     loadTexPixels(L"../assert/texture/oak_planks_side.png", m_texPixels[16], tw, th); m_texW[16] = tw; m_texH[16] = th;
     loadTexPixels(L"../assert/texture/oak_planks_bottom.png", m_texPixels[17], tw, th); m_texW[17] = tw; m_texH[17] = th;
+    // 木棍（无方块贴图，跳过）
+    // 工作台
+    loadTexPixels(L"../assert/texture/crafting_table_top.png", m_texPixels[21], tw, th); m_texW[21] = tw; m_texH[21] = th;
+    loadTexPixels(L"../assert/texture/crafting_table_front.png", m_texPixels[22], tw, th); m_texW[22] = tw; m_texH[22] = th;
+    loadTexPixels(L"../assert/texture/crafting_table_bottom.png", m_texPixels[23], tw, th); m_texW[23] = tw; m_texH[23] = th;
 
     m_blockTexLoaded = true;
 }
 
 int Renderer::blockTexId(int blockType, int face)
 {
-    if (blockType <= 0 || blockType > 6) return -1;
+    if (blockType <= 0 || blockType > 8) return -1;
     return (blockType - 1) * 3 + face;  // face: 0=顶,1=侧,2=底
 }
 
@@ -316,8 +321,8 @@ static const wchar_t *kHotbarIcons[9] = {
     L"../assert/gui/item/oak_leaves.png",
     L"../assert/gui/item/stone.png",
     L"../assert/gui/item/oak_planks.png",
-    L"",  // 槽位 7（空）
-    L"",  // 槽位 8（空）
+    L"../assert/gui/item/stick.png",              // BLOCK_STICK
+    L"../assert/gui/widget/crafting_table.png",   // BLOCK_CRAFTING_TABLE
     L""   // 槽位 9（空）
 };
 
@@ -328,8 +333,8 @@ static const wchar_t *kBigIconPaths[9] = {
     L"../assert/gui/block/oak_leaves.png",
     L"../assert/gui/block/stone.png",
     L"../assert/gui/block/oak_planks.png",
-    L"",
-    L"",
+    L"../assert/gui/item/stick.png",              // BLOCK_STICK
+    L"../assert/gui/item/crafting_table.png",   // BLOCK_CRAFTING_TABLE
     L""
 };
 
@@ -438,9 +443,11 @@ void Renderer::loadInventoryIcons()
         L"../assert/gui/item/oak_log.png",
         L"../assert/gui/item/oak_leaves.png",
         L"../assert/gui/item/stone.png",
-        L"../assert/gui/item/oak_planks.png"
+        L"../assert/gui/item/oak_planks.png",
+        L"../assert/gui/item/stick.png",
+        L"../assert/gui/item/crafting_table.png"
     };
-    for (int i = 0; i < 6; ++i)
+    for (int i = 0; i < 8; ++i)
     {
         IMAGE img;
         loadimage(&img, invIconPaths[i], INV_ICON_SIZE, INV_ICON_SIZE, true);
@@ -458,7 +465,7 @@ void Renderer::loadInventoryIcons()
 
 void Renderer::drawBlockIcon(int screenX, int screenY, int size, int blockType, int count)
 {
-    if (blockType <= 0 || blockType > 6) return;
+    if (blockType <= 0 || blockType > 8) return;
     const auto &pixels = m_invIcons[blockType];
     if (pixels.empty()) return;
 
@@ -536,7 +543,7 @@ void Renderer::drawHotbar(int selectedSlot, const int *hotbarBlockTypes)
     for (int slot = 0; slot < HOTBAR_SLOTS; ++slot)
     {
         int bt = types[slot];
-        if (bt <= 0 || bt > 6) continue;  // 空气或未知类型
+        if (bt <= 0 || bt > 8) continue;  // 空气或未知类型
         int iconIdx = bt - 1;  // BLOCK_GRASS=1 → index 0
         if (m_hotbarIcons[iconIdx].empty()) continue;
 
@@ -583,32 +590,6 @@ void Renderer::drawHotbar(int selectedSlot, const int *hotbarBlockTypes)
                 int px = selX + dx;
                 if (px >= 0 && px < m_screenWidth)
                     m_pBits[dstRow + px] = alphaBlend(m_pBits[dstRow + px], c);
-            }
-        }
-    }
-
-    // 右下角显示当前选中方块
-    {
-        int bt = types[selectedSlot];
-        if (bt > 0 && bt <= 6)
-        {
-            int iconIdx = bt - 1;
-            if (!m_hotbarIconsBig[iconIdx].empty())
-            {
-                const int BIG = HB_ICON_SIZE * 2;
-                int bx = m_screenWidth - BIG - 8;
-                int by = m_screenHeight - BIG - 8;
-                for (int dy = 0; dy < BIG; ++dy)
-                {
-                    for (int dx = 0; dx < BIG; ++dx)
-                    {
-                        COLORREF c = m_hotbarIconsBig[iconIdx][dy * BIG + dx];
-                        if (c == 0) continue;
-                        int px = bx + dx, py = by + dy;
-                        if (px >= 0 && px < m_screenWidth && py >= 0 && py < m_screenHeight)
-                            m_pBits[py * m_screenWidth + px] = alphaBlend(m_pBits[py * m_screenWidth + px], c);
-                    }
-                }
             }
         }
     }
