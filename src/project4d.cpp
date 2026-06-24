@@ -323,6 +323,41 @@ bool project3D(double u, double v, double y,
 // 3D 地图生成
 // ============================================================================
 
+/** @brief 为单个方块计算棱柱和 AABB，不可见时 prism.u 为空 */
+static bool computeBlockPrism(int bx, int by, int bz, int bw,
+    const Vec4 &camPos, double sp, double blockHalf, const Plane2D &camPlane,
+    COLORREF(*getColor)(int, int, int, int),
+    Prism3D &outPrism, Map3D::AABB &outAABB)
+{
+    double x0 = bx * sp - camPos.x - blockHalf;
+    double x1 = bx * sp - camPos.x + blockHalf;
+    double z0 = bz * sp - camPos.z - blockHalf;
+    double z1 = bz * sp - camPos.z + blockHalf;
+    double w0 = bw * sp - camPos.w - blockHalf;
+    double w1 = bw * sp - camPos.w + blockHalf;
+
+    PolyOnPlane poly = intersectCubePlane(x0, x1, z0, z1, w0, w1, camPlane);
+    if (!poly.valid()) return false;
+
+    outPrism.u = poly.u; outPrism.v = poly.v;
+    outPrism.yLow = by * sp - camPos.y - blockHalf;
+    outPrism.yHigh = by * sp - camPos.y + blockHalf;
+    outPrism.color = getColor(bx, by, bz, bw);
+
+    outAABB.uMin = outAABB.uMax = poly.u[0];
+    outAABB.vMin = outAABB.vMax = poly.v[0];
+    for (int k = 1; k < poly.n; ++k)
+    {
+        if (poly.u[k] < outAABB.uMin) outAABB.uMin = poly.u[k];
+        if (poly.u[k] > outAABB.uMax) outAABB.uMax = poly.u[k];
+        if (poly.v[k] < outAABB.vMin) outAABB.vMin = poly.v[k];
+        if (poly.v[k] > outAABB.vMax) outAABB.vMax = poly.v[k];
+    }
+    outAABB.yMin = outPrism.yLow;
+    outAABB.yMax = outPrism.yHigh;
+    return true;
+}
+
 Map3D generateMap3D(const World &world, const Camera4D &cam4D,
     double blockHalf, COLORREF(*getColor)(int, int, int, int))
 {
@@ -398,6 +433,7 @@ Map3D generateMap3D(const World &world, const Camera4D &cam4D,
 
     std::vector<std::vector<Prism3D>> threadPrisms(nThreads);
     std::vector<std::vector<Map3D::AABB>> threadAABBs(nThreads);
+    std::vector<std::vector<IVec4>> threadPos(nThreads);  // 每个棱柱对应的世界坐标
 
 #pragma omp parallel if(nThreads > 1) num_threads(nThreads)
     {
@@ -407,42 +443,22 @@ Map3D generateMap3D(const World &world, const Camera4D &cam4D,
 #endif
         auto &prisms = threadPrisms[tid];
         auto &aabbs = threadAABBs[tid];
+        auto &pos = threadPos[tid];
         prisms.reserve(N / nThreads + 64);
         aabbs.reserve(N / nThreads + 64);
+        pos.reserve(N / nThreads + 64);
 
 #pragma omp for schedule(static)
         for (size_t i = 0; i < N; ++i)
         {
             auto &c = candidates[i];
-            double x0 = c.bx * sp - camPos.x - blockHalf;
-            double x1 = c.bx * sp - camPos.x + blockHalf;
-            double z0 = c.bz * sp - camPos.z - blockHalf;
-            double z1 = c.bz * sp - camPos.z + blockHalf;
-            double w0 = c.bw * sp - camPos.w - blockHalf;
-            double w1 = c.bw * sp - camPos.w + blockHalf;
-
-            PolyOnPlane poly = intersectCubePlane(x0, x1, z0, z1, w0, w1, camPlane);
-            if (!poly.valid()) continue;
-
-            Prism3D p;
-            p.u = poly.u; p.v = poly.v;
-            p.yLow = c.by * sp - camPos.y - blockHalf;
-            p.yHigh = c.by * sp - camPos.y + blockHalf;
-            p.color = getColor(c.bx, c.by, c.bz, c.bw);
+            Prism3D p; Map3D::AABB ab;
+            if (!computeBlockPrism(c.bx, c.by, c.bz, c.bw,
+                camPos, sp, blockHalf, camPlane, getColor, p, ab))
+                continue;
             prisms.push_back(p);
-
-            Map3D::AABB ab;
-            ab.uMin = ab.uMax = poly.u[0];
-            ab.vMin = ab.vMax = poly.v[0];
-            for (int k = 1; k < poly.n; ++k)
-            {
-                if (poly.u[k] < ab.uMin) ab.uMin = poly.u[k];
-                if (poly.u[k] > ab.uMax) ab.uMax = poly.u[k];
-                if (poly.v[k] < ab.vMin) ab.vMin = poly.v[k];
-                if (poly.v[k] > ab.vMax) ab.vMax = poly.v[k];
-            }
-            ab.yMin = p.yLow; ab.yMax = p.yHigh;
             aabbs.push_back(ab);
+            pos.push_back(IVec4(c.bx, c.by, c.bz, c.bw));
         }
     }
 
@@ -451,14 +467,71 @@ Map3D generateMap3D(const World &world, const Camera4D &cam4D,
     for (auto &tp : threadPrisms) total += tp.size();
     map.prisms.reserve(total);
     map.aabbs.reserve(total);
+    map.blockIndex.reserve(total);
     for (int t = 0; t < nThreads; ++t)
     {
+        size_t base = map.prisms.size();
         map.prisms.insert(map.prisms.end(), threadPrisms[t].begin(), threadPrisms[t].end());
         map.aabbs.insert(map.aabbs.end(), threadAABBs[t].begin(), threadAABBs[t].end());
+        for (size_t i = 0; i < threadPos[t].size(); ++i)
+            map.blockIndex[threadPos[t][i]] = base + i;
     }
 
     map.valid = true;
     return map;
+}
+
+// ============================================================================
+// 增量更新单个方块
+// ============================================================================
+
+void map3D_updateBlock(Map3D &map, const IVec4 &worldPos, int blockType,
+    const Camera4D &cam4D, double blockHalf,
+    COLORREF(*getColor)(int, int, int, int))
+{
+    if (!map.valid) return;
+
+    // ---- 移除旧棱柱 ----
+    auto it = map.blockIndex.find(worldPos);
+    if (it != map.blockIndex.end())
+    {
+        size_t idx = it->second;
+        size_t last = map.prisms.size() - 1;
+
+        if (idx != last)
+        {
+            // 用最后一个替换被删除项
+            map.prisms[idx] = std::move(map.prisms[last]);
+            map.aabbs[idx] = map.aabbs[last];
+            // 更新被移动方块的索引：需要找到它对应的 worldPos
+            // 遍历 blockIndex 找到 value==last 的 key
+            for (auto &[pos, i] : map.blockIndex)
+                if (i == last) { i = idx; break; }
+        }
+        map.prisms.pop_back();
+        map.aabbs.pop_back();
+        map.blockIndex.erase(it);
+    }
+
+    // ---- 添加新方块（type>0） ----
+    if (blockType > 0)
+    {
+        // 必须使用 camRef4D 而非当前摄像机位置——地图中所有棱柱共用一个局部坐标系原点
+        const Vec4 &camPos = map.camRef4D;
+        double sp = blockHalf * 2.0;
+        Plane2D camPlane = map.plane;
+        camPlane.offset = 0.0;
+
+        Prism3D p; Map3D::AABB ab;
+        if (computeBlockPrism(worldPos.x, worldPos.y, worldPos.z, worldPos.w,
+            camPos, sp, blockHalf, camPlane, getColor, p, ab))
+        {
+            size_t idx = map.prisms.size();
+            map.prisms.push_back(p);
+            map.aabbs.push_back(ab);
+            map.blockIndex[worldPos] = idx;
+        }
+    }
 }
 
 

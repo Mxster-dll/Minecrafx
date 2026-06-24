@@ -1,8 +1,10 @@
 #pragma once
 
 #include "linalg.h"
+#include "world.h"
 #include <windows.h>
 #include <vector>
+#include <unordered_map>
 
 // ============================================================================
 // Vec3 — xzw 子空间中的三维向量（x, z, w）
@@ -127,6 +129,7 @@ struct Map3D
     std::vector<Prism3D> prisms;
     struct AABB { double uMin, uMax, vMin, vMax, yMin, yMax; };
     std::vector<AABB> aabbs;
+    std::unordered_map<IVec4, size_t> blockIndex;  // 世界坐标 → prisms/aabbs 下标
     Vec4 camRef4D;
     Plane2D plane;
     bool valid = false;
@@ -134,6 +137,11 @@ struct Map3D
 
 Map3D generateMap3D(const class World &world, const class Camera4D &cam4D,
     double blockHalf, COLORREF(*getColor)(int, int, int, int));
+
+/** @brief 增量更新地图中单个方块（type=0 移除，>0 添加/更新） */
+void map3D_updateBlock(Map3D &map, const IVec4 &worldPos, int blockType,
+    const Camera4D &cam4D, double blockHalf,
+    COLORREF(*getColor)(int, int, int, int));
 
 // ============================================================================
 // 3D→2D 投影（标准透视投影）
