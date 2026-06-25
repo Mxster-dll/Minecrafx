@@ -1788,6 +1788,57 @@ void Renderer::drawButton(int x, int y, int w, int h,
                 }
             }
         }
+
+        // 2px 外边框：普通→黑色，悬停/按下→白色
+        constexpr int BORDER_W = 2;
+        const COLORREF borderColor = (hovered || pressed) ? RGB(255, 255, 255) : RGB(0, 0, 0);
+        // 上边界（图片上方）
+        for (int dy = 0; dy < BORDER_W; ++dy)
+        {
+            int py = y - BORDER_W + dy;
+            if (py < 0 || py >= m_screenHeight) continue;
+            int dstRow = py * m_screenWidth;
+            for (int dx = -BORDER_W; dx < w + BORDER_W; ++dx)
+            {
+                int px = x + dx;
+                if (px >= 0 && px < m_screenWidth)
+                    m_pBits[dstRow + px] = borderColor;
+            }
+        }
+        // 下边界（图片下方）
+        for (int dy = 0; dy < BORDER_W; ++dy)
+        {
+            int py = y + h + dy;
+            if (py < 0 || py >= m_screenHeight) continue;
+            int dstRow = py * m_screenWidth;
+            for (int dx = -BORDER_W; dx < w + BORDER_W; ++dx)
+            {
+                int px = x + dx;
+                if (px >= 0 && px < m_screenWidth)
+                    m_pBits[dstRow + px] = borderColor;
+            }
+        }
+        // 左右边界（仅中间段，上下已由上面覆盖）
+        for (int dy = 0; dy < h; ++dy)
+        {
+            int py = y + dy;
+            if (py < 0 || py >= m_screenHeight) continue;
+            int dstRow = py * m_screenWidth;
+            // 左边界
+            for (int bx = 0; bx < BORDER_W; ++bx)
+            {
+                int px = x - BORDER_W + bx;
+                if (px >= 0 && px < m_screenWidth)
+                    m_pBits[dstRow + px] = borderColor;
+            }
+            // 右边界
+            for (int bx = 0; bx < BORDER_W; ++bx)
+            {
+                int px = x + w + bx;
+                if (px >= 0 && px < m_screenWidth)
+                    m_pBits[dstRow + px] = borderColor;
+            }
+        }
     }
     else
     {

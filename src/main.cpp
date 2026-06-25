@@ -117,11 +117,12 @@ int main()
         wcscpy(sfxDir, tmp);
     }
 
-    wchar_t digPath[4][MAX_PATH], stepPath[6][MAX_PATH];
+    wchar_t digPath[4][MAX_PATH], stepPath[6][MAX_PATH], clickPath[MAX_PATH];
     for (int i = 0; i < 4; ++i)
         swprintf(digPath[i], MAX_PATH, L"%lsdig%d.mp3", sfxDir, i + 1);
     for (int i = 0; i < 6; ++i)
         swprintf(stepPath[i], MAX_PATH, L"%lsstep%d.mp3", sfxDir, i + 1);
+    swprintf(clickPath, MAX_PATH, L"%lsclick_stereo.mp3", sfxDir);
 
     // 音效播放：先关旧音效再开新的（异步，不阻塞游戏）
     auto playSFX = [](const wchar_t *path)
@@ -182,7 +183,7 @@ int main()
     SetWindowText(hwnd, L"Minecrafx");
 
     // ---- 预加载 GUI 图片 ----
-    IMAGE imgInventory, imgCraftingTable, imgButton, imgButtonHover, imgButtonActive;
+    IMAGE imgInventory, imgCraftingTable, imgButton;
     IMAGE imgIsles;  // 登录页背景
     loadimage(&imgIsles, L"../assert/start.png");
     // 加载原图 → 3x 最邻近放大（无后期处理）
@@ -193,11 +194,9 @@ int main()
         nearestScale(imgInventory, imgInvNative, 3);
         nearestScale(imgCraftingTable, imgCTNative, 3);
     }
-    // 按钮贴图：用 loadimage 缩放至目标尺寸
-    constexpr int BTN_W = 200, BTN_H = 50;
-    loadimage(&imgButton, L"../assert/gui/widget/button.png", BTN_W, BTN_H, true);
-    loadimage(&imgButtonHover, L"../assert/gui/widget/button_hover.png", BTN_W, BTN_H, true);
-    loadimage(&imgButtonActive, L"../assert/gui/widget/button_active.png", BTN_W, BTN_H, true);
+    // 按钮贴图：594×54，无需缩放
+    constexpr int BTN_W = 594, BTN_H = 54;
+    loadimage(&imgButton, L"../assert/gui/widget/button.png");
 
     // ---- 游戏状态 ----
     GameState state = GameState::Login;
@@ -206,6 +205,7 @@ int main()
 
     InputHandler input(hwnd);
     input.showMouseCursor(true);  // 登录页显示鼠标
+    bool loginBgReady = false;    // 登录页模糊背景是否就绪
     while (!input.isQuitRequested())
     {
         input.update();
@@ -222,37 +222,51 @@ int main()
         // ================================================================
         if (state == GameState::Login)
         {
-            // 绘制背景（拉伸铺满至 DIB）
+            // 绘制背景（拉伸铺满至 DIB），首帧做高斯模糊并缓存
             {
                 DWORD *bgBuf = GetImageBuffer(&imgIsles);
                 int bgW = imgIsles.getwidth(), bgH = imgIsles.getheight();
                 DWORD *bits = renderer.getPixelBits();
                 if (bgBuf && bgW > 0 && bgH > 0 && bits)
                 {
-                    for (int y = 0; y < SCREEN_HEIGHT; ++y)
+                    if (!loginBgReady)
                     {
-                        int sy = y * bgH / SCREEN_HEIGHT;
-                        for (int x = 0; x < SCREEN_WIDTH; ++x)
+                        for (int y = 0; y < SCREEN_HEIGHT; ++y)
                         {
-                            int sx = x * bgW / SCREEN_WIDTH;
-                            DWORD c = bgBuf[sy * bgW + sx];
-                            if (c != 0 && c != RGB(0, 0, 0))
-                                bits[y * SCREEN_WIDTH + x] = c;
+                            int sy = y * bgH / SCREEN_HEIGHT;
+                            for (int x = 0; x < SCREEN_WIDTH; ++x)
+                            {
+                                int sx = x * bgW / SCREEN_WIDTH;
+                                DWORD c = bgBuf[sy * bgW + sx];
+                                if (c != 0 && c != RGB(0, 0, 0))
+                                    bits[y * SCREEN_WIDTH + x] = c;
+                            }
                         }
+                        renderer.captureBackground();
+                        renderer.applyGaussianBlur();
+                        renderer.drawBackground();
+                        loginBgReady = true;
+                    }
+                    else
+                    {
+                        renderer.drawBackground();
                     }
                 }
             }
 
             // 两个按钮
-            constexpr int LOGIN_BTN_W = 200, LOGIN_BTN_H = 50;
+            constexpr int LOGIN_BTN_W = 594, LOGIN_BTN_H = 54;
+            constexpr int BORDER = 2;
             int btn1X = (SCREEN_WIDTH - LOGIN_BTN_W) / 2;
             int btn1Y = SCREEN_HEIGHT / 2 - 10;
             int btn2X = btn1X;
             int btn2Y = btn1Y + LOGIN_BTN_H + 15;
 
             POINT mp = input.getMouseScreenPos();
-            bool hover1 = (mp.x >= btn1X && mp.x < btn1X + LOGIN_BTN_W && mp.y >= btn1Y && mp.y < btn1Y + LOGIN_BTN_H);
-            bool hover2 = (mp.x >= btn2X && mp.x < btn2X + LOGIN_BTN_W && mp.y >= btn2Y && mp.y < btn2Y + LOGIN_BTN_H);
+            bool hover1 = (mp.x >= btn1X - BORDER && mp.x < btn1X + LOGIN_BTN_W + BORDER &&
+                mp.y >= btn1Y - BORDER && mp.y < btn1Y + LOGIN_BTN_H + BORDER);
+            bool hover2 = (mp.x >= btn2X - BORDER && mp.x < btn2X + LOGIN_BTN_W + BORDER &&
+                mp.y >= btn2Y - BORDER && mp.y < btn2Y + LOGIN_BTN_H + BORDER);
             bool mouseClick = input.getMouseClick(0);
             bool click1 = mouseClick && hover1;
             bool click2 = mouseClick && hover2;
@@ -260,6 +274,7 @@ int main()
             // 生存模式
             if (click1)
             {
+                playSFX(clickPath);
                 // 生成丘陵地形
                 for (int x = 0; x < MX; ++x)
                     for (int z = 0; z < MZ; ++z)
@@ -330,6 +345,7 @@ int main()
             // 创造模式（超平坦）
             if (click2)
             {
+                playSFX(clickPath);
                 constexpr int CF_X = 16, CF_Z = 16, CF_W = 16;
                 for (int x = 0; x < CF_X; ++x)
                     for (int z = 0; z < CF_Z; ++z)
@@ -346,9 +362,9 @@ int main()
 
             // 渲染按钮
             renderer.drawButton(btn1X, btn1Y, LOGIN_BTN_W, LOGIN_BTN_H,
-                &imgButton, &imgButtonHover, &imgButtonActive, L"生存模式", hover1, hover1 && input.isMouseButtonDown(0));
+                &imgButton, &imgButton, &imgButton, L"生存模式", hover1, hover1 && input.isMouseButtonDown(0));
             renderer.drawButton(btn2X, btn2Y, LOGIN_BTN_W, LOGIN_BTN_H,
-                &imgButton, &imgButtonHover, &imgButtonActive, L"创造模式", hover2, hover2 && input.isMouseButtonDown(0));
+                &imgButton, &imgButton, &imgButton, L"创造模式", hover2, hover2 && input.isMouseButtonDown(0));
 
             renderer.flushToScreen();   // DIB → 屏幕
             FlushBatchDraw();
@@ -362,6 +378,7 @@ int main()
         {
             if (input.isPressed(Key::Esc) || input.isPressed(Key::E))
             {
+                playSFX(clickPath);
                 if (inventory.isDragging()) inventory.cancelDrag();
                 state = GameState::Gameplay;
                 input.showMouseCursor(false);
@@ -525,6 +542,7 @@ int main()
         {
             if (input.isPressed(Key::Esc) || input.isPressed(Key::E))
             {
+                playSFX(clickPath);
                 if (inventory.isDragging()) inventory.cancelDrag();
                 inventory.setCraftMode(Inventory::CM_Inventory2x2);
                 state = GameState::Gameplay;
@@ -677,21 +695,30 @@ int main()
             int btnX = (SCREEN_WIDTH - BTN_W) / 2;
             int btn1Y = SCREEN_HEIGHT / 2 - 15;
             int btn2Y = btn1Y + BTN_H + 15;
+            constexpr int BORDER = 2;
             POINT mp = input.getMouseScreenPos();
-            bool hover1 = (mp.x >= btnX && mp.x < btnX + BTN_W && mp.y >= btn1Y && mp.y < btn1Y + BTN_H);
-            bool hover2 = (mp.x >= btnX && mp.x < btnX + BTN_W && mp.y >= btn2Y && mp.y < btn2Y + BTN_H);
+            bool hover1 = (mp.x >= btnX - BORDER && mp.x < btnX + BTN_W + BORDER &&
+                mp.y >= btn1Y - BORDER && mp.y < btn1Y + BTN_H + BORDER);
+            bool hover2 = (mp.x >= btnX - BORDER && mp.x < btnX + BTN_W + BORDER &&
+                mp.y >= btn2Y - BORDER && mp.y < btn2Y + BTN_H + BORDER);
             bool mouseClick = input.getMouseClick(0);
             if (mouseClick && hover2)
+            {
+                playSFX(clickPath);
                 input.requestQuit();
+            }
             if (mouseClick && hover1)
             {
+                playSFX(clickPath);
                 world = World();
                 camera = Camera4D();
                 map3D.valid = false;
                 cam3U = cam3V = cam3Y = cam3Yaw = cam3Pitch = 0;
                 selectedSlot = 0;
                 pendingSliceRotation = 0.0;
+                loginBgReady = false;
                 state = GameState::Login;
+                input.showMouseCursor(true);
                 continue;
             }
 
@@ -699,10 +726,10 @@ int main()
             setbkcolor(RGB(10, 10, 30));
             renderer.drawBackground();
             renderer.drawButton(btnX, btn1Y, BTN_W, BTN_H,
-                &imgButton, &imgButtonHover, &imgButtonActive,
+                &imgButton, &imgButton, &imgButton,
                 L"返回标题页", hover1, hover1 && input.isMouseButtonDown(0));
             renderer.drawButton(btnX, btn2Y, BTN_W, BTN_H,
-                &imgButton, &imgButtonHover, &imgButtonActive,
+                &imgButton, &imgButton, &imgButton,
                 L"退出游戏", hover2, hover2 && input.isMouseButtonDown(0));
             renderer.flushToScreen();
             FlushBatchDraw();
@@ -722,6 +749,7 @@ int main()
         }
         if (input.isPressed(Key::E))
         {
+            playSFX(clickPath);
             inventory.setCraftMode(Inventory::CM_Inventory2x2);
             state = GameState::Inventory;
             renderer.captureBackground();
@@ -749,16 +777,7 @@ int main()
             if (input.isKeyDown(Key::D)) { moveU += rU * speed; moveV += rV * speed; isMoving = true; }
             if (input.isKeyDown(Key::A)) { moveU -= rU * speed; moveV -= rV * speed; isMoving = true; }
 
-            // ---- 脚步声（仅在地面移动时，clock() 计时） ----
-            if (isMoving && !flyMode && onGround)
-            {
-                double sinceStep = (double) (clock() - lastStepTime) / CLOCKS_PER_SEC;
-                if (sinceStep >= 0.25)
-                {
-                    playSFX(stepPath[rand() % 6]);
-                    lastStepTime = clock();
-                }
-            }
+            double oldU = cam3U, oldV = cam3V, oldY = cam3Y;
 
 
             // 模式切换 & 跳跃
@@ -867,6 +886,20 @@ int main()
 
             cam3U = newU; cam3V = newV; cam3Y = newY;
             if (onGround && verticalVel < 0) verticalVel = 0;
+
+            // ---- 脚步声（仅实际位移时播放） ----
+            bool actuallyMoved = (std::abs(cam3U - oldU) > 1e-9 ||
+                std::abs(cam3V - oldV) > 1e-9 ||
+                std::abs(cam3Y - oldY) > 1e-9);
+            if (isMoving && actuallyMoved && !flyMode && onGround)
+            {
+                double sinceStep = (double) (clock() - lastStepTime) / CLOCKS_PER_SEC;
+                if (sinceStep >= 0.25)
+                {
+                    playSFX(stepPath[rand() % 6]);
+                    lastStepTime = clock();
+                }
+            }
 
             // ---- 同步 4D 摄像机位置 ----
             {
@@ -1005,6 +1038,7 @@ int main()
                     // 右键工作台 → 打开工作台界面
                     if (hasTarget && world.get(targetedBlock) == BLOCK_CRAFTING_TABLE)
                     {
+                        playSFX(clickPath);
                         inventory.setCraftMode(Inventory::CM_CraftingTable3x3);
                         state = GameState::CraftingTable;
                         renderer.captureBackground();
