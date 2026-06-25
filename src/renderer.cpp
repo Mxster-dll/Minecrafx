@@ -305,6 +305,23 @@ void Renderer::loadBlockTextures()
     loadTexPixels(L"../assert/texture/iron_block_top.png", m_texPixels[39], tw, th); m_texW[39] = tw; m_texH[39] = th;
     loadTexPixels(L"../assert/texture/iron_block_side.png", m_texPixels[40], tw, th); m_texW[40] = tw; m_texH[40] = th;
     loadTexPixels(L"../assert/texture/iron_block_bottom.png", m_texPixels[41], tw, th); m_texW[41] = tw; m_texH[41] = th;
+    // 圆石 42-44
+    loadTexPixels(L"../assert/texture/cobblestone_top.png", m_texPixels[42], tw, th); m_texW[42] = tw; m_texH[42] = th;
+    loadTexPixels(L"../assert/texture/cobblestone_side.png", m_texPixels[43], tw, th); m_texW[43] = tw; m_texH[43] = th;
+    loadTexPixels(L"../assert/texture/cobblestone_bottom.png", m_texPixels[44], tw, th); m_texW[44] = tw; m_texH[44] = th;
+    // 煤矿 45-47
+    loadTexPixels(L"../assert/texture/coal_ore_top.png", m_texPixels[45], tw, th); m_texW[45] = tw; m_texH[45] = th;
+    loadTexPixels(L"../assert/texture/coal_ore_side.png", m_texPixels[46], tw, th); m_texW[46] = tw; m_texH[46] = th;
+    loadTexPixels(L"../assert/texture/coal_ore_bottom.png", m_texPixels[47], tw, th); m_texW[47] = tw; m_texH[47] = th;
+    // 煤炭块 48-50
+    loadTexPixels(L"../assert/texture/coal_block_top.png", m_texPixels[48], tw, th); m_texW[48] = tw; m_texH[48] = th;
+    loadTexPixels(L"../assert/texture/coal_block_side.png", m_texPixels[49], tw, th); m_texW[49] = tw; m_texH[49] = th;
+    loadTexPixels(L"../assert/texture/coal_block_bottom.png", m_texPixels[50], tw, th); m_texW[50] = tw; m_texH[50] = th;
+    // 熔炉 51-54 (top, side, side_on, bottom — front 用 side)
+    loadTexPixels(L"../assert/texture/furnace_top.png", m_texPixels[51], tw, th); m_texW[51] = tw; m_texH[51] = th;
+    loadTexPixels(L"../assert/texture/furnace_side.png", m_texPixels[52], tw, th); m_texW[52] = tw; m_texH[52] = th;
+    loadTexPixels(L"../assert/texture/furnace_bottom.png", m_texPixels[53], tw, th); m_texW[53] = tw; m_texH[53] = th;
+    // 54 预留给 furnace_side_on
 
     m_blockTexLoaded = true;
 }
@@ -327,6 +344,10 @@ int Renderer::blockTexId(int blockType, int face)
         case BLOCK_DIAMOND_BLOCK:   return 33 + face;
         case BLOCK_GOLD_BLOCK:      return 36 + face;
         case BLOCK_IRON_BLOCK:      return 39 + face;
+        case BLOCK_COBBLESTONE:     return 42 + face;
+        case BLOCK_COAL_ORE:        return 45 + face;
+        case BLOCK_COAL_BLOCK:      return 48 + face;
+        case BLOCK_FURNACE:         return 51 + face;
         default: return -1;
     }
 }
@@ -427,6 +448,11 @@ static const wchar_t *kHotbarIcons[MAX_BLOCK_TYPE] = {
     L"../assert/gui/item/diamond_chestplate.png",  // 56
     L"../assert/gui/item/diamond_leggings.png",    // 57
     L"../assert/gui/item/diamond_boots.png",       // 58
+    L"../assert/gui/item/cobblestone.png",        // 59
+    L"../assert/gui/item/coal_ore.png",           // 60
+    L"../assert/gui/item/coal.png",               // 61
+    L"../assert/gui/item/coal_block.png",         // 62
+    L"../assert/gui/item/furnace.png",            // 63
 };
 
 static const wchar_t *kBigIconPaths[MAX_BLOCK_TYPE] = {
@@ -462,6 +488,11 @@ static const wchar_t *kBigIconPaths[MAX_BLOCK_TYPE] = {
     L"../assert/gui/item/diamond_hoe.png",
     L"../assert/gui/item/diamond_helmet.png", L"../assert/gui/item/diamond_chestplate.png",
     L"../assert/gui/item/diamond_leggings.png", L"../assert/gui/item/diamond_boots.png",
+    L"../assert/gui/item/cobblestone.png",       // 59
+    L"../assert/gui/item/coal_ore.png",          // 60
+    L"../assert/gui/item/coal.png",              // 61
+    L"../assert/gui/item/coal_block.png",        // 62
+    L"../assert/gui/item/furnace.png",           // 63
 };
 
 void Renderer::loadHotbar()
@@ -583,16 +614,12 @@ void Renderer::loadInventoryIcons()
         int nw = imgNative.getwidth(), nh = imgNative.getheight();
         if (nbuf && nw > 0 && nh > 0)
         {
-            m_invIcons[i].resize(INV_ICON_SIZE * INV_ICON_SIZE);
-            for (int y = 0; y < INV_ICON_SIZE; ++y)
-            {
-                int sy = y * nh / INV_ICON_SIZE;
-                for (int x = 0; x < INV_ICON_SIZE; ++x)
-                {
-                    int sx = x * nw / INV_ICON_SIZE;
-                    m_invIcons[i][y * INV_ICON_SIZE + x] = nbuf[sy * nw + sx];
-                }
-            }
+            m_invIconW[i] = nw;
+            m_invIconH[i] = nh;
+            m_invIcons[i].resize(nw * nh);
+            for (int y = 0; y < nh; ++y)
+                for (int x = 0; x < nw; ++x)
+                    m_invIcons[i][y * nw + x] = nbuf[y * nw + x];
         }
     }
 }
@@ -601,22 +628,25 @@ void Renderer::drawBlockIcon(int screenX, int screenY, int size, int blockType, 
 {
     if (blockType <= 0 || blockType >= MAX_BLOCK_TYPE) return;
     const auto &pixels = m_invIcons[blockType];
-    if (pixels.empty()) return;
+    int srcW = m_invIconW[blockType];
+    int srcH = m_invIconH[blockType];
+    if (pixels.empty() || srcW <= 0 || srcH <= 0) return;
 
+    // 直接缩放：原生分辨率 → 显示尺寸（最邻近采样）
     for (int dy = 0; dy < size; ++dy)
     {
         int py = screenY + dy;
         if (py < 0 || py >= m_screenHeight) continue;
-        int sy = dy * INV_ICON_SIZE / size;
-        if (sy >= INV_ICON_SIZE) sy = INV_ICON_SIZE - 1;
+        int sy = dy * srcH / size;
+        if (sy >= srcH) sy = srcH - 1;
         int dstRow = py * m_screenWidth;
         for (int dx = 0; dx < size; ++dx)
         {
             int px = screenX + dx;
             if (px < 0 || px >= m_screenWidth) continue;
-            int sx = dx * INV_ICON_SIZE / size;
-            if (sx >= INV_ICON_SIZE) sx = INV_ICON_SIZE - 1;
-            COLORREF c = pixels[sy * INV_ICON_SIZE + sx];
+            int sx = dx * srcW / size;
+            if (sx >= srcW) sx = srcW - 1;
+            COLORREF c = pixels[sy * srcW + sx];
             if (c == 0) continue;
             m_pBits[dstRow + px] = alphaBlend(m_pBits[dstRow + px], c);
         }

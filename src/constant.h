@@ -98,7 +98,18 @@ enum BlockType : int
     BLOCK_DIAMOND_LEGGINGS = 57,
     BLOCK_DIAMOND_BOOTS = 58,
 
-    MAX_BLOCK_TYPE = 59  // 方块类型总数（数组大小用）
+    // ── 圆石与衍生 ──
+    BLOCK_COBBLESTONE = 59,   // 圆石（挖掘石头掉落）
+
+    // ── 煤炭系 ──
+    BLOCK_COAL_ORE = 60,      // 煤矿
+    BLOCK_COAL = 61,          // 煤炭
+    BLOCK_COAL_BLOCK = 62,    // 煤炭块
+
+    // ── 功能方块 ──
+    BLOCK_FURNACE = 63,       // 熔炉
+
+    MAX_BLOCK_TYPE = 64  // 方块类型总数（数组大小用）
 };
 
 // 碰撞常量

@@ -115,6 +115,12 @@ static int parseBlockType(const std::string &name)
         {"diamond_chestplate", BLOCK_DIAMOND_CHESTPLATE},
         {"diamond_leggings", BLOCK_DIAMOND_LEGGINGS},
         {"diamond_boots", BLOCK_DIAMOND_BOOTS},
+        // 圆石 / 煤炭 / 熔炉
+        {"cobblestone", BLOCK_COBBLESTONE},
+        {"coal_ore", BLOCK_COAL_ORE},
+        {"coal", BLOCK_COAL},
+        {"coal_block", BLOCK_COAL_BLOCK},
+        {"furnace", BLOCK_FURNACE},
     };
     auto it = map.find(name);
     return (it != map.end()) ? it->second : BLOCK_AIR;

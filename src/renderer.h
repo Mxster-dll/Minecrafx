@@ -175,7 +175,7 @@ private:
     double m_msRaster;
 
     // ---- 方块贴图 ----
-    static constexpr int MAX_TEX = 42;
+    static constexpr int MAX_TEX = 55;
     COLORREF m_texPixels[MAX_TEX][16][16];
     int m_texW[MAX_TEX], m_texH[MAX_TEX];
     bool m_blockTexLoaded;
@@ -202,9 +202,11 @@ private:
     std::vector<COLORREF> m_selectPixels;
     int m_selectW = 0, m_selectH = 0;
 
-    // ---- 背包页图标（32×32） ----
-    static constexpr int INV_ICON_SIZE = 32;
+    // ---- 背包页图标（存原生分辨率） ----
+    static constexpr int INV_ICON_MAX = 64;
     std::vector<COLORREF> m_invIcons[MAX_BLOCK_TYPE];  // 索引 = blockType
+    int m_invIconW[MAX_BLOCK_TYPE] = {};               // 原生宽度
+    int m_invIconH[MAX_BLOCK_TYPE] = {};               // 原生高度
 
     bool m_hotbarLoaded = false;
 

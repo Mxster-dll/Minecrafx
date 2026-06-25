@@ -248,6 +248,18 @@ int main()
             case BLOCK_GOLD_BLOCK: // 13, default=15s
                 if (isPickaxe(toolType)) return pickSpeed(toolType, 0.8);
                 return 15.0;
+            case BLOCK_COBBLESTONE: // 59, default=7.5s
+                if (isPickaxe(toolType)) return pickSpeed(toolType, 1.2);
+                return 7.5;
+            case BLOCK_COAL_ORE:    // 60, default=15s
+                if (isPickaxe(toolType)) return pickSpeed(toolType, 0.8);
+                return 15.0;
+            case BLOCK_COAL_BLOCK:  // 62, default=15s
+                if (isPickaxe(toolType)) return pickSpeed(toolType, 1.3);
+                return 15.0;
+            case BLOCK_FURNACE:     // 63, default=17.5s
+                if (isPickaxe(toolType)) return pickSpeed(toolType, 1.5);
+                return 17.5;
             default:
                 return 1.0; // 兜底 1 秒
         }
@@ -273,6 +285,10 @@ int main()
         switch (blockType)
         {
             case BLOCK_STONE:
+            case BLOCK_COBBLESTONE:
+            case BLOCK_COAL_ORE:
+            case BLOCK_COAL_BLOCK:
+            case BLOCK_FURNACE:
             case BLOCK_DIAMOND_ORE:
             case BLOCK_GOLD_ORE:
             case BLOCK_IRON_ORE:
@@ -318,6 +334,7 @@ int main()
     double miningTotalTime = 0.0;
     double miningCooldown = 0.0;  // 完成后 0.05s 延迟
     clock_t lastStepTime = 0;  // 上次脚步声时间
+    clock_t lastDigTime = 0;   // 上次挖掘声音时间
 
     // ---- 3D 地图 + 3D 摄像机（选模式后初始化） ----
     Map3D map3D;
@@ -420,9 +437,10 @@ int main()
             {
                 playSFX(clickPath);
                 isCreative = false;
-                // 清空背包
+                // 清空背包，首格放铁镐
                 for (int i = 0; i < Inventory::HOTBAR_SLOTS + Inventory::BACKPACK_SLOTS; ++i)
                     inventory.getSlot(i) = { BLOCK_AIR, 0 };
+                inventory.getSlot(0) = { BLOCK_IRON_PICKAXE, 1 };
                 // 生成丘陵地形
                 for (int x = 0; x < MX; ++x)
                     for (int z = 0; z < MZ; ++z)
@@ -467,18 +485,35 @@ int main()
                 {
                     int ox = rand() % MX, oz = rand() % MZ, ow = rand() % MW;
                     int oy = rand() % 5 + 1;  // 地下 1~5 层
-                    int oreType = BLOCK_DIAMOND_ORE;
+                    int oreType = BLOCK_COAL_ORE;
                     int r = rand() % 100;
-                    if (r < 60) oreType = BLOCK_IRON_ORE;
-                    else if (r < 90) oreType = BLOCK_GOLD_ORE;
+                    if (r < 50) oreType = BLOCK_COAL_ORE;
+                    else if (r < 80) oreType = BLOCK_IRON_ORE;
+                    else if (r < 95) oreType = BLOCK_GOLD_ORE;
+                    else oreType = BLOCK_DIAMOND_ORE;
                     int clusterSize = 2 + rand() % 4;
                     for (int j = 0; j < clusterSize; ++j)
                     {
                         int dx = (rand() % 3) - 1, dy = (rand() % 3) - 1, dz = (rand() % 3) - 1, dw = (rand() % 3) - 1;
                         int nx = ox + dx, ny = oy + dy, nz = oz + dz, nw = ow + dw;
                         if (nx >= 0 && nx < MX && nz >= 0 && nz < MZ && nw >= 0 && nw < MW && ny >= 0 && ny < terrainHeight(nx, nz, nw) - 1)
-                            if (world.get(IVec4(nx, ny, nz, nw)) == BLOCK_DIRT)
+                            if (world.get(IVec4(nx, ny, nz, nw)) == BLOCK_DIRT || world.get(IVec4(nx, ny, nz, nw)) == BLOCK_STONE)
                                 world.set(IVec4(nx, ny, nz, nw), oreType);
+                    }
+                }
+                // 额外煤矿生成（深层石头中）
+                for (int i = 0; i < 600; ++i)
+                {
+                    int ox = rand() % MX, oz = rand() % MZ, ow = rand() % MW;
+                    int oy = rand() % 3;  // 深层 0~2
+                    int clusterSize = 3 + rand() % 5;
+                    for (int j = 0; j < clusterSize; ++j)
+                    {
+                        int dx = (rand() % 3) - 1, dy = (rand() % 3) - 1, dz = (rand() % 3) - 1, dw = (rand() % 3) - 1;
+                        int nx = ox + dx, ny = oy + dy, nz = oz + dz, nw = ow + dw;
+                        if (nx >= 0 && nx < MX && nz >= 0 && nz < MZ && nw >= 0 && nw < MW && ny >= 0 && ny < terrainHeight(nx, nz, nw) - 1)
+                            if (world.get(IVec4(nx, ny, nz, nw)) == BLOCK_STONE)
+                                world.set(IVec4(nx, ny, nz, nw), BLOCK_COAL_ORE);
                     }
                 }
                 // 初始地图
@@ -1218,6 +1253,15 @@ int main()
                         int toolType = inventory.hotbarBlockType(selectedSlot);
                         miningTotalTime = getMiningTime(curBlock, toolType);
                         miningProgress += dt;
+                        // 挖掘音效（间隔 0.25s，与走路一致）
+                        {
+                            double sinceDig = (double) (clock() - lastDigTime) / CLOCKS_PER_SEC;
+                            if (sinceDig >= 0.25)
+                            {
+                                playSFX(digPath[rand() % 4]);
+                                lastDigTime = clock();
+                            }
+                        }
                         if (miningProgress >= miningTotalTime)
                         {
                             miningProgress = miningTotalTime;  // 到达 100%
@@ -1256,31 +1300,47 @@ int main()
                         int destroyedType = world.get(miningTarget);
                         world.set(miningTarget, 0);
                         mapChanged = true; changedPos = miningTarget; changedType = 0;
-                        playSFX(popPath);
+                        bool harvested = canHarvest(destroyedType, inventory.hotbarBlockType(selectedSlot));
+                        // 音效（仅当工具等级足够时播放）
+                        if (harvested)
+                            playSFX(popPath);
                         // 掉落（仅当工具等级足够，且树叶不掉落自身）
-                        if (destroyedType != BLOCK_LEAVES &&
-                            canHarvest(destroyedType, inventory.hotbarBlockType(selectedSlot)))
+                        if (harvested && destroyedType != BLOCK_LEAVES)
                         {
-                            bool placed = false;
-                            for (int i = 0; i < Inventory::HOTBAR_SLOTS + Inventory::BACKPACK_SLOTS; ++i)
+                            int dropType = destroyedType;
+                            int dropCount = 1;
+                            // 草方块 → 泥土
+                            if (destroyedType == BLOCK_GRASS)
+                                dropType = BLOCK_DIRT;
+                            // 石头 → 圆石
+                            else if (destroyedType == BLOCK_STONE)
+                                dropType = BLOCK_COBBLESTONE;
+                            // 煤矿 → 煤炭 2~4 个
+                            else if (destroyedType == BLOCK_COAL_ORE)
                             {
-                                auto &slot = inventory.getSlot(i);
-                                if (slot.blockType == destroyedType)
-                                {
-                                    slot.count++; placed = true; break;
-                                }
+                                dropType = BLOCK_COAL; dropCount = 2 + (rand() % 3);
                             }
-                            if (!placed)
+
+                            auto addItem = [&](int type, int cnt)
                             {
+                                for (int i = 0; i < Inventory::HOTBAR_SLOTS + Inventory::BACKPACK_SLOTS; ++i)
+                                {
+                                    auto &slot = inventory.getSlot(i);
+                                    if (slot.blockType == type)
+                                    {
+                                        slot.count += cnt; return;
+                                    }
+                                }
                                 for (int i = 0; i < Inventory::HOTBAR_SLOTS + Inventory::BACKPACK_SLOTS; ++i)
                                 {
                                     auto &slot = inventory.getSlot(i);
                                     if (slot.blockType == BLOCK_AIR)
                                     {
-                                        slot.blockType = destroyedType; slot.count = 1; placed = true; break;
+                                        slot.blockType = type; slot.count = cnt; return;
                                     }
                                 }
-                            }
+                            };
+                            addItem(dropType, dropCount);
                         }
                         // 树叶额外掉落苹果（50% 概率）
                         if (destroyedType == BLOCK_LEAVES && (rand() % 100) < 50)

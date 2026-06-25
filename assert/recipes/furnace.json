@@ -1,12 +1,12 @@
 {
   "shaped": [
     {
-      "count": 1,
       "recipe": [
         ["cobblestone", "cobblestone", "cobblestone"],
-        [null, "stick", null],
-        [null, "stick", null]
-      ]
+        ["cobblestone", null, "cobblestone"],
+        ["cobblestone", "cobblestone", "cobblestone"]
+      ],
+      "count": 1
     }
   ],
   "shapeless": []

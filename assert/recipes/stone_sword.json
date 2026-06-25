@@ -3,8 +3,8 @@
     {
       "count": 1,
       "recipe": [
-        ["stone", null, null],
-        ["stone", null, null],
+        ["cobblestone", null, null],
+        ["cobblestone", null, null],
         ["stick", null, null]
       ]
     }

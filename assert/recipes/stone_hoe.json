@@ -3,7 +3,7 @@
     {
       "count": 1,
       "recipe": [
-        ["stone", "stone", null],
+        ["cobblestone", "cobblestone", null],
         [null, "stick", null],
         [null, "stick", null]
       ]
@@ -11,7 +11,7 @@
     {
       "count": 1,
       "recipe": [
-        [null, "stone", "stone"],
+        [null, "cobblestone", "cobblestone"],
         [null, "stick", null],
         [null, "stick", null]
       ]
