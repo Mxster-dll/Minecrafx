@@ -17,7 +17,8 @@ public:
     static constexpr int BACKPACK_SLOTS = BACKPACK_ROWS * BACKPACK_COLS;
     static constexpr int CRAFT_INPUT = 9;   // 最多 3×3 合成台
     static constexpr int CRAFT_OUTPUT = 1;
-    static constexpr int TOTAL_SLOTS = HOTBAR_SLOTS + BACKPACK_SLOTS + CRAFT_INPUT + CRAFT_OUTPUT;
+    static constexpr int ARMOR_SLOTS = 4;   // 头盔/胸甲/护腿/靴子
+    static constexpr int TOTAL_SLOTS = HOTBAR_SLOTS + BACKPACK_SLOTS + CRAFT_INPUT + CRAFT_OUTPUT + ARMOR_SLOTS;
 
     enum CraftMode { CM_Inventory2x2, CM_CraftingTable3x3 };
 
@@ -33,6 +34,13 @@ public:
     static constexpr int INV_CRAFT_Y1 = 36;
     static constexpr int INV_OUTPUT_X = 154;
     static constexpr int INV_OUTPUT_Y = 28;
+    // 盔甲槽位（原生坐标）
+    static constexpr int ARMOR_X = 8;
+    static constexpr int ARMOR_Y0 = 8;   // 头盔
+    static constexpr int ARMOR_Y1 = 26;  // 胸甲
+    static constexpr int ARMOR_Y2 = 44;  // 护腿
+    static constexpr int ARMOR_Y3 = 62;  // 靴子
+    static constexpr int ARMOR_GAP = 2;  // 槽位间距
 
     // ---- crafting_table.png 的合成区坐标（3×3） ----
     static constexpr int CT_CRAFT_X = 30;
@@ -79,7 +87,7 @@ public:
     // ---- 拖拽 ----
     /** @brief 从槽位拿取物品。count=-1 拿全部，count>0 只拿指定数量 */
     bool pickup(int slotIndex, int count = -1);
-    /** @brief 将手上物品放入槽位 */
+    /** @brief 将手上物品放入槽位（盔甲槽位自动验证类型） */
     bool placeInto(int slotIndex);
     /** @brief 将手上 1 个物品放入槽位（右键用） */
     bool placeOneInto(int slotIndex);
@@ -89,6 +97,11 @@ public:
     int  dragBlockType() const { return m_dragType; }
     int  dragCount()    const { return m_dragCount; }
     void cancelDrag();
+
+    // ---- 盔甲槽位 ----
+    static constexpr int ARMOR_BASE = HOTBAR_SLOTS + BACKPACK_SLOTS + CRAFT_INPUT + CRAFT_OUTPUT;
+    static bool isValidArmorForSlot(int armorSubIndex, int blockType);
+    static int armorSlotNativeY(int subIndex);
 
 private:
     static constexpr int CRAFT_BASE = HOTBAR_SLOTS + BACKPACK_SLOTS;

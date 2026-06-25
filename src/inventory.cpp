@@ -105,10 +105,17 @@ void Inventory::slotScreenRect(int index,
         nx = craftX + (ci % craftW) * SLOT_STEP;
         ny = craftY + (ci / craftW) * SLOT_STEP;
     }
-    else
+    else if (index < ARMOR_BASE)
     {
         nx = outX0;
         ny = outY0;
+    }
+    else
+    {
+        // 盔甲槽位
+        int ai = index - ARMOR_BASE;
+        nx = ARMOR_X;
+        ny = armorSlotNativeY(ai);
     }
 
     outX = imgDispX + (int) (nx * sx);
@@ -168,6 +175,14 @@ int Inventory::hitTest(int screenX, int screenY,
             if (nx >= bx && nx < bx + SLOT_SIZE && ny >= by && ny < by + SLOT_SIZE)
                 return HOTBAR_SLOTS + r * BACKPACK_COLS + c;
         }
+
+    // 盔甲槽位
+    for (int ai = 0; ai < ARMOR_SLOTS; ++ai)
+    {
+        int ay = armorSlotNativeY(ai);
+        if (nx >= ARMOR_X && nx < ARMOR_X + SLOT_SIZE && ny >= ay && ny < ay + SLOT_SIZE)
+            return ARMOR_BASE + ai;
+    }
 
     return -1;
 }
@@ -250,6 +265,14 @@ bool Inventory::placeInto(int slotIndex)
     // 不能放入输出区
     if (slotIndex == CRAFT_OUTPUT_IDX) return false;
 
+    // 盔甲槽位：只接受对应类型
+    if (slotIndex >= ARMOR_BASE)
+    {
+        int ai = slotIndex - ARMOR_BASE;
+        if (!isValidArmorForSlot(ai, m_dragType)) return false;
+        if (m_dragCount != 1) return false;  // 盔甲只能单件放入
+    }
+
     auto &s = m_slots[slotIndex];
     if (s.blockType == BLOCK_AIR)
     {
@@ -278,6 +301,9 @@ bool Inventory::placeOneInto(int slotIndex)
     if (!isDragging()) return false;
     if (slotIndex < 0 || slotIndex >= TOTAL_SLOTS) return false;
     if (slotIndex == CRAFT_OUTPUT_IDX) return false;
+
+    // 盔甲槽位：不接受右键逐一放入（防堆叠）
+    if (slotIndex >= ARMOR_BASE) return false;
 
     auto &s = m_slots[slotIndex];
     if (s.blockType != BLOCK_AIR && s.blockType != m_dragType) return false;
@@ -308,6 +334,38 @@ void Inventory::cancelDrag()
     s.blockType = m_dragType;
     s.count = m_dragCount;
     m_dragging = -1;
+}
+
+int Inventory::armorSlotNativeY(int subIndex)
+{
+    switch (subIndex)
+    {
+        case 0: return ARMOR_Y0;
+        case 1: return ARMOR_Y1;
+        case 2: return ARMOR_Y2;
+        case 3: return ARMOR_Y3;
+        default: return 0;
+    }
+}
+
+bool Inventory::isValidArmorForSlot(int armorSubIndex, int blockType)
+{
+    switch (armorSubIndex)
+    {
+        case 0:  // 头盔
+            return blockType == BLOCK_IRON_HELMET || blockType == BLOCK_GOLDEN_HELMET ||
+                blockType == BLOCK_DIAMOND_HELMET;
+        case 1:  // 胸甲
+            return blockType == BLOCK_IRON_CHESTPLATE || blockType == BLOCK_GOLDEN_CHESTPLATE ||
+                blockType == BLOCK_DIAMOND_CHESTPLATE;
+        case 2:  // 护腿
+            return blockType == BLOCK_IRON_LEGGINGS || blockType == BLOCK_GOLDEN_LEGGINGS ||
+                blockType == BLOCK_DIAMOND_LEGGINGS;
+        case 3:  // 靴子
+            return blockType == BLOCK_IRON_BOOTS || blockType == BLOCK_GOLDEN_BOOTS ||
+                blockType == BLOCK_DIAMOND_BOOTS;
+        default: return false;
+    }
 }
 
 bool Inventory::takeCraftOutput(const CraftingManager &craftMgr)
