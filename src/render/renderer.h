@@ -1,14 +1,12 @@
 #pragma once
 
-#include "constant.h"
-#include "world.h"
-#include "camera.h"
-#include "linalg.h"
-#include "superblock.h"
-#include "project4d.h"
+#include "../core/constant.h"
+#include "../world/world.h"
+#include "../world/camera.h"
+#include "../core/linalg.h"
+#include "../world/project4d.h"
 #include <graphics.h>
 #include <vector>
-#include <deque>
 #include <unordered_set>
 #include <atomic>
 #include <ctime>
@@ -88,16 +86,6 @@ public:
 
     /** @brief 加载背包页大图标（32×32） */
     void loadInventoryIcons();
-
-    /** @brief 获取热键栏槽位对应的方块类型 */
-    int getHotbarBlockType(int slot) const;
-
-    /** @brief 添加超方块（不展开，渲染时 16 分法遍历） */
-    void addSuperBlock(const SuperBlock &sb)
-    {
-        m_superBlocks.push_back(sb);
-        m_sbGrid.insert(sb.pos());
-    }
 
     /** @brief 获取原始像素缓冲区指针 */
     DWORD *getPixelBits() const { return m_pBits; }
@@ -212,10 +200,6 @@ private:
     int m_invIconH[MAX_BLOCK_TYPE] = {};               // 原生高度
 
     bool m_hotbarLoaded = false;
-
-    // ---- 超方块 ----
-    std::vector<SuperBlock> m_superBlocks;
-    std::unordered_set<IVec4> m_sbGrid;
 
     // ---- GUI 背景 ----
     std::vector<DWORD> m_background;

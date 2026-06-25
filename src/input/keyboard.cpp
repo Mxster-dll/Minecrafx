@@ -39,10 +39,4 @@ bool KeyboardInput::isPressed(Key key) const
     return m_currState[code] && !m_prevState[code];
 }
 
-bool KeyboardInput::isKeyReleased(Key key) const
-{
-    int code = static_cast<int>(key);
-    if (code < 0 || code >= KEY_COUNT) return false;
 
-    return !m_currState[code] && m_prevState[code];
-}

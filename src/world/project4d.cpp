@@ -14,11 +14,6 @@
 // Vec3 运算
 // ============================================================================
 
-Vec3 vec3Add(const Vec3 &a, const Vec3 &b)
-{
-    return Vec3(a.x + b.x, a.z + b.z, a.w + b.w);
-}
-
 Vec3 vec3Sub(const Vec3 &a, const Vec3 &b)
 {
     return Vec3(a.x - b.x, a.z - b.z, a.w - b.w);
@@ -104,28 +99,6 @@ void Plane2D::project(const Vec3 &point, double &u, double &v) const
 {
     u = vec3Dot(point, p);
     v = vec3Dot(point, q);
-}
-
-void Plane2D::rotate(double angle, const Vec3 &axis)
-{
-    // Rodrigues 旋转公式：v' = v cosθ + (k×v) sinθ + k (k·v) (1-cosθ)
-    auto rodrigues = [&](const Vec3 &v) -> Vec3
-    {
-        double c = std::cos(angle);
-        double s = std::sin(angle);
-        double dot = vec3Dot(axis, v);
-        Vec3 cross = vec3Cross(axis, v);
-        return Vec3(
-            v.x * c + cross.x * s + axis.x * dot * (1.0 - c),
-            v.z * c + cross.z * s + axis.z * dot * (1.0 - c),
-            v.w * c + cross.w * s + axis.w * dot * (1.0 - c)
-        );
-    };
-
-    n = rodrigues(n);
-    p = rodrigues(p);
-    // q 重新计算保证正交
-    q = vec3Cross(n, p);
 }
 
 // ============================================================================

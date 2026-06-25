@@ -1,5 +1,4 @@
 #include "input_handler.h"
-#include <cmath>
 
 // 用于 SetProp/GetProp 的属性名
 static const wchar_t *PROP_NAME = L"InputHandler_This";
@@ -207,55 +206,4 @@ void InputHandler::showMouseCursor(bool visible)
         m_mouse.hideCursor();
 }
 
-// ============================================================================
-// 射线检测
-// ============================================================================
 
-bool raycast(const World &world, const Camera4D &cam,
-    IVec4 &hitPos, IVec4 &prevPos)
-{
-    constexpr double STEP = 0.2;
-    constexpr double MAX_DIST = 10.0;
-
-    Vec4 origin = cam.getPos();
-    Vec4 direction = cam.getOver();  // 视线方向 = over 基向量（已归一化）
-
-    // 初始化 prevPos 为起始点最近的格点
-    IVec4 prevGrid(
-        static_cast<int>(std::round(origin.x)),
-        static_cast<int>(std::round(origin.y)),
-        static_cast<int>(std::round(origin.z)),
-        static_cast<int>(std::round(origin.w))
-    );
-
-    for (double t = STEP; t <= MAX_DIST; t += STEP)
-    {
-        Vec4 sample = vec4Add(origin, vec4Scale(direction, t));
-
-        IVec4 grid(
-            static_cast<int>(std::round(sample.x)),
-            static_cast<int>(std::round(sample.y)),
-            static_cast<int>(std::round(sample.z)),
-            static_cast<int>(std::round(sample.w))
-        );
-
-        // 检查是否进入新格点
-        if (grid.x == prevGrid.x && grid.y == prevGrid.y &&
-            grid.z == prevGrid.z && grid.w == prevGrid.w)
-        {
-            continue;  // 仍在同一格点内
-        }
-
-        // 检查新格点是否有方块
-        if (world.get(grid) != 0)
-        {
-            hitPos = grid;
-            prevPos = prevGrid;
-            return true;
-        }
-
-        prevGrid = grid;
-    }
-
-    return false;
-}

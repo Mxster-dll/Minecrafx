@@ -1,6 +1,6 @@
 #pragma once
 
-#include "constant.h"
+#include "../core/constant.h"
 
 class CraftingManager;
 

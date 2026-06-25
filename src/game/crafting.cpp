@@ -1,7 +1,5 @@
 #include "crafting.h"
-#include <algorithm>
 #include <cstdio>
-#include <cstring>
 #include <string>
 #include <unordered_map>
 #include <windows.h>

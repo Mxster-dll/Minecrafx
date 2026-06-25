@@ -30,27 +30,6 @@ struct Vec4
 };
 
 // ============================================================================
-// 4×4 矩阵
-// ============================================================================
-struct Mat4
-{
-    double m[4][4];
-
-    /** @brief 构造零矩阵 */
-    Mat4();
-
-    /** @brief 构造单位矩阵 */
-    static Mat4 identity();
-
-    /** @brief 从 16 个值构造（行优先） */
-    static Mat4 fromRows(
-        double r0c0, double r0c1, double r0c2, double r0c3,
-        double r1c0, double r1c1, double r1c2, double r1c3,
-        double r2c0, double r2c1, double r2c2, double r2c3,
-        double r3c0, double r3c1, double r3c2, double r3c3);
-};
-
-// ============================================================================
 // 投影结果
 // ============================================================================
 struct ProjResult
@@ -86,38 +65,6 @@ double vec4LengthSq(const Vec4 &v);
 Vec4 vec4Normalize(const Vec4 &v);
 
 // ============================================================================
-// Mat4 矩阵运算
-// ============================================================================
-
-/** @brief 矩阵乘法 C = A * B */
-Mat4 mat4Mul(const Mat4 &a, const Mat4 &b);
-
-/** @brief 矩阵变换向量 v' = M * v */
-Vec4 mat4Transform(const Mat4 &m, const Vec4 &v);
-
-// ============================================================================
-// 六种 4D 旋转矩阵生成函数
-// ============================================================================
-
-/** @brief 绕 XY 平面旋转（Z/W 轴不动） */
-Mat4 rotateXY(double angle);
-
-/** @brief 绕 XZ 平面旋转（Y/W 轴不动） */
-Mat4 rotateXZ(double angle);
-
-/** @brief 绕 YZ 平面旋转（X/W 轴不动） */
-Mat4 rotateYZ(double angle);
-
-/** @brief 绕 XW 平面旋转（Y/Z 轴不动） */
-Mat4 rotateXW(double angle);
-
-/** @brief 绕 YW 平面旋转（X/Z 轴不动） */
-Mat4 rotateYW(double angle);
-
-/** @brief 绕 ZW 平面旋转（X/Y 轴不动） */
-Mat4 rotateZW(double angle);
-
-// ============================================================================
 // 4D→2D 投影
 // ============================================================================
 
@@ -150,9 +97,4 @@ ProjResult project(const Vec4 &worldPos, const Camera4D &cam,
  */
 void gramSchmidt(Vec4 &v0, Vec4 &v1, Vec4 &v2, Vec4 &v3);
 
-// ============================================================================
-// 辅助函数
-// ============================================================================
 
-/** @brief 计算两个 Vec4 之间的平方距离 */
-double vec4DistSq(const Vec4 &a, const Vec4 &b);

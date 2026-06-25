@@ -102,23 +102,4 @@ private:
     std::unordered_map<IVec4, Chunk> m_chunks;
 };
 
-// ============================================================================
-// 世界生成函数
-// ============================================================================
 
-/**
- * @brief 生成初始地板：y=0, w=0 平面的 8×8 石块
- * @param world 目标世界对象
- *
- * 在 y=0, w=0 平面，x 和 z 范围 [-4, 3] 生成石块（类型 1）。
- */
-void generateFloor(World &world);
-
-/**
- * @brief 生成 4D 超立方体壳（tesseract shell）
- * @param cx,cy,cz,cw  中心坐标
- * @param halfSize      半边长（壳厚度 1）
- */
-void generateHypercubeShell(World &world,
-    int cx, int cy, int cz, int cw,
-    int halfSize);

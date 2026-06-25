@@ -70,11 +70,6 @@ public:
      */
     bool isPressed(Key key) const;
 
-    /**
-     * @brief 按键是否在本帧刚刚释放（下降沿触发，只触发一次）
-     */
-    bool isKeyReleased(Key key) const;
-
 private:
     static constexpr int KEY_COUNT = 256;
     HWND m_hwnd;

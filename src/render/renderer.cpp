@@ -1,11 +1,10 @@
 #include "renderer.h"
-#include "constant.h"
+#include "../core/constant.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cwchar>
 #include <functional>
-#include <iostream>
 #include <windows.h>
 #include <thread>
 #include <mutex>
@@ -781,12 +780,6 @@ void Renderer::drawHotbar(int selectedSlot, const int *hotbarBlockTypes, const i
     // 刷新到屏幕
     HDC hdc = GetImageHDC();
     BitBlt(hdc, 0, 0, m_screenWidth, m_screenHeight, m_memDC, 0, 0, SRCCOPY);
-}
-
-int Renderer::getHotbarBlockType(int slot) const
-{
-    if (slot < 0 || slot >= HOTBAR_SLOTS) return 1;
-    return m_hotbarBlockTypes[slot];
 }
 
 // ============================================================================

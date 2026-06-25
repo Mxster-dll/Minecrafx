@@ -1,6 +1,6 @@
 #pragma once
 
-#include "linalg.h"
+#include "../core/linalg.h"
 #include "world.h"
 #include <windows.h>
 #include <vector>
@@ -21,7 +21,6 @@ struct Vec3
 };
 
 // ---- Vec3 运算 ----
-Vec3  vec3Add(const Vec3 &a, const Vec3 &b);
 Vec3  vec3Sub(const Vec3 &a, const Vec3 &b);
 Vec3  vec3Scale(const Vec3 &v, double s);
 double vec3Dot(const Vec3 &a, const Vec3 &b);
@@ -60,12 +59,6 @@ struct Plane2D
      */
     void project(const Vec3 &point, double &u, double &v) const;
 
-    /**
-     * @brief 绕给定轴旋转法向量 n 和基向量 p（保持正交性）
-     * @param angle  旋转角（弧度）
-     * @param axis   旋转轴（在 xzw 空间中）
-     */
-    void rotate(double angle, const Vec3 &axis);
 };
 
 // ============================================================================

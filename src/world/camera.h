@@ -1,6 +1,6 @@
 #pragma once
 
-#include "linalg.h"
+#include "../core/linalg.h"
 #include "project4d.h"
 
 /**
@@ -24,31 +24,10 @@ public:
     /** @brief 沿给定方向移动摄像机位置 */
     void move(const Vec4 &direction);
 
-    // ---- 六种平面旋转 ----
-
-    /** @brief 绕 XY 平面旋转（影响 right 和 up） */
-    void rotateXY(double angle);
-    /** @brief 绕 XZ 平面旋转（影响 right 和 forward） */
-    void rotateXZ(double angle);
-    /** @brief 绕 YZ 平面旋转（影响 up 和 forward） */
-    void rotateYZ(double angle);
-    /** @brief 绕 XW 平面旋转（影响 right 和 over） */
-    void rotateXW(double angle);
-    /** @brief 绕 YW 平面旋转（影响 up 和 over） */
-    void rotateYW(double angle);
-    /** @brief 绕 ZW 平面旋转（影响 forward 和 over） */
-    void rotateZW(double angle);
-
     // ---- 本地轴旋转（用于鼠标视角控制） ----
 
     /** @brief 绕 up 轴旋转 right↔forward（偏航 / 左右环顾） */
     void rotateAroundUp(double angle);
-
-    /** @brief 绕 right 轴旋转 forward↔up（俯仰 / 上下看） */
-    void rotateAroundRight(double angle);
-
-    /** @brief 绕 forward 轴旋转 up↔over（滚转） */
-    void rotateAroundForward(double angle);
 
     /** @brief 绕 right 轴旋转 forward↔over（切片旋转：保持 j 轴不动） */
     void rotateSlice(double angle);
@@ -69,11 +48,6 @@ public:
 
     /** @brief 对四个基向量执行 Gram-Schmidt 正交归一化 */
     void orthonormalize();
-
-    // ---- 重置 ----
-
-    /** @brief 重置摄像机到初始状态 */
-    void reset();
 
     // ---- Getters ----
 

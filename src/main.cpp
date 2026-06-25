@@ -19,15 +19,15 @@
 #include <cstdlib>
 #include <mmsystem.h>
 
-#include "linalg.h"
-#include "world.h"
-#include "camera.h"
-#include "renderer.h"
-#include "constant.h"
+#include "core/linalg.h"
+#include "world/world.h"
+#include "world/camera.h"
+#include "render/renderer.h"
+#include "core/constant.h"
 #include "input/input_handler.h"
-#include "inventory.h"
-#include "crafting.h"
-#include "furnace.h"
+#include "game/inventory.h"
+#include "game/crafting.h"
+#include "game/furnace.h"
 
  // ---- 游戏状态 ----
 enum class GameState
