@@ -1521,6 +1521,7 @@ int main()
                     if (raycast3D(hitPos, prevPos))
                     {
                         world.set(hitPos, 0);
+                        playSFX(digPath[rand() % 4]);  // 创造模式只响一声
                         mapChanged = true; changedPos = hitPos; changedType = 0;
                         interactCooldown = 4;
                     }
