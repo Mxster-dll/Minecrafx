@@ -1,8 +1,4 @@
-#include "world.h"
-
-// ============================================================================
-// Chunk
-// ============================================================================
+﻿#include "world.h"
 
 int Chunk::get(int lx, int ly, int lz, int lw) const
 {
@@ -18,10 +14,6 @@ void Chunk::set(int lx, int ly, int lz, int lw, int type)
     else
         m_blocks[key] = type;
 }
-
-// ============================================================================
-// World
-// ============================================================================
 
 static inline int floorDiv(int a, int b)
 {
@@ -80,5 +72,3 @@ size_t World::totalBlocks() const
         n += ch.blockCount();
     return n;
 }
-
-

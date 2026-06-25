@@ -1,55 +1,30 @@
-#pragma once
+﻿#pragma once
 
 #include "../core/linalg.h"
 #include "project4d.h"
 
-/**
- * @brief 4D 摄像机类
- *
- * 维护位置和四个正交基向量（right, up, forward, over），
- * 提供六种 4D 旋转平面的旋转和 Gram-Schmidt 正交化。
- *
- * 额外维护 xzw 子空间中观察平面的参考基向量 m_planeP，
- * 该向量始终与 m_over 在 xzw 中的分量正交，
- * 旋转时随 m_over 一同变换。
- */
 class Camera4D
 {
 public:
-    /** @brief 构造默认摄像机：位置 (0,2,0,-5)，标准正交基 */
+
     Camera4D();
 
-    // ---- 移动 ----
-
-    /** @brief 沿给定方向移动摄像机位置 */
     void move(const Vec4 &direction);
 
-    // ---- 本地轴旋转（用于鼠标视角控制） ----
-
-    /** @brief 绕 up 轴旋转 right↔forward（偏航 / 左右环顾） */
     void rotateAroundUp(double angle);
 
-    /** @brief 绕 right 轴旋转 forward↔over（切片旋转：保持 j 轴不动） */
     void rotateSlice(double angle);
 
-    // ---- 俯仰 ----
-
-    /** @brief 设置俯仰角（视角向量与 XZW 平面的夹角，弧度） */
     void setPitch(double angle);
-    /** @brief 调整俯仰角 */
+
     void addPitch(double delta);
-    /** @brief 获取俯仰角 */
+
     double getPitch() const { return m_pitch; }
-    /** @brief 获取缓存的三角函数（避免热路径重复计算） */
+
     double getCosPitch() const { return m_cosPitch; }
     double getSinPitch() const { return m_sinPitch; }
 
-    // ---- 正交化 ----
-
-    /** @brief 对四个基向量执行 Gram-Schmidt 正交归一化 */
     void orthonormalize();
-
-    // ---- Getters ----
 
     const Vec4 &getPos()     const { return m_pos; }
     const Vec4 &getRight()   const { return m_right; }
@@ -57,15 +32,6 @@ public:
     const Vec4 &getForward() const { return m_forward; }
     const Vec4 &getOver()    const { return m_over; }
 
-    // ---- 投影平面 ----
-
-    /**
-     * @brief 获取 xzw 子空间中的观察平面
-     *
-     * 平面法向量 n = over 的 xzw 分量归一化
-     * 基向量 p = right 的 xzw 分量（始终在平面上且与 n 正交）
-     * 偏移量 offset = n · camPos_xzw（使平面穿过摄像机）
-     */
     Plane2D getViewPlane() const;
 
 private:
@@ -74,7 +40,7 @@ private:
     Vec4 m_up;
     Vec4 m_forward;
     Vec4 m_over;
-    double m_pitch;       // 俯仰角（弧度）
-    mutable double m_cosPitch;  // 缓存 cos(pitch)
-    mutable double m_sinPitch;  // 缓存 sin(pitch)
+    double m_pitch;
+    mutable double m_cosPitch;
+    mutable double m_sinPitch;
 };

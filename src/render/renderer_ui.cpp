@@ -1,4 +1,4 @@
-#include "renderer.h"
+﻿#include "renderer.h"
 #include "../core/constant.h"
 #include <algorithm>
 #include <cmath>
@@ -12,21 +12,6 @@
 #include <atomic>
 #include <queue>
 
-
-// ============================================================================
-// 此文件包含 HUD、准星、背景模糊和后处理、按钮等 GUI 方法
-// ============================================================================
-
-// ============================================================================
-// 此文件包含 Renderer 类的所有 UI / 纹理 / GUI 方法
-// 从 renderer.cpp 拆分出来以减少单文件体积
-// ============================================================================
-
-// ============================================================================
-// Alpha 混合：EasyX PNG 像素 (0xAARRGGBB) → DIB 像素 (0x00RRGGBB)
-// ============================================================================
-
-/** @brief 将 ARGB 源像素叠加到 DIB 目标像素，返回混合结果 */
 static inline DWORD alphaBlend(DWORD dst, DWORD src)
 {
     unsigned int a = (src >> 24) & 0xFF;
@@ -44,10 +29,6 @@ static inline DWORD alphaBlend(DWORD dst, DWORD src)
     db = (sb * a + db * invA) / 255;
     return RGB(dr, dg, db);
 }
-
-// ============================================================================
-// 方块贴图加载（像素数据）
-// ============================================================================
 
 static void loadTexPixels(const wchar_t *path, COLORREF out[16][16], int &w, int &h)
 {
@@ -68,72 +49,71 @@ static void loadTexPixels(const wchar_t *path, COLORREF out[16][16], int &w, int
 void Renderer::loadBlockTextures()
 {
     int tw, th;
-    // 草方块 0-2
+
     loadTexPixels(L"../assert/texture/grass_block_top.png", m_texPixels[0], tw, th); m_texW[0] = tw; m_texH[0] = th;
     loadTexPixels(L"../assert/texture/grass_block_side.png", m_texPixels[1], tw, th); m_texW[1] = tw; m_texH[1] = th;
     loadTexPixels(L"../assert/texture/grass_block_bottom.png", m_texPixels[2], tw, th); m_texW[2] = tw; m_texH[2] = th;
-    // 泥土 3-5
+
     loadTexPixels(L"../assert/texture/dirt_top.png", m_texPixels[3], tw, th); m_texW[3] = tw; m_texH[3] = th;
     loadTexPixels(L"../assert/texture/dirt_side.png", m_texPixels[4], tw, th); m_texW[4] = tw; m_texH[4] = th;
     loadTexPixels(L"../assert/texture/dirt_bottom.png", m_texPixels[5], tw, th); m_texW[5] = tw; m_texH[5] = th;
-    // 树干 6-8
+
     loadTexPixels(L"../assert/texture/oak_log_top.png", m_texPixels[6], tw, th); m_texW[6] = tw; m_texH[6] = th;
     loadTexPixels(L"../assert/texture/oak_log_side.png", m_texPixels[7], tw, th); m_texW[7] = tw; m_texH[7] = th;
     loadTexPixels(L"../assert/texture/oak_log_bottom.png", m_texPixels[8], tw, th); m_texW[8] = tw; m_texH[8] = th;
-    // 树叶 9-11
+
     loadTexPixels(L"../assert/texture/oak_leaves_top.png", m_texPixels[9], tw, th); m_texW[9] = tw; m_texH[9] = th;
     loadTexPixels(L"../assert/texture/oak_leaves_side.png", m_texPixels[10], tw, th); m_texW[10] = tw; m_texH[10] = th;
     loadTexPixels(L"../assert/texture/oak_leaves_bottom.png", m_texPixels[11], tw, th); m_texW[11] = tw; m_texH[11] = th;
-    // 石头 12-14
+
     loadTexPixels(L"../assert/texture/stone_top.png", m_texPixels[12], tw, th); m_texW[12] = tw; m_texH[12] = th;
     loadTexPixels(L"../assert/texture/stone_side.png", m_texPixels[13], tw, th); m_texW[13] = tw; m_texH[13] = th;
     loadTexPixels(L"../assert/texture/stone_bottom.png", m_texPixels[14], tw, th); m_texW[14] = tw; m_texH[14] = th;
-    // 木板 15-17
+
     loadTexPixels(L"../assert/texture/oak_planks_top.png", m_texPixels[15], tw, th); m_texW[15] = tw; m_texH[15] = th;
     loadTexPixels(L"../assert/texture/oak_planks_side.png", m_texPixels[16], tw, th); m_texW[16] = tw; m_texH[16] = th;
     loadTexPixels(L"../assert/texture/oak_planks_bottom.png", m_texPixels[17], tw, th); m_texW[17] = tw; m_texH[17] = th;
-    // 木棍 18-20（无方块贴图）
-    // 工作台 21-23
+
     loadTexPixels(L"../assert/texture/crafting_table_top.png", m_texPixels[21], tw, th); m_texW[21] = tw; m_texH[21] = th;
     loadTexPixels(L"../assert/texture/crafting_table_front.png", m_texPixels[22], tw, th); m_texW[22] = tw; m_texH[22] = th;
     loadTexPixels(L"../assert/texture/crafting_table_bottom.png", m_texPixels[23], tw, th); m_texW[23] = tw; m_texH[23] = th;
-    // 钻石矿 24-26
+
     loadTexPixels(L"../assert/texture/diamond_ore_top.png", m_texPixels[24], tw, th); m_texW[24] = tw; m_texH[24] = th;
     loadTexPixels(L"../assert/texture/diamond_ore_side.png", m_texPixels[25], tw, th); m_texW[25] = tw; m_texH[25] = th;
     loadTexPixels(L"../assert/texture/diamond_ore_bottom.png", m_texPixels[26], tw, th); m_texW[26] = tw; m_texH[26] = th;
-    // 金矿 27-29
+
     loadTexPixels(L"../assert/texture/gold_ore_top.png", m_texPixels[27], tw, th); m_texW[27] = tw; m_texH[27] = th;
     loadTexPixels(L"../assert/texture/gold_ore_side.png", m_texPixels[28], tw, th); m_texW[28] = tw; m_texH[28] = th;
     loadTexPixels(L"../assert/texture/gold_ore_bottom.png", m_texPixels[29], tw, th); m_texW[29] = tw; m_texH[29] = th;
-    // 铁矿 30-32
+
     loadTexPixels(L"../assert/texture/iron_ore_top.png", m_texPixels[30], tw, th); m_texW[30] = tw; m_texH[30] = th;
     loadTexPixels(L"../assert/texture/iron_ore_side.png", m_texPixels[31], tw, th); m_texW[31] = tw; m_texH[31] = th;
     loadTexPixels(L"../assert/texture/iron_ore_bottom.png", m_texPixels[32], tw, th); m_texW[32] = tw; m_texH[32] = th;
-    // 钻石块 33-35
+
     loadTexPixels(L"../assert/texture/diamond_block_top.png", m_texPixels[33], tw, th); m_texW[33] = tw; m_texH[33] = th;
     loadTexPixels(L"../assert/texture/diamond_block_side.png", m_texPixels[34], tw, th); m_texW[34] = tw; m_texH[34] = th;
     loadTexPixels(L"../assert/texture/diamond_block_bottom.png", m_texPixels[35], tw, th); m_texW[35] = tw; m_texH[35] = th;
-    // 金块 36-38
+
     loadTexPixels(L"../assert/texture/gold_block_top.png", m_texPixels[36], tw, th); m_texW[36] = tw; m_texH[36] = th;
     loadTexPixels(L"../assert/texture/gold_block_side.png", m_texPixels[37], tw, th); m_texW[37] = tw; m_texH[37] = th;
     loadTexPixels(L"../assert/texture/gold_block_bottom.png", m_texPixels[38], tw, th); m_texW[38] = tw; m_texH[38] = th;
-    // 铁块 39-41
+
     loadTexPixels(L"../assert/texture/iron_block_top.png", m_texPixels[39], tw, th); m_texW[39] = tw; m_texH[39] = th;
     loadTexPixels(L"../assert/texture/iron_block_side.png", m_texPixels[40], tw, th); m_texW[40] = tw; m_texH[40] = th;
     loadTexPixels(L"../assert/texture/iron_block_bottom.png", m_texPixels[41], tw, th); m_texW[41] = tw; m_texH[41] = th;
-    // 圆石 42-44
+
     loadTexPixels(L"../assert/texture/cobblestone_top.png", m_texPixels[42], tw, th); m_texW[42] = tw; m_texH[42] = th;
     loadTexPixels(L"../assert/texture/cobblestone_side.png", m_texPixels[43], tw, th); m_texW[43] = tw; m_texH[43] = th;
     loadTexPixels(L"../assert/texture/cobblestone_bottom.png", m_texPixels[44], tw, th); m_texW[44] = tw; m_texH[44] = th;
-    // 煤矿 45-47
+
     loadTexPixels(L"../assert/texture/coal_ore_top.png", m_texPixels[45], tw, th); m_texW[45] = tw; m_texH[45] = th;
     loadTexPixels(L"../assert/texture/coal_ore_side.png", m_texPixels[46], tw, th); m_texW[46] = tw; m_texH[46] = th;
     loadTexPixels(L"../assert/texture/coal_ore_bottom.png", m_texPixels[47], tw, th); m_texW[47] = tw; m_texH[47] = th;
-    // 煤炭块 48-50
+
     loadTexPixels(L"../assert/texture/coal_block_top.png", m_texPixels[48], tw, th); m_texW[48] = tw; m_texH[48] = th;
     loadTexPixels(L"../assert/texture/coal_block_side.png", m_texPixels[49], tw, th); m_texW[49] = tw; m_texH[49] = th;
     loadTexPixels(L"../assert/texture/coal_block_bottom.png", m_texPixels[50], tw, th); m_texW[50] = tw; m_texH[50] = th;
-    // 熔炉 51-54 (top, side, side_on, bottom — front 用 side)
+
     loadTexPixels(L"../assert/texture/furnace_top.png", m_texPixels[51], tw, th); m_texW[51] = tw; m_texH[51] = th;
     loadTexPixels(L"../assert/texture/furnace_side.png", m_texPixels[52], tw, th); m_texW[52] = tw; m_texH[52] = th;
     loadTexPixels(L"../assert/texture/furnace_bottom.png", m_texPixels[53], tw, th); m_texW[53] = tw; m_texH[53] = th;
@@ -144,7 +124,7 @@ void Renderer::loadBlockTextures()
 
 int Renderer::blockTexId(int blockType, int face)
 {
-    // 只有可放置的实体方块才有贴图
+
     switch (blockType)
     {
         case BLOCK_GRASS:           return 0 + face;
@@ -164,7 +144,7 @@ int Renderer::blockTexId(int blockType, int face)
         case BLOCK_COAL_ORE:        return 45 + face;
         case BLOCK_COAL_BLOCK:      return 48 + face;
         case BLOCK_FURNACE:
-            // 侧面：活跃时显示 furnace_side_on
+
             if (face == 1 && m_furnaceActive) return 54;
             return 51 + face;
         default: return -1;
@@ -202,77 +182,71 @@ COLORREF Renderer::sampleTexture(int texId, double tu, double tv) const
     return m_texPixels[texId][py][px];
 }
 
-
-// ============================================================================
-// 热键栏
-// ============================================================================
-
-// 图标路径数组，索引 = blockType（1~60），0 未使用
 static const wchar_t *kHotbarIcons[MAX_BLOCK_TYPE] = {
-    L"",  // 0: AIR
-    L"../assert/gui/item/grass_block.png",        // 1
-    L"../assert/gui/item/dirt.png",                // 2
-    L"../assert/gui/item/oak_log.png",             // 3
-    L"../assert/gui/item/oak_leaves.png",          // 4
-    L"../assert/gui/item/stone.png",               // 5
-    L"../assert/gui/item/oak_planks.png",          // 6
-    L"../assert/gui/item/stick.png",               // 7
-    L"../assert/gui/item/crafting_table.png",      // 8
-    L"../assert/gui/item/diamond_ore.png",         // 9
-    L"../assert/gui/item/gold_ore.png",            // 10
-    L"../assert/gui/item/iron_ore.png",            // 11
-    L"../assert/gui/item/diamond_block.png",       // 12
-    L"../assert/gui/item/gold_block.png",          // 13
-    L"../assert/gui/item/iron_block.png",          // 14
-    L"../assert/gui/item/diamond.png",             // 15
-    L"../assert/gui/item/gold_ingot.png",          // 16
-    L"../assert/gui/item/iron_ingot.png",          // 17
-    L"../assert/gui/item/gold_nugget.png",         // 18
-    L"../assert/gui/item/iron_nugget.png",         // 19
-    L"../assert/gui/item/apple.png",               // 20
-    L"../assert/gui/item/golden_apple.png",        // 21
-    L"../assert/gui/item/wooden_pickaxe.png",      // 22
-    L"../assert/gui/item/wooden_axe.png",          // 23
-    L"../assert/gui/item/wooden_shovel.png",       // 24
-    L"../assert/gui/item/wooden_sword.png",        // 25
-    L"../assert/gui/item/wooden_hoe.png",          // 26
-    L"../assert/gui/item/stone_pickaxe.png",       // 27
-    L"../assert/gui/item/stone_axe.png",           // 28
-    L"../assert/gui/item/stone_shovel.png",        // 29
-    L"../assert/gui/item/stone_sword.png",         // 30
-    L"../assert/gui/item/stone_hoe.png",           // 31
-    L"../assert/gui/item/iron_pickaxe.png",        // 32
-    L"../assert/gui/item/iron_axe.png",            // 33
-    L"../assert/gui/item/iron_shovel.png",         // 34
-    L"../assert/gui/item/iron_sword.png",          // 35
-    L"../assert/gui/item/iron_hoe.png",            // 36
-    L"../assert/gui/item/iron_helmet.png",         // 37
-    L"../assert/gui/item/iron_chestplate.png",     // 38
-    L"../assert/gui/item/iron_leggings.png",       // 39
-    L"../assert/gui/item/iron_boots.png",          // 40
-    L"../assert/gui/item/golden_pickaxe.png",      // 41
-    L"../assert/gui/item/golden_axe.png",          // 42
-    L"../assert/gui/item/golden_shovel.png",       // 43
-    L"../assert/gui/item/golden_sword.png",        // 44
-    L"../assert/gui/item/golden_hoe.png",          // 45
-    L"../assert/gui/item/golden_helmet.png",       // 46
-    L"../assert/gui/item/golden_chestplate.png",   // 47
-    L"../assert/gui/item/golden_leggings.png",     // 48
-    L"../assert/gui/item/golden_boots.png",        // 49
-    L"../assert/gui/item/diamond_pickaxe.png",     // 50
-    L"../assert/gui/item/diamond_axe.png",         // 51
-    L"../assert/gui/item/diamond_shovel.png",      // 52
-    L"../assert/gui/item/diamond_sword.png",       // 53
-    L"../assert/gui/item/diamond_hoe.png",         // 54
-    L"../assert/gui/item/diamond_helmet.png",      // 55
-    L"../assert/gui/item/diamond_chestplate.png",  // 56
-    L"../assert/gui/item/diamond_leggings.png",    // 57
-    L"../assert/gui/item/diamond_boots.png",       // 58
-    L"../assert/gui/item/cobblestone.png",        // 59
-    L"../assert/gui/item/coal_ore.png",           // 60
-    L"../assert/gui/item/coal.png",               // 61
-    L"../assert/gui/item/coal_block.png",         // 62
-    L"../assert/gui/item/furnace.png",            // 63
+    L"",
+    L"../assert/gui/item/grass_block.png",
+    L"../assert/gui/item/dirt.png",
+    L"../assert/gui/item/oak_log.png",
+    L"../assert/gui/item/oak_leaves.png",
+    L"../assert/gui/item/stone.png",
+    L"../assert/gui/item/oak_planks.png",
+    L"../assert/gui/item/stick.png",
+    L"../assert/gui/item/crafting_table.png",
+    L"../assert/gui/item/diamond_ore.png",
+    L"../assert/gui/item/gold_ore.png",
+    L"../assert/gui/item/iron_ore.png",
+    L"../assert/gui/item/diamond_block.png",
+    L"../assert/gui/item/gold_block.png",
+    L"../assert/gui/item/iron_block.png",
+    L"../assert/gui/item/diamond.png",
+    L"../assert/gui/item/gold_ingot.png",
+    L"../assert/gui/item/iron_ingot.png",
+    L"../assert/gui/item/gold_nugget.png",
+    L"../assert/gui/item/iron_nugget.png",
+    L"../assert/gui/item/apple.png",
+    L"../assert/gui/item/golden_apple.png",
+    L"../assert/gui/item/wooden_pickaxe.png",
+    L"../assert/gui/item/wooden_axe.png",
+    L"../assert/gui/item/wooden_shovel.png",
+    L"../assert/gui/item/wooden_sword.png",
+    L"../assert/gui/item/wooden_hoe.png",
+    L"../assert/gui/item/stone_pickaxe.png",
+    L"../assert/gui/item/stone_axe.png",
+    L"../assert/gui/item/stone_shovel.png",
+    L"../assert/gui/item/stone_sword.png",
+    L"../assert/gui/item/stone_hoe.png",
+    L"../assert/gui/item/iron_pickaxe.png",
+    L"../assert/gui/item/iron_axe.png",
+    L"../assert/gui/item/iron_shovel.png",
+    L"../assert/gui/item/iron_sword.png",
+    L"../assert/gui/item/iron_hoe.png",
+    L"../assert/gui/item/iron_helmet.png",
+    L"../assert/gui/item/iron_chestplate.png",
+    L"../assert/gui/item/iron_leggings.png",
+    L"../assert/gui/item/iron_boots.png",
+    L"../assert/gui/item/golden_pickaxe.png",
+    L"../assert/gui/item/golden_axe.png",
+    L"../assert/gui/item/golden_shovel.png",
+    L"../assert/gui/item/golden_sword.png",
+    L"../assert/gui/item/golden_hoe.png",
+    L"../assert/gui/item/golden_helmet.png",
+    L"../assert/gui/item/golden_chestplate.png",
+    L"../assert/gui/item/golden_leggings.png",
+    L"../assert/gui/item/golden_boots.png",
+    L"../assert/gui/item/diamond_pickaxe.png",
+    L"../assert/gui/item/diamond_axe.png",
+    L"../assert/gui/item/diamond_shovel.png",
+    L"../assert/gui/item/diamond_sword.png",
+    L"../assert/gui/item/diamond_hoe.png",
+    L"../assert/gui/item/diamond_helmet.png",
+    L"../assert/gui/item/diamond_chestplate.png",
+    L"../assert/gui/item/diamond_leggings.png",
+    L"../assert/gui/item/diamond_boots.png",
+    L"../assert/gui/item/cobblestone.png",
+    L"../assert/gui/item/coal_ore.png",
+    L"../assert/gui/item/coal.png",
+    L"../assert/gui/item/coal_block.png",
+    L"../assert/gui/item/furnace.png",
 };
 
 static const wchar_t *kBigIconPaths[MAX_BLOCK_TYPE] = {
@@ -308,17 +282,17 @@ static const wchar_t *kBigIconPaths[MAX_BLOCK_TYPE] = {
     L"../assert/gui/item/diamond_hoe.png",
     L"../assert/gui/item/diamond_helmet.png", L"../assert/gui/item/diamond_chestplate.png",
     L"../assert/gui/item/diamond_leggings.png", L"../assert/gui/item/diamond_boots.png",
-    L"../assert/gui/item/cobblestone.png",       // 59
-    L"../assert/gui/item/coal_ore.png",          // 60
-    L"../assert/gui/item/coal.png",              // 61
-    L"../assert/gui/item/coal_block.png",        // 62
-    L"../assert/gui/item/furnace.png",           // 63
+    L"../assert/gui/item/cobblestone.png",
+    L"../assert/gui/item/coal_ore.png",
+    L"../assert/gui/item/coal.png",
+    L"../assert/gui/item/coal_block.png",
+    L"../assert/gui/item/furnace.png",
 };
 
 void Renderer::loadHotbar()
 {
     bool bgOk = false;
-    // 加载 hotbar 背景
+
     {
         IMAGE img;
         loadimage(&img, L"../assert/gui/widget/hotbar.png");
@@ -334,7 +308,7 @@ void Renderer::loadHotbar()
             bgOk = true;
         }
     }
-    // 加载快捷栏图标（用 loadimage 缩放至槽位显示尺寸）
+
     double scale = (double) HB_HEIGHT / m_hbBgH;
     int iconSz = (int) (HB_SLOT_SIZE * scale);
     if (iconSz < 1) iconSz = 1;
@@ -361,7 +335,7 @@ void Renderer::loadHotbar()
             }
         }
     }
-    // 加载大图标（最邻近采样至 32x32）
+
     const int BIG = HB_ICON_SIZE * 2;
     for (int i = 1; i < MAX_BLOCK_TYPE; ++i)
     {
@@ -394,14 +368,13 @@ void Renderer::loadHotbar()
     m_hotbarBlockTypes[7] = BLOCK_AIR;
     m_hotbarBlockTypes[8] = BLOCK_AIR;
 
-    // 加载选中框 select.png（与 hotbar 同缩放比）
     {
         IMAGE selImg;
         loadimage(&selImg, L"../assert/gui/widget/select.png");
         int selW = selImg.getwidth(), selH = selImg.getheight();
         if (selW > 0 && selH > 0)
         {
-            // 按 hotbar 缩放比缩放至显示尺寸
+
             int dispW = (int) (selW * scale);
             int dispH = (int) (selH * scale);
             if (dispW < 1) dispW = 1;
@@ -420,7 +393,7 @@ void Renderer::loadHotbar()
         }
     }
 
-    m_hotbarLoaded = bgOk;  // 仅背景加载成功才允许绘制
+    m_hotbarLoaded = bgOk;
 }
 
 void Renderer::loadInventoryIcons()
@@ -452,7 +425,6 @@ void Renderer::drawBlockIcon(int screenX, int screenY, int size, int blockType, 
     int srcH = m_invIconH[blockType];
     if (pixels.empty() || srcW <= 0 || srcH <= 0) return;
 
-    // 直接缩放：原生分辨率 → 显示尺寸（最邻近采样）
     for (int dy = 0; dy < size; ++dy)
     {
         int py = screenY + dy;
@@ -472,14 +444,13 @@ void Renderer::drawBlockIcon(int screenX, int screenY, int size, int blockType, 
         }
     }
 
-    // 数量文字（右下角）
     if (count > 1)
     {
         wchar_t buf[8];
         swprintf(buf, 8, L"%d", count);
         SetBkMode(m_memDC, TRANSPARENT);
         SetTextColor(m_memDC, RGB(255, 255, 255));
-        // 使用小号字体（临时切换到更小的字号）
+
         HFONT smallFont = CreateFontW(12, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Minecraft AE");
@@ -496,17 +467,14 @@ void Renderer::drawHotbar(int selectedSlot, const int *hotbarBlockTypes, const i
 {
     if (!m_hotbarLoaded || !m_dibReady || m_hbBgW <= 0 || m_hbBgH <= 0) return;
 
-    // 使用传入的方块类型，否则回退到硬编码
     const int *types = hotbarBlockTypes ? hotbarBlockTypes : m_hotbarBlockTypes;
 
-    // 按高度 44 缩放，宽度自适应（保持比例）
     double scale = (double) HB_HEIGHT / m_hbBgH;
     int hbW = (int) (m_hbBgW * scale);
     int hbH = HB_HEIGHT;
     int hbX = (m_screenWidth - hbW) / 2;
     int hbY = m_screenHeight - hbH - 4;
 
-    // 绘制 hotbar 背景
     for (int dy = 0; dy < hbH; ++dy)
     {
         int sy = (int) (dy / scale);
@@ -523,7 +491,6 @@ void Renderer::drawHotbar(int selectedSlot, const int *hotbarBlockTypes, const i
         }
     }
 
-    // 绘制每个槽位的图标
     for (int slot = 0; slot < HOTBAR_SLOTS; ++slot)
     {
         int bt = types[slot];
@@ -552,7 +519,6 @@ void Renderer::drawHotbar(int selectedSlot, const int *hotbarBlockTypes, const i
             }
         }
 
-        // 数量文字（右下角）
         if (hotbarCounts && hotbarCounts[slot] > 1)
         {
             wchar_t buf[8];
@@ -571,11 +537,9 @@ void Renderer::drawHotbar(int selectedSlot, const int *hotbarBlockTypes, const i
         }
     }
 
-    // 绘制选中框（select.png 的 (3,3) 与选中槽位左上角对齐）
     if (!m_selectPixels.empty() && selectedSlot >= 0 && selectedSlot < HOTBAR_SLOTS)
     {
-        // 选中槽位原生左上角 = (3 + slot*20, 3)
-        // select 的 (3,3) 对上去 → select 绘制起点 = (slot*20*scale, 0) 相对 hbX,hbY
+
         int selX = hbX + (int) (selectedSlot * HB_SLOT_STEP * scale);
         int selY = hbY;
         for (int dy = 0; dy < m_selectH; ++dy)
@@ -587,7 +551,7 @@ void Renderer::drawHotbar(int selectedSlot, const int *hotbarBlockTypes, const i
             for (int dx = 0; dx < m_selectW; ++dx)
             {
                 COLORREF c = m_selectPixels[srcRow + dx];
-                if (c == 0) continue;  // 全透明跳过
+                if (c == 0) continue;
                 int px = selX + dx;
                 if (px >= 0 && px < m_screenWidth)
                     m_pBits[dstRow + px] = alphaBlend(m_pBits[dstRow + px], c);
@@ -595,15 +559,9 @@ void Renderer::drawHotbar(int selectedSlot, const int *hotbarBlockTypes, const i
         }
     }
 
-    // 刷新到屏幕
     HDC hdc = GetImageHDC();
     BitBlt(hdc, 0, 0, m_screenWidth, m_screenHeight, m_memDC, 0, 0, SRCCOPY);
 }
-
-
-// ============================================================================
-// 准星
-// ============================================================================
 
 void Renderer::drawCrosshair()
 {
@@ -615,10 +573,6 @@ void Renderer::drawCrosshair()
     line(cx - len, cy, cx + len, cy);
     line(cx, cy - len, cx, cy + len);
 }
-
-// ============================================================================
-// HUD
-// ============================================================================
 
 void Renderer::drawHUD(const Camera4D &cam)
 {
@@ -632,14 +586,10 @@ void Renderer::drawHUD(const Camera4D &cam)
     HFONT oldHudFont = m_hFont ? (HFONT) SelectObject(hdc, m_hFont) : nullptr;
     SetBkMode(hdc, TRANSPARENT);
 
-    // ========================================
-    // 左上角：XZW 三维坐标系可视化
-    // ========================================
     const int vpX = 10, vpY = 10, vpW = 150, vpH = 140;
     const int ox = vpX + vpW / 2, oy = vpY + vpH / 2 + 5;
     const double vs = 45.0;
 
-    // 黑底
     setfillcolor(BLACK);
     solidrectangle(vpX, vpY, vpX + vpW, vpY + vpH);
 
@@ -654,7 +604,6 @@ void Renderer::drawHUD(const Camera4D &cam)
 
     POINT oPt = proj3(0, 0, 0);
 
-    // ---- n 的垂直平面（半透明粉色四边形） ----
     Vec4 n3 = Vec4(o.x, 0.0, o.z, o.w);
     double nLen = vec4Length(n3);
     if (nLen > 1e-9) { n3 = vec4Scale(n3, 1.0 / nLen); }
@@ -682,7 +631,6 @@ void Renderer::drawHUD(const Camera4D &cam)
     setlinecolor(RGB(150, 100, 180));
     fillpolygon(pCorners, 4);
 
-    // ---- 坐标轴 ----
     auto drawArrow2 = [](POINT from, POINT to, COLORREF clr)
     {
         setlinecolor(clr);
@@ -700,7 +648,6 @@ void Renderer::drawHUD(const Camera4D &cam)
     settextcolor(RGB(100, 255, 100)); TextOutW(hdc, zPt.x + 2, zPt.y - 8, L"Z", 1);
     settextcolor(RGB(100, 150, 255)); TextOutW(hdc, wPt.x - 8, wPt.y - 18, L"W", 1);
 
-    // i（forward，黄色）
     Vec4 i3 = Vec4(f.x, 0.0, f.z, f.w);
     double iLen = vec4Length(i3);
     if (iLen > 1e-9) { i3 = vec4Scale(i3, 1.0 / iLen); }
@@ -708,7 +655,6 @@ void Renderer::drawHUD(const Camera4D &cam)
     drawArrow2(oPt, iP, RGB(255, 220, 50));
     settextcolor(RGB(255, 220, 50)); TextOutW(hdc, iP.x + 3, iP.y - 10, L"i", 1);
 
-    // j（right，青色）
     Vec4 j3 = Vec4(r.x, 0.0, r.z, r.w);
     double jLen = vec4Length(j3);
     if (jLen > 1e-9) { j3 = vec4Scale(j3, 1.0 / jLen); }
@@ -716,7 +662,6 @@ void Renderer::drawHUD(const Camera4D &cam)
     drawArrow2(oPt, jP, RGB(50, 220, 220));
     settextcolor(RGB(50, 220, 220)); TextOutW(hdc, jP.x + 3, jP.y - 10, L"j", 1);
 
-    // n（over，粉色法向）
     n3 = Vec4(o.x, 0.0, o.z, o.w);
     nLen = vec4Length(n3);
     if (nLen > 1e-9) { n3 = vec4Scale(n3, 1.0 / nLen); }
@@ -724,9 +669,6 @@ void Renderer::drawHUD(const Camera4D &cam)
     drawArrow2(oPt, nP, RGB(255, 120, 255));
     settextcolor(RGB(255, 120, 255)); TextOutW(hdc, nP.x + 3, nP.y - 10, L"n", 1);
 
-    // ========================================
-    // FPS + 诊断（右上角，F3 切换）
-    // ========================================
     if (m_showHUD)
     {
         settextcolor(RGB(255, 255, 255));
@@ -759,11 +701,8 @@ void Renderer::drawHUD(const Camera4D &cam)
         swprintf(buf, 256, L"光栅化: %.1fms", m_msRaster);
         TextOutW(hdc, m_screenWidth - 200, 210, buf, (int) wcslen(buf));
         settextcolor(RGB(255, 255, 255));
-    } // m_showHUD
+    }
 
-    // ========================================
-    // 坐标信息（左侧，坐标系下方）
-    // ========================================
     int infoY = vpY + vpH + 5;
     swprintf(buf, 256, L"%.1f,  %.1f,  %.1f,  %.1f",
         pos.x, pos.y, pos.z, pos.w);
@@ -777,11 +716,6 @@ void Renderer::drawHUD(const Camera4D &cam)
     if (oldHudFont)
         SelectObject(hdc, oldHudFont);
 }
-
-
-// ============================================================================
-// GUI：背景捕获与高斯模糊
-// ============================================================================
 
 void Renderer::captureBackground()
 {
@@ -801,8 +735,6 @@ void Renderer::applyGaussianBlur()
     int w = m_screenWidth, h = m_screenHeight;
     std::vector<DWORD> temp(w * h);
 
-    // 7-tap binomial kernel: [1, 6, 15, 20, 15, 6, 1] / 64
-    // 4 次完整迭代 → 等效于 ~25-tap 核，sigma ≈ 3.5，强模糊
     constexpr int K = 7;
     constexpr int weights[K] = { 1, 6, 15, 20, 15, 6, 1 };
     constexpr int radius = K / 2;
@@ -810,7 +742,7 @@ void Renderer::applyGaussianBlur()
 
     for (int iter = 0; iter < ITERATIONS; ++iter)
     {
-        // ---- 水平模糊 ----
+
         for (int y = 0; y < h; ++y)
         {
             int rowBase = y * w;
@@ -837,7 +769,6 @@ void Renderer::applyGaussianBlur()
             }
         }
 
-        // ---- 垂直模糊 ----
         for (int y = 0; y < h; ++y)
         {
             int rowBase = y * w;
@@ -881,10 +812,6 @@ void Renderer::flushToScreen()
     BitBlt(hdc, 0, 0, m_screenWidth, m_screenHeight, m_memDC, 0, 0, SRCCOPY);
 }
 
-// ============================================================================
-// GUI：图片绘制
-// ============================================================================
-
 void Renderer::drawImageCentered(IMAGE *img)
 {
     if (!img || !m_dibReady) return;
@@ -908,17 +835,12 @@ void Renderer::drawImageCentered(IMAGE *img)
             int px = ox + x;
             if (px < 0 || px >= m_screenWidth) continue;
             DWORD c = buf[srcRow + x];
-            // 跳过全透明（黑色背景也算——如果图片有 alpha，EasyX 会预乘到黑色）
-            // 这里简单跳过纯黑像素，适用于 Minecraft 风格 GUI
+
             if (c == 0 || c == RGB(0, 0, 0)) continue;
             m_pBits[dstRow + px] = alphaBlend(m_pBits[dstRow + px], c);
         }
     }
 }
-
-// ============================================================================
-// GUI：按钮绘制
-// ============================================================================
 
 void Renderer::drawButton(int x, int y, int w, int h,
     IMAGE *imgNormal, IMAGE *imgHover, IMAGE *imgActive,
@@ -932,7 +854,7 @@ void Renderer::drawButton(int x, int y, int w, int h,
 
     if (useImg)
     {
-        // 贴图已用 loadimage 预缩放到按钮大小，1:1 复制
+
         DWORD *buf = GetImageBuffer(useImg);
         int iw = useImg->getwidth();
         int ih = useImg->getheight();
@@ -957,10 +879,9 @@ void Renderer::drawButton(int x, int y, int w, int h,
             }
         }
 
-        // 2px 外边框：普通→黑色，悬停/按下→白色
         constexpr int BORDER_W = 2;
         const COLORREF borderColor = (hovered || pressed) ? RGB(255, 255, 255) : RGB(0, 0, 0);
-        // 上边界（图片上方）
+
         for (int dy = 0; dy < BORDER_W; ++dy)
         {
             int py = y - BORDER_W + dy;
@@ -973,7 +894,7 @@ void Renderer::drawButton(int x, int y, int w, int h,
                     m_pBits[dstRow + px] = borderColor;
             }
         }
-        // 下边界（图片下方）
+
         for (int dy = 0; dy < BORDER_W; ++dy)
         {
             int py = y + h + dy;
@@ -986,20 +907,20 @@ void Renderer::drawButton(int x, int y, int w, int h,
                     m_pBits[dstRow + px] = borderColor;
             }
         }
-        // 左右边界（仅中间段，上下已由上面覆盖）
+
         for (int dy = 0; dy < h; ++dy)
         {
             int py = y + dy;
             if (py < 0 || py >= m_screenHeight) continue;
             int dstRow = py * m_screenWidth;
-            // 左边界
+
             for (int bx = 0; bx < BORDER_W; ++bx)
             {
                 int px = x - BORDER_W + bx;
                 if (px >= 0 && px < m_screenWidth)
                     m_pBits[dstRow + px] = borderColor;
             }
-            // 右边界
+
             for (int bx = 0; bx < BORDER_W; ++bx)
             {
                 int px = x + w + bx;
@@ -1010,7 +931,7 @@ void Renderer::drawButton(int x, int y, int w, int h,
     }
     else
     {
-        // 无贴图时绘制纯色按钮
+
         COLORREF bg = pressed ? RGB(80, 80, 80) : (hovered ? RGB(140, 140, 140) : RGB(100, 100, 100));
         for (int dy = 0; dy < h; ++dy)
         {
@@ -1024,7 +945,7 @@ void Renderer::drawButton(int x, int y, int w, int h,
                 m_pBits[dstRow + px] = bg;
             }
         }
-        // 边框
+
         COLORREF border = hovered ? RGB(255, 255, 255) : RGB(180, 180, 180);
         for (int dx = 0; dx < w; ++dx)
         {
@@ -1040,7 +961,6 @@ void Renderer::drawButton(int x, int y, int w, int h,
         }
     }
 
-    // 绘制文字（使用大号 Minecraft AE 字体）
     if (text && text[0])
     {
         int tx = x + w / 2;

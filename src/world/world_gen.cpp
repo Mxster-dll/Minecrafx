@@ -1,13 +1,9 @@
-#include "world_gen.h"
+﻿#include "world_gen.h"
 #include "world.h"
 #include "../core/constant.h"
 #include "../game/inventory.h"
 #include <cmath>
 #include <cstdlib>
-
-// ============================================================================
-// 地形高度
-// ============================================================================
 
 int terrainHeight(int x, int z, int w)
 {
@@ -21,13 +17,9 @@ int terrainHeight(int x, int z, int w)
     return (int) std::floor(h);
 }
 
-// ============================================================================
-// 生存模式世界生成
-// ============================================================================
-
 void generateSurvivalWorld(World &world, int MX, int MZ, int MW)
 {
-    // 丘陵地形
+
     for (int x = 0; x < MX; ++x)
         for (int z = 0; z < MZ; ++z)
             for (int w = 0; w < MW; ++w)
@@ -43,7 +35,6 @@ void generateSurvivalWorld(World &world, int MX, int MZ, int MW)
                 }
             }
 
-    // 树木
     srand(42);
     for (int i = 0; i < 120; ++i)
     {
@@ -67,7 +58,6 @@ void generateSurvivalWorld(World &world, int MX, int MZ, int MW)
                 }
     }
 
-    // 矿物生成
     srand(12345);
     for (int i = 0; i < 800; ++i)
     {
@@ -90,7 +80,6 @@ void generateSurvivalWorld(World &world, int MX, int MZ, int MW)
         }
     }
 
-    // 额外煤矿（深层石头中）
     for (int i = 0; i < 600; ++i)
     {
         int ox = rand() % MX, oz = rand() % MZ, ow = rand() % MW;
@@ -107,10 +96,6 @@ void generateSurvivalWorld(World &world, int MX, int MZ, int MW)
     }
 }
 
-// ============================================================================
-// 创造模式世界生成
-// ============================================================================
-
 void generateCreativeWorld(World &world, int CX, int CZ, int CW)
 {
     for (int x = 0; x < CX; ++x)
@@ -118,10 +103,6 @@ void generateCreativeWorld(World &world, int CX, int CZ, int CW)
             for (int w = 0; w < CW; ++w)
                 world.set(IVec4(x, 0, z, w), BLOCK_GRASS);
 }
-
-// ============================================================================
-// 背包初始化
-// ============================================================================
 
 void initSurvivalInventory(Inventory &inv)
 {
@@ -134,9 +115,9 @@ void initCreativeInventory(Inventory &inv)
 {
     auto isExcluded = [](int id) -> bool
     {
-        // 木/石/铁/金/钻石 工具 (22-26, 27-31, 32-36, 41-45, 50-54)
+
         if (id >= 22 && id <= 54) return true;
-        // 盔甲 (37-40, 46-49, 55-58)
+
         if (id >= 37 && id <= 40) return true;
         if (id >= 46 && id <= 49) return true;
         if (id >= 55 && id <= 58) return true;

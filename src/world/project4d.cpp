@@ -1,4 +1,4 @@
-#include "project4d.h"
+﻿#include "project4d.h"
 #include "world.h"
 #include "camera.h"
 #include <cmath>
@@ -9,10 +9,6 @@
 #ifdef _OPENMP
 #include <omp.h>
 #endif
-
-// ============================================================================
-// Vec3 运算
-// ============================================================================
 
 Vec3 vec3Sub(const Vec3 &a, const Vec3 &b)
 {
@@ -31,12 +27,11 @@ double vec3Dot(const Vec3 &a, const Vec3 &b)
 
 Vec3 vec3Cross(const Vec3 &a, const Vec3 &b)
 {
-    // xzw 空间中的外积：(x,z,w) × (x',z',w')
-    // 按标准 3D 叉积公式，分量置换为 (x,z,w)
+
     return Vec3(
-        a.z * b.w - a.w * b.z,   // x 分量 = yz - zy → az*bw - aw*bz
-        a.w * b.x - a.x * b.w,   // z 分量 = zx - xz → aw*bx - ax*bw  (注意: 原本 y 分量)
-        a.x * b.z - a.z * b.x    // w 分量 = xy - yx → ax*bz - az*bx  (注意: 原本 z 分量)
+        a.z * b.w - a.w * b.z,
+        a.w * b.x - a.x * b.w,
+        a.x * b.z - a.z * b.x
     );
 }
 
@@ -53,14 +48,10 @@ double vec3Length(const Vec3 &v)
 Vec3 vec3Normalize(const Vec3 &v)
 {
     double len = vec3Length(v);
-    if (len < 1e-12) return Vec3(0, 0, 1);  // 退化时返回默认方向
+    if (len < 1e-12) return Vec3(0, 0, 1);
     double inv = 1.0 / len;
     return Vec3(v.x * inv, v.z * inv, v.w * inv);
 }
-
-// ============================================================================
-// Plane2D
-// ============================================================================
 
 Plane2D Plane2D::fromNormal(const Vec3 &normal, const Vec3 &pRef, double off)
 {
@@ -68,14 +59,12 @@ Plane2D Plane2D::fromNormal(const Vec3 &normal, const Vec3 &pRef, double off)
     plane.n = vec3Normalize(normal);
     plane.offset = off;
 
-    // p = pRef 去掉 n 方向分量后归一化
     double dot = vec3Dot(pRef, plane.n);
     Vec3 pRaw = vec3Sub(pRef, vec3Scale(plane.n, dot));
     double pLen = vec3Length(pRaw);
     if (pLen < 1e-12)
     {
-        // pRef 与 n 平行，构造一个垂直于 n 的任意向量
-        // 选与 n 差异最大的分量方向
+
         if (std::abs(plane.n.x) < 0.9)
             pRaw = Vec3(1, 0, 0);
         else
@@ -89,7 +78,6 @@ Plane2D Plane2D::fromNormal(const Vec3 &normal, const Vec3 &pRef, double off)
     }
     plane.p = pRaw;
 
-    // q = n × p
     plane.q = vec3Cross(plane.n, plane.p);
 
     return plane;
@@ -101,10 +89,6 @@ void Plane2D::project(const Vec3 &point, double &u, double &v) const
     v = vec3Dot(point, q);
 }
 
-// ============================================================================
-// 立方体-平面求交
-// ============================================================================
-
 PolyOnPlane intersectCubePlane(
     double x0, double x1,
     double z0, double z1,
@@ -113,27 +97,23 @@ PolyOnPlane intersectCubePlane(
 {
     PolyOnPlane result;
 
-    // 立方体 8 个顶点
     struct { double x, z, w; } verts[8] = {
         {x0, z0, w0}, {x1, z0, w0}, {x0, z1, w0}, {x1, z1, w0},
         {x0, z0, w1}, {x1, z0, w1}, {x0, z1, w1}, {x1, z1, w1}
     };
 
-    // 计算每个顶点到平面的有符号距离 d = n·v - offset
     double sd[8];
     for (int i = 0; i < 8; ++i)
     {
         sd[i] = plane.n.x * verts[i].x + plane.n.z * verts[i].z + plane.n.w * verts[i].w - plane.offset;
     }
 
-    // 12 条边（连接索引）
     struct { int a, b; } edges[12] = {
-        {0,1}, {2,3}, {4,5}, {6,7}, // x 方向
-        {0,2}, {1,3}, {4,6}, {5,7}, // z 方向
-        {0,4}, {1,5}, {2,6}, {3,7}  // w 方向
+        {0,1}, {2,3}, {4,5}, {6,7},
+        {0,2}, {1,3}, {4,6}, {5,7},
+        {0,4}, {1,5}, {2,6}, {3,7}
     };
 
-    // 收集交点
     double uArr[12], vArr[12];
     double oxArr[12], ozArr[12], owArr[12];
     int count = 0;
@@ -143,20 +123,18 @@ PolyOnPlane intersectCubePlane(
         int a = edges[e].a, b = edges[e].b;
         double da = sd[a], db = sd[b];
 
-        // 同侧无交点
         if ((da > 1e-12 && db > 1e-12) || (da < -1e-12 && db < -1e-12))
             continue;
 
-        // 线性插值求交点
         double t;
         if (std::abs(da - db) < 1e-12)
         {
-            t = 0.5;  // 退化：边在平面上
+            t = 0.5;
         }
         else
         {
             t = da / (da - db);
-            // 限制在 [0,1] 内
+
             if (t < 0.0) t = 0.0;
             if (t > 1.0) t = 1.0;
         }
@@ -167,7 +145,6 @@ PolyOnPlane intersectCubePlane(
             verts[a].w + t * (verts[b].w - verts[a].w)
         );
 
-        // 投影到平面坐标
         double u, v;
         plane.project(pt, u, v);
 
@@ -181,7 +158,6 @@ PolyOnPlane intersectCubePlane(
 
     if (count < 3) return result;
 
-    // 按角度排序顶点（绕中心逆时针）
     double cu = 0, cv = 0;
     for (int i = 0; i < count; ++i) { cu += uArr[i]; cv += vArr[i]; }
     cu /= count; cv /= count;
@@ -195,7 +171,6 @@ PolyOnPlane intersectCubePlane(
     }
     std::sort(idx, idx + count, [&](int a, int b) { return ang[a] < ang[b]; });
 
-    // 排序后线性去重
     int unique = 0;
     for (int i = 0; i < count; ++i)
     {
@@ -230,55 +205,42 @@ PolyOnPlane intersectCubePlane(
     return result;
 }
 
-// ============================================================================
-// Camera3D
-// ============================================================================
-
 Camera3D::Camera3D()
     : posU(0.0), posV(0.0), posY(10.0)
     , dirU(0.0), dirV(0.0), dirY(-1.0)
-    , fov(1.0472)       // 60°
+    , fov(1.0472)
     , nearPlane(0.001)
     , farPlane(1000.0)
 {}
-
-// ============================================================================
-// 3D→2D 投影
-// ============================================================================
 
 bool project3D(double u, double v, double y,
     const Camera3D &cam,
     int sw, int sh,
     int &sx, int &sy, double &depth)
 {
-    // 视线方向（调用方保证已归一化）
+
     double fU = cam.dirU, fV = cam.dirV, fY = cam.dirY;
 
-    // right = forward × worldUp (worldUp = (0,0,1))
     double rU = fV;
     double rV = -fU;
     double rLen = std::sqrt(rU * rU + rV * rV);
     if (rLen < 1e-12) { rU = 1; rV = 0; }
     else { rU /= rLen; rV /= rLen; }
 
-    // up = right × forward
     double upU = rV * fY;
     double upV = -rU * fY;
     double upY = rU * fV - rV * fU;
 
-    // 物体到相机的向量
     double dU = u - cam.posU;
     double dV = v - cam.posV;
     double dY = y - cam.posY;
 
-    // 相机空间坐标
     double camX = rU * dU + rV * dV;
     double camY = upU * dU + upV * dV + upY * dY;
     double camZ = fU * dU + fV * dV + fY * dY;
 
     if (camZ < cam.nearPlane || camZ > cam.farPlane) return false;
 
-    // 透视投影
     double halfH = std::tan(cam.fov * 0.5) * camZ;
     double halfW = halfH * static_cast<double>(sw) / static_cast<double>(sh);
 
@@ -292,11 +254,6 @@ bool project3D(double u, double v, double y,
     return (sx >= -sw && sx < sw * 2 && sy >= -sh && sy < sh * 2);
 }
 
-// ============================================================================
-// 3D 地图生成
-// ============================================================================
-
-/** @brief 为单个方块计算棱柱和 AABB，不可见时 prism.u 为空 */
 static bool computeBlockPrism(int bx, int by, int bz, int bw,
     const Vec4 &camPos, double sp, double blockHalf, const Plane2D &camPlane,
     COLORREF(*getColor)(int, int, int, int),
@@ -344,7 +301,6 @@ Map3D generateMap3D(const World &world, const Camera4D &cam4D,
     Plane2D camPlane = map.plane;
     camPlane.offset = 0.0;
 
-    // ---- Phase 1: 收集通过廉价预判的候选方块 ----
     struct Candidate { int bx, by, bz, bw; };
     std::vector<Candidate> candidates;
     candidates.reserve(20000);
@@ -352,7 +308,7 @@ Map3D generateMap3D(const World &world, const Camera4D &cam4D,
     for (const auto &[chunkPos, chunk] : world.getChunks())
     {
         if (chunk.empty()) continue;
-        // Chunk 级快测
+
         {
             int sz = World::CHUNK_SIZE;
             double cx0 = (chunk.cx() * sz) * sp - camPos.x - blockHalf;
@@ -375,7 +331,7 @@ Map3D generateMap3D(const World &world, const Camera4D &cam4D,
         {
             IVec4 blk = chunk.localToWorld(localPos.x, localPos.y, localPos.z, localPos.w);
             int bx = blk.x, by = blk.y, bz = blk.z, bw = blk.w;
-            // 方块级廉价预判
+
             double x0 = bx * sp - camPos.x - blockHalf;
             double x1 = bx * sp - camPos.x + blockHalf;
             double z0 = bz * sp - camPos.z - blockHalf;
@@ -395,7 +351,6 @@ Map3D generateMap3D(const World &world, const Camera4D &cam4D,
         }
     }
 
-    // ---- Phase 2: OpenMP 并行求交 ----
     size_t N = candidates.size();
     int nThreads = 1;
 #ifdef _OPENMP
@@ -406,7 +361,7 @@ Map3D generateMap3D(const World &world, const Camera4D &cam4D,
 
     std::vector<std::vector<Prism3D>> threadPrisms(nThreads);
     std::vector<std::vector<Map3D::AABB>> threadAABBs(nThreads);
-    std::vector<std::vector<IVec4>> threadPos(nThreads);  // 每个棱柱对应的世界坐标
+    std::vector<std::vector<IVec4>> threadPos(nThreads);
 
 #pragma omp parallel if(nThreads > 1) num_threads(nThreads)
     {
@@ -435,7 +390,6 @@ Map3D generateMap3D(const World &world, const Camera4D &cam4D,
         }
     }
 
-    // ---- Phase 3: 合并 ----
     size_t total = 0;
     for (auto &tp : threadPrisms) total += tp.size();
     map.prisms.reserve(total);
@@ -454,17 +408,12 @@ Map3D generateMap3D(const World &world, const Camera4D &cam4D,
     return map;
 }
 
-// ============================================================================
-// 增量更新单个方块
-// ============================================================================
-
 void map3D_updateBlock(Map3D &map, const IVec4 &worldPos, int blockType,
     const Camera4D &cam4D, double blockHalf,
     COLORREF(*getColor)(int, int, int, int))
 {
     if (!map.valid) return;
 
-    // ---- 移除旧棱柱 ----
     auto it = map.blockIndex.find(worldPos);
     if (it != map.blockIndex.end())
     {
@@ -473,11 +422,10 @@ void map3D_updateBlock(Map3D &map, const IVec4 &worldPos, int blockType,
 
         if (idx != last)
         {
-            // 用最后一个替换被删除项
+
             map.prisms[idx] = std::move(map.prisms[last]);
             map.aabbs[idx] = map.aabbs[last];
-            // 更新被移动方块的索引：需要找到它对应的 worldPos
-            // 遍历 blockIndex 找到 value==last 的 key
+
             for (auto &[pos, i] : map.blockIndex)
                 if (i == last) { i = idx; break; }
         }
@@ -486,10 +434,9 @@ void map3D_updateBlock(Map3D &map, const IVec4 &worldPos, int blockType,
         map.blockIndex.erase(it);
     }
 
-    // ---- 添加新方块（type>0） ----
     if (blockType > 0)
     {
-        // 必须使用 camRef4D 而非当前摄像机位置——地图中所有棱柱共用一个局部坐标系原点
+
         const Vec4 &camPos = map.camRef4D;
         double sp = blockHalf * 2.0;
         Plane2D camPlane = map.plane;
@@ -506,5 +453,3 @@ void map3D_updateBlock(Map3D &map, const IVec4 &worldPos, int blockType,
         }
     }
 }
-
-

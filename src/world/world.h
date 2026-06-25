@@ -1,11 +1,8 @@
-#pragma once
+﻿#pragma once
 
 #include <unordered_map>
 #include <functional>
 
-/**
- * @brief 4D 整数坐标（用于方块索引）
- */
 struct IVec4
 {
     int x, y, z, w;
@@ -19,9 +16,6 @@ struct IVec4
     }
 };
 
-/**
- * @brief std::hash 特化，使 IVec4 可用于 unordered_map
- */
 namespace std
 {
     template <>
@@ -29,7 +23,7 @@ namespace std
     {
         size_t operator()(const IVec4 &v) const noexcept
         {
-            // 使用位混合避免简单的 XOR 碰撞
+
             size_t h = 0;
             h ^= std::hash<int>{}(v.x) + 0x9e3779b9 + (h << 6) + (h >> 2);
             h ^= std::hash<int>{}(v.y) + 0x9e3779b9 + (h << 6) + (h >> 2);
@@ -39,10 +33,6 @@ namespace std
         }
     };
 }
-
-// ============================================================================
-// Chunk — 16x16x16x16 的方块子区域
-// ============================================================================
 
 class Chunk
 {
@@ -77,10 +67,6 @@ private:
     std::unordered_map<IVec4, int> m_blocks;
 };
 
-// ============================================================================
-// World — 基于 Chunk 的世界数据管理
-// ============================================================================
-
 class World
 {
 public:
@@ -101,5 +87,3 @@ public:
 private:
     std::unordered_map<IVec4, Chunk> m_chunks;
 };
-
-

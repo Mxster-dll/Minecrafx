@@ -1,10 +1,6 @@
-#include "game_screens.h"
+﻿#include "game_screens.h"
 #include "../core/constant.h"
 #include <functional>
-
-// ============================================================================
-// updateCraftingScreen — 背包 / 工作台通用界面
-// ============================================================================
 
 bool updateCraftingScreen(
     GameState &state,
@@ -50,7 +46,6 @@ bool updateCraftingScreen(
     static int  dragSrcSlot = -1;
     static bool didAutoPickup = false;
 
-    // ── 左键按下 ──
     if (mouseDown && hoveredSlot >= 0)
     {
         dragSrcSlot = hoveredSlot;
@@ -73,7 +68,6 @@ bool updateCraftingScreen(
             inventory.updateCraftingResult(craftMgr);
     }
 
-    // ── 左键释放 ──
     if (mouseUp)
     {
         bool wasCraft = (hoveredSlot >= CRAFT_BASE);
@@ -83,7 +77,7 @@ bool updateCraftingScreen(
             bool sameSlot = (hoveredSlot == dragSrcSlot);
             if (sameSlot && didAutoPickup)
             {
-                // 点按拿起，保留物品
+
             }
             else if (hoveredSlot >= 0)
             {
@@ -105,7 +99,6 @@ bool updateCraftingScreen(
             inventory.updateCraftingResult(craftMgr);
     }
 
-    // ── 右键 ──
     if (rightClick && hoveredSlot >= 0)
     {
         bool wasCraft = (hoveredSlot >= CRAFT_BASE);
@@ -129,7 +122,6 @@ bool updateCraftingScreen(
             inventory.updateCraftingResult(craftMgr);
     }
 
-    // ── 渲染 ──
     cleardevice();
     setbkcolor(RGB(10, 10, 30));
     renderer.drawBackground();
@@ -155,10 +147,6 @@ bool updateCraftingScreen(
     FlushBatchDraw();
     return true;
 }
-
-// ============================================================================
-// updateFurnaceScreen — 熔炉界面
-// ============================================================================
 
 bool updateFurnaceScreen(
     GameState &state,
@@ -262,7 +250,6 @@ bool updateFurnaceScreen(
             inventory.pickup(hoveredSlot, 1);
     }
 
-    // ── 渲染 ──
     cleardevice();
     setbkcolor(RGB(10, 10, 30));
     renderer.drawBackground();
@@ -292,7 +279,6 @@ bool updateFurnaceScreen(
     drawFurnSlot(56, 53, FURN_FU);
     drawFurnSlot(116, 35, FURN_OU);
 
-    // 燃烧进度条
     if (fs.active && imgBurnProgress.getwidth() > 0)
     {
         int progW = imgBurnProgress.getwidth();
@@ -334,7 +320,6 @@ bool updateFurnaceScreen(
         }
     }
 
-    // 燃料指示
     if (fs.active && imgLitProgress.getwidth() > 0)
     {
         double fuelRatio = (fs.fuelCapacity > 0.0)
@@ -400,10 +385,6 @@ bool updateFurnaceScreen(
     FlushBatchDraw();
     return true;
 }
-
-// ============================================================================
-// updatePauseScreen — 暂停界面
-// ============================================================================
 
 bool updatePauseScreen(
     GameState &state,

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <windows.h>
 #include "../core/constant.h"
@@ -13,14 +13,6 @@
 
 #include "game_state.h"
 
-/**
- * @brief 更新背包或工作台界面（2×2 / 3×3 合成）
- *
- * 处理物品拖放、合成结果拿取、右键操作。
- * 两个界面逻辑完全相同，仅背景图和合成模式不同。
- *
- * @return true 表示消费了本帧（调用方应 continue）
- */
 bool updateCraftingScreen(
     GameState &state,
     InputHandler &input,
@@ -33,10 +25,6 @@ bool updateCraftingScreen(
     const wchar_t *clickPath
 );
 
-/**
- * @brief 更新熔炉界面
- * @return true 表示消费了本帧
- */
 bool updateFurnaceScreen(
     GameState &state,
     InputHandler &input,
@@ -48,10 +36,6 @@ bool updateFurnaceScreen(
     IMAGE &imgLitProgress
 );
 
-/**
- * @brief 更新暂停界面
- * @return true 表示消费了本帧
- */
 bool updatePauseScreen(
     GameState &state,
     InputHandler &input,

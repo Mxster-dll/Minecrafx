@@ -1,4 +1,4 @@
-#include "thread_pool.h"
+﻿#include "thread_pool.h"
 
 ThreadPool::ThreadPool(int numThreads)
     : m_stop(false)
@@ -38,10 +38,8 @@ void ThreadPool::parallelRanges(int count, int numTasks,
     }
     m_cv.notify_all();
 
-    // 主线程也参与
     runTasks();
 
-    // 等待所有 worker 完成
     while (m_pending.load(std::memory_order_acquire) > 0)
         std::this_thread::yield();
 }

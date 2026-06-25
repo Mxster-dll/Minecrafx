@@ -1,8 +1,4 @@
-#include "block_data.h"
-
-// ============================================================================
-// 工具分类辅助
-// ============================================================================
+﻿#include "block_data.h"
 
 static inline bool isPickaxe(int t)
 {
@@ -32,7 +28,6 @@ static inline bool isSword(int t)
         t == BLOCK_GOLDEN_SWORD;
 }
 
-// 按工具材质返回系数：木=1.0, 石=0.5, 铁=0.4, 钻=0.3, 金=0.15
 static inline double pickSpeed(int t, double base)
 {
     if (t == BLOCK_GOLDEN_PICKAXE)  return base * 0.15;
@@ -69,67 +64,59 @@ static inline int pickTier(int t)
     return -1;
 }
 
-// ============================================================================
-// getMiningTime — 挖掘时间查找（单位：秒）
-// ============================================================================
-
 double getMiningTime(int blockType, int toolType)
 {
     switch (blockType)
     {
-        case BLOCK_GRASS:  // default=0.9s
+        case BLOCK_GRASS:
             if (isShovel(toolType)) return shovelSpeed(toolType, 0.5);
             return 0.9;
-        case BLOCK_DIRT:   // default=0.8s
+        case BLOCK_DIRT:
             if (isShovel(toolType)) return shovelSpeed(toolType, 0.4);
             return 0.8;
         case BLOCK_LOG:
-        case BLOCK_PLANKS: // default=3.0s
+        case BLOCK_PLANKS:
             if (isAxe(toolType)) return axeSpeed(toolType, 1.5);
             return 3.0;
-        case BLOCK_LEAVES: // default=0.3s
+        case BLOCK_LEAVES:
             if (isSword(toolType)) return 0.1;
             return 0.3;
-        case BLOCK_STONE:  // default=7.5s
+        case BLOCK_STONE:
             if (isPickaxe(toolType)) return pickSpeed(toolType, 1.2);
             return 7.5;
-        case BLOCK_CRAFTING_TABLE: // default=3.8s
+        case BLOCK_CRAFTING_TABLE:
             if (isAxe(toolType)) return axeSpeed(toolType, 1.9);
             return 3.8;
         case BLOCK_DIAMOND_ORE:
-        case BLOCK_GOLD_ORE:    // default=15s
+        case BLOCK_GOLD_ORE:
             if (isPickaxe(toolType)) return pickSpeed(toolType, 1.5);
             return 15.0;
-        case BLOCK_IRON_ORE:  // default=15s
+        case BLOCK_IRON_ORE:
             if (isPickaxe(toolType)) return pickSpeed(toolType, 0.8);
             return 15.0;
         case BLOCK_DIAMOND_BLOCK:
-        case BLOCK_IRON_BLOCK:    // default=25s
+        case BLOCK_IRON_BLOCK:
             if (isPickaxe(toolType)) return pickSpeed(toolType, 1.3);
             return 25.0;
-        case BLOCK_GOLD_BLOCK: // default=15s
+        case BLOCK_GOLD_BLOCK:
             if (isPickaxe(toolType)) return pickSpeed(toolType, 0.8);
             return 15.0;
-        case BLOCK_COBBLESTONE: // default=7.5s
+        case BLOCK_COBBLESTONE:
             if (isPickaxe(toolType)) return pickSpeed(toolType, 1.2);
             return 7.5;
-        case BLOCK_COAL_ORE:    // default=15s
+        case BLOCK_COAL_ORE:
             if (isPickaxe(toolType)) return pickSpeed(toolType, 0.8);
             return 15.0;
-        case BLOCK_COAL_BLOCK:  // default=15s
+        case BLOCK_COAL_BLOCK:
             if (isPickaxe(toolType)) return pickSpeed(toolType, 1.3);
             return 15.0;
-        case BLOCK_FURNACE:     // default=17.5s
+        case BLOCK_FURNACE:
             if (isPickaxe(toolType)) return pickSpeed(toolType, 1.5);
             return 17.5;
         default:
             return 1.0;
     }
 }
-
-// ============================================================================
-// canHarvest — 挖掘等级检查
-// ============================================================================
 
 bool canHarvest(int blockType, int toolType)
 {

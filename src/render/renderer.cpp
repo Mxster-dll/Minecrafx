@@ -1,4 +1,4 @@
-#include "renderer.h"
+﻿#include "renderer.h"
 #include "../core/constant.h"
 #include "thread_pool.h"
 #include <algorithm>
@@ -7,18 +7,12 @@
 #include <cwchar>
 #include <windows.h>
 
-// ============================================================================
-// ============================================================================
-// Alpha 混合：EasyX PNG 像素 (0xAARRGGBB) → DIB 像素 (0x00RRGGBB)
-// ============================================================================
-
-/** @brief 将 ARGB 源像素叠加到 DIB 目标像素，返回混合结果 */
 static inline DWORD alphaBlend(DWORD dst, DWORD src)
 {
     unsigned int a = (src >> 24) & 0xFF;
-    if (a == 0) return dst;                     // 全透明，保持目标
-    if (a == 255) return src & 0x00FFFFFF;       // 不透明，直接覆盖（去掉 alpha 字节）
-    // 半透明混合
+    if (a == 0) return dst;
+    if (a == 255) return src & 0x00FFFFFF;
+
     unsigned int sr = (src >> 16) & 0xFF;
     unsigned int sg = (src >> 8) & 0xFF;
     unsigned int sb = src & 0xFF;
@@ -31,10 +25,6 @@ static inline DWORD alphaBlend(DWORD dst, DWORD src)
     db = (sb * a + db * invA) / 255;
     return RGB(dr, dg, db);
 }
-
-// ============================================================================
-// 构造 / 析构
-// ============================================================================
 
 Renderer::Renderer(int screenWidth, int screenHeight)
     : m_screenWidth(screenWidth)
@@ -73,7 +63,6 @@ Renderer::Renderer(int screenWidth, int screenHeight)
     memset(m_texW, 0, sizeof(m_texW));
     memset(m_texH, 0, sizeof(m_texH));
 
-    // 预创建 DIB
     HDC hdc = GetImageHDC();
     BITMAPINFO bmi = {};
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -92,7 +81,6 @@ Renderer::Renderer(int screenWidth, int screenHeight)
         m_pBits = bits;
         m_dibReady = true;
 
-        // 加载 Minecraft AE 字体（小号：HUD / 大号：按钮）
         m_hFont = CreateFontW(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
@@ -111,7 +99,7 @@ Renderer::~Renderer()
     delete m_pool;
     if (m_dibReady)
     {
-        // 恢复原字体
+
         if (m_hOldFont)
             SelectObject(m_memDC, m_hOldFont);
         if (m_hFont)
@@ -125,24 +113,10 @@ Renderer::~Renderer()
     }
 }
 
-
-// ============================================================================
-// 核心渲染管线：以下方法的实现移至此文件
-// UI / 纹理 / GUI 方法已拆分到 renderer_ui.cpp
-// ============================================================================
-
-// ============================================================================
-// 缓冲管理
-// ============================================================================
-
 void Renderer::resetBuffers()
 {
     std::fill(m_zbuf.begin(), m_zbuf.end(), 1e30);
 }
-
-// ============================================================================
-// 主渲染入口
-// ============================================================================
 
 void Renderer::renderWorld(const World &world, const Camera4D &cam)
 {
@@ -150,14 +124,12 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
 
     ++m_frameCount;
 
-    // 1. 清空帧缓冲
     resetBuffers();
 
-    // 天空/虚空渐变：地平线在俯角 45°（-0.785 rad），随俯仰角动态变化
     {
         double pitch = cam.getPitch();
-        constexpr double fov = 1.0472;                // 垂直视场角 60°
-        constexpr double horizonOffset = 0.785;        // 地平线偏移：俯视 45° 开始渐变
+        constexpr double fov = 1.0472;
+        constexpr double horizonOffset = 0.785;
         DWORD *bits = m_pBits;
         for (int y = 0; y < m_screenHeight; ++y)
         {
@@ -165,20 +137,18 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
             double angle = pitch + t * fov + horizonOffset;
 
             int r, g, b;
-            // 用 smoothstep 在 horizon ±8° 范围内平滑过渡
-            double blend = angle / 0.14;               // ~8° 过渡带
+
+            double blend = angle / 0.14;
             if (blend > 1.0)  blend = 1.0;
             if (blend < 0.0)  blend = 0.0;
-            // smoothstep: 3t² - 2t³
+
             double w = blend * blend * (3.0 - 2.0 * blend);
 
-            // 天空色（地平线以上）
             double s = (angle + 0.5) / 1.8;  if (s > 1.0) s = 1.0; if (s < 0.0) s = 0.0;
             int sr = (int) (180 * (1.0 - s) + 60 * s);
             int sg = (int) (220 * (1.0 - s) + 140 * s);
             int sb = (int) (255 * (1.0 - s) + 230 * s);
 
-            // 虚空色（地平线以下）
             double v = -(angle - 0.5) / 1.8; if (v > 1.0) v = 1.0; if (v < 0.0) v = 0.0;
             int vr = (int) (30 * (1.0 - v) + 2 * v);
             int vg = (int) (30 * (1.0 - v) + 2 * v);
@@ -188,7 +158,6 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
             g = (int) (sg * w + vg * (1.0 - w));
             b = (int) (sb * w + vb * (1.0 - w));
 
-            // EasyX 32-bit DIB 使用 RGBA 字节序
             DWORD color = (r << 16) | (g << 8) | b;
             DWORD *row = bits + y * m_screenWidth;
             for (int x = 0; x < m_screenWidth; ++x)
@@ -196,10 +165,8 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
         }
     }
 
-    // 2. 获取观察平面
     Plane2D plane = cam.getViewPlane();
 
-    // 3. 诊断计数初始化
     m_diagTotal = static_cast<int>(world.totalBlocks());
     m_diagSlice = 0;
     m_diagOccl = 0;
@@ -207,7 +174,6 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
     m_diagFaces = 0;
     m_diagFaceCull = 0;
 
-    // 4. 收集可见方块（含统计）
     clock_t t0 = clock();
     int preOccl = 0;
     std::vector<IVec4> visibleBlocks = collectVisibleBlocks(world, cam, plane, preOccl);
@@ -217,12 +183,12 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
 
     if (!visibleBlocks.empty())
     {
-        // 5. 设置 3D 相机（提前，用于视锥体裁剪）
+
         Camera3D cam3d;
         {
             double pitch = cam.getPitch();
             double sP = std::sin(pitch), cP = std::cos(pitch);
-            // 3D 相机位于相机相对空间原点（多边形顶点已在相机相对坐标中）
+
             cam3d.posU = 0.0;
             cam3d.posV = 0.0;
             cam3d.posY = 0.0;
@@ -231,7 +197,6 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
             cam3d.dirY = sP;
         }
 
-        // 6. 4D→3D：方块 → 三角形（多线程并行）
         {
             std::vector<Tri3D> allTris;
             allTris.reserve(visibleBlocks.size() * 12);
@@ -239,7 +204,6 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
             double half = m_blockHalf, sp = half * 2.0;
             const Vec4 &camPos = cam.getPos();
 
-            // 预计算视锥体裁剪用的 camera right/up（所有线程共享只读）
             double rU = cam3d.dirV, rV = -cam3d.dirU;
             double rLen = std::sqrt(rU * rU + rV * rV);
             rU /= rLen; rV /= rLen;
@@ -247,7 +211,6 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
 
             clock_t tLoop = clock();
 
-            // 决定线程数
             size_t totalBlk = visibleBlocks.size();
             int numThreads = m_pool->workerCount();
             if (numThreads > 16) numThreads = 16;
@@ -295,7 +258,6 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
 
             m_diagThreads = numThreads;
 
-            // 合并结果
             m_diagGeom = 0;
             for (int t = 0; t < numThreads; ++t)
             {
@@ -306,20 +268,20 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
             }
 
             m_msBlock2Tri = static_cast<double>(clock() - tLoop) * 1000.0 / CLOCKS_PER_SEC;
-            m_msFrustum = 0.0;  // 视锥裁剪已融入多线程时间
+            m_msFrustum = 0.0;
 
             m_diagFaces = static_cast<int>(allTris.size());
 
             if (!allTris.empty())
             {
-                // 7. Tile 并行光栅化（线程池）
+
                 clock_t t2 = clock();
                 int numTiles = m_pool->workerCount();
                 if (numTiles > 8) numTiles = 8;
                 if (allTris.size() < 16) numTiles = 1;
 
                 m_pool->parallelRanges(m_screenHeight, numTiles,
-                    [&](int /*t*/, int ty0, int ty1)
+                    [&](int , int ty0, int ty1)
                 {
                     rasterizeTriangles(allTris, cam3d, ty0, ty1);
                 });
@@ -330,19 +292,15 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
         }
     }
 
-    // 7.5. 目标方块线框（与面片共享深度缓冲）
     if (m_hasTarget)
         drawBlockOutline(m_targetBlock, cam);
 
-    // 8. 输出 DIB 到屏幕
     HDC hdc = GetImageHDC();
     BitBlt(hdc, 0, 0, m_screenWidth, m_screenHeight, m_memDC, 0, 0, SRCCOPY);
 
-    // 9. 绘制 HUD 和准星
     drawHUD(cam);
     drawCrosshair();
 
-    // 10. FPS 统计
     ++m_fpsFrames;
     clock_t now = clock();
     double elapsed = static_cast<double>(now - m_fpsTime) / CLOCKS_PER_SEC;
@@ -354,12 +312,7 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
     }
 }
 
-
-// ============================================================================
-// 方块收集
-// ============================================================================
-
-static bool blockIntersectsPlane(int bx, int /*by*/, int bz, int bw,
+static bool blockIntersectsPlane(int bx, int , int bz, int bw,
     const Vec4 &camPos, const Plane2D &plane, double half, double sp)
 {
     double x0 = bx * sp - camPos.x - half;
@@ -392,14 +345,12 @@ std::vector<IVec4> Renderer::collectVisibleBlocks(const World &world,
     const Vec4 &camPos = cam.getPos();
     double sp = m_blockHalf * 2.0;
 
-    // ---- 遍历所有区块：先做 Chunk 级平面交会快测 ----
     int chunksTotal = 0, chunksPass = 0;
     for (const auto &[chunkPos, chunk] : world.getChunks())
     {
         if (chunk.empty()) continue;
         ++chunksTotal;
 
-        // Chunk xzw 包围盒 vs 视平面
         {
             double half = m_blockHalf;
             int sz = World::CHUNK_SIZE;
@@ -419,7 +370,7 @@ std::vector<IVec4> Renderer::collectVisibleBlocks(const World &world,
             if (nw > 0) { cmin += nw * cw0; cmax += nw * cw1; }
             else { cmin += nw * cw1; cmax += nw * cw0; }
 
-            if (cmin > 0.0 || cmax < 0.0) continue;  // 区块不与视平面相交
+            if (cmin > 0.0 || cmax < 0.0) continue;
         }
         ++chunksPass;
 
@@ -432,7 +383,6 @@ std::vector<IVec4> Renderer::collectVisibleBlocks(const World &world,
                 continue;
             ++outPreOccl;
 
-            // 遮挡剔除：8 个方向都有相邻方块则不可见
             if (world.get(IVec4(bx + 1, by, bz, bw)) &&
                 world.get(IVec4(bx - 1, by, bz, bw)) &&
                 world.get(IVec4(bx, by + 1, bz, bw)) &&
@@ -444,13 +394,12 @@ std::vector<IVec4> Renderer::collectVisibleBlocks(const World &world,
                 continue;
 
             result.push_back(IVec4(bx, by, bz, bw));
-        } // inner: chunk blocks
-    } // outer: world chunks
+        }
+    }
 
     m_diagChunkTotal = chunksTotal;
     m_diagChunkPass = chunksPass;
 
-    // 十六分法：按 over 方向排序，前→后，最大化 z-buffer 早期拒绝
     if (result.size() > 1)
     {
         Vec4 over = cam.getOver();
@@ -465,10 +414,6 @@ std::vector<IVec4> Renderer::collectVisibleBlocks(const World &world,
 
     return result;
 }
-
-// ============================================================================
-// 目标方块线框（与面片一起参与深度缓冲）
-// ============================================================================
 
 void Renderer::drawBlockOutline(const IVec4 &blockPos, const Camera4D &cam)
 {
@@ -495,7 +440,6 @@ void Renderer::drawBlockOutline(const IVec4 &blockPos, const Camera4D &cam)
     double yHigh = by * sp - camPos.y + half;
     int n = poly.n;
 
-    // 3D 相机（与 renderWorld 一致）
     Camera3D cam3d;
     {
         double pitch = cam.getPitch();
@@ -506,18 +450,16 @@ void Renderer::drawBlockOutline(const IVec4 &blockPos, const Camera4D &cam)
         cam3d.dirY = sP;
     }
 
-    // 所有边用深度测试线段绘制（直接写入 DIB + z-buffer）
     for (int i = 0; i < n; ++i)
     {
         int j = (i + 1) % n;
 
-        // 顶面边
         drawOutlineEdge3D(poly.u[i], poly.v[i], yHigh,
             poly.u[j], poly.v[j], yHigh, cam3d);
-        // 底面边
+
         drawOutlineEdge3D(poly.u[i], poly.v[i], yLow,
             poly.u[j], poly.v[j], yLow, cam3d);
-        // 垂直边
+
         drawOutlineEdge3D(poly.u[i], poly.v[i], yLow,
             poly.u[i], poly.v[i], yHigh, cam3d);
     }
@@ -553,14 +495,10 @@ void Renderer::drawOutlineEdge3D(double u0, double v0, double y0,
         if (z <= m_zbuf[idx])
         {
             m_pBits[idx] = RGB(0, 0, 0);
-            m_zbuf[idx] = z;  // 写入 z-buffer 防止后续面片覆盖线框
+            m_zbuf[idx] = z;
         }
     }
 }
-
-// ============================================================================
-// 4D→3D：方块 → 三角形
-// ============================================================================
 
 void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
     const Camera4D &cam, const Plane2D &plane,
@@ -588,7 +526,6 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
     double yLow = by * sp - camPos.y - half;
     double yHigh = by * sp - camPos.y + half;
 
-    // ±Y 面剔除：相邻方块存在则跳过该面
     bool cullTop = world.get(IVec4(bx, by + 1, bz, bw)) != 0;
     bool cullBottom = world.get(IVec4(bx, by - 1, bz, bw)) != 0;
     if (cullTop) ++m_diagFaceCull;
@@ -599,9 +536,8 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
     const auto &pv = poly.v;
     const auto &ox = poly.ox;
     const auto &oz = poly.oz;
-    double invSp = 1.0 / sp;  // 1/方块边长
+    double invSp = 1.0 / sp;
 
-    // 顶面（yHigh）—— UV 来自方块原始 (x,z) 坐标，与视角无关
     if (!cullTop)
     {
         for (int i = 1; i < n - 1; ++i)
@@ -621,7 +557,6 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
         }
     }
 
-    // 底面（yLow）
     if (!cullBottom)
     {
         for (int i = 1; i < n - 1; ++i)
@@ -641,7 +576,6 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
         }
     }
 
-    // 侧面：n 条边，每条边 2 个三角形
     for (int i = 0; i < n; ++i)
     {
         int j = (i + 1) % n;
@@ -674,10 +608,6 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
     }
 }
 
-// ============================================================================
-// 3D→2D 光栅化
-// ============================================================================
-
 void Renderer::rasterizeTriangles(const std::vector<Tri3D> &tris,
     const Camera3D &cam3d, int tileYMin, int tileYMax)
 {
@@ -701,7 +631,6 @@ void Renderer::rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d,
 
     if (!valid[0] && !valid[1] && !valid[2]) return;
 
-    // 按 y 排序
     int idx[3] = { 0, 1, 2 };
     if (sy[idx[0]] > sy[idx[1]]) std::swap(idx[0], idx[1]);
     if (sy[idx[1]] > sy[idx[2]]) std::swap(idx[1], idx[2]);
@@ -711,18 +640,15 @@ void Renderer::rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d,
     int x0 = sx[idx[0]], x1 = sx[idx[1]], x2 = sx[idx[2]];
     double z0 = sz[idx[0]], z1 = sz[idx[1]], z2 = sz[idx[2]];
 
-    // 透视校正：插值 tu/z, tv/z, 1/z
     double tu0 = tri.tu[idx[0]], tu1 = tri.tu[idx[1]], tu2 = tri.tu[idx[2]];
     double tv0 = tri.tv[idx[0]], tv1 = tri.tv[idx[1]], tv2 = tri.tv[idx[2]];
     double tuz0 = tu0 / z0, tuz1 = tu1 / z1, tuz2 = tu2 / z2;
     double tvz0 = tv0 / z0, tvz1 = tv1 / z1, tvz2 = tv2 / z2;
     double ooz0 = 1.0 / z0, ooz1 = 1.0 / z1, ooz2 = 1.0 / z2;
 
-    // 三角形完全在 Tile 之外 → 跳过
     if (y2 < tileYMin || y0 >= tileYMax) return;
     if (y0 == y2) return;
 
-    // 上半部分：y0 → y1
     if (y1 > y0)
     {
         double invDyTop = 1.0 / static_cast<double>(y1 - y0);
@@ -752,7 +678,6 @@ void Renderer::rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d,
         }
     }
 
-    // 下半部分：y1 → y2
     if (y2 > y1)
     {
         double invDyBot = 1.0 / static_cast<double>(y2 - y1);
@@ -791,7 +716,6 @@ void Renderer::drawScanline(int y, int x0, int x1, double z0, double z1,
     if (y < tileYMin || y >= tileYMax) return;
     if (y < 0 || y >= m_screenHeight) return;
 
-    // 裁剪到屏幕边界，同时修正插值参数
     if (x0 < 0)
     {
         int origX1 = x1; if (origX1 <= x0) return;
@@ -835,19 +759,19 @@ void Renderer::drawScanline(int y, int x0, int x1, double z0, double z1,
                 double tu = (tu0 + dtu * t) / oo;
                 double tv = (tv0 + dtv * t) / oo;
                 m_pBits[idx] = sampleTexture(texId, tu, tv);
-                // 叠加挖掘阶段纹理（灰度遮罩：白=保持原色，黑=变黑，透明=无效果）
+
                 if (destroyStage >= 0 && destroyStage < DESTROY_STAGES && m_destroyLoaded)
                 {
                     int dtx = (int) (tu * 16.0) & 15;
                     int dty = (int) (tv * 16.0) & 15;
                     DWORD dc = m_destroyPixels[destroyStage][dty][dtx];
-                    // Alpha 通道在 DWORD 高位：0xAARRGGBB 或 0xAABBGGRR
+
                     int alpha = (int) ((dc >> 24) & 0xFF);
                     if (alpha > 0)
                     {
-                        // 灰度值（RGB 平均，通道顺序不影响灰度结果）
+
                         int gray = ((int) (dc & 0xFF) + (int) ((dc >> 8) & 0xFF) + (int) ((dc >> 16) & 0xFF)) / 3;
-                        // 综合透明度与灰度：alpha 越高、gray 越低 → 越暗
+
                         double strength = (alpha / 255.0) * (1.0 - gray / 255.0);
                         double factor = 1.0 - strength;
                         DWORD base = m_pBits[idx];
@@ -863,4 +787,3 @@ void Renderer::drawScanline(int y, int x0, int x1, double z0, double z1,
         }
     }
 }
-

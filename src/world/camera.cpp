@@ -1,4 +1,4 @@
-#include "camera.h"
+﻿#include "camera.h"
 #include "project4d.h"
 
 Camera4D::Camera4D()
@@ -21,7 +21,7 @@ void Camera4D::rotateAroundUp(double angle)
 {
     double c = std::cos(angle);
     double s = std::sin(angle);
-    // 在 {right, forward} 平面内绕 up 旋转（偏航）
+
     Vec4 newRight(
         m_right.x * c - m_forward.x * s,
         m_right.y * c - m_forward.y * s,
@@ -41,8 +41,7 @@ void Camera4D::rotateSlice(double angle)
 {
     double c = std::cos(angle);
     double s = std::sin(angle);
-    // 绕 right=j 轴旋转 forward↔over（切片平面 span{right,forward} 绕 j 在 XZW 内转）
-    // right 和 up 保持不变
+
     Vec4 newForward(
         m_forward.x * c - m_over.x * s,
         m_forward.y * c - m_over.y * s,
@@ -80,7 +79,7 @@ void Camera4D::addPitch(double delta)
 
 void Camera4D::orthonormalize()
 {
-    // 锁定 up = 全局高度轴 (0,1,0,0)
+
     m_up = Vec4(0.0, 1.0, 0.0, 0.0);
     m_right.y = 0.0;
     m_forward.y = 0.0;
@@ -90,17 +89,12 @@ void Camera4D::orthonormalize()
 
 Plane2D Camera4D::getViewPlane() const
 {
-    // 法向量 n = over 在 xzw 子空间中的分量
+
     Vec3 n = Vec3::fromVec4(m_over);
 
-    // 参考基向量 p = right 在 xzw 子空间中的分量
-    // 正交化后 right ⊥ over 且 right 无 y 分量，故 p 已在平面上
     Vec3 pRef = Vec3::fromVec4(m_right);
 
-    // 偏移量 offset = n · camPos_xzw（使平面穿过摄像机位置）
     double offset = n.x * m_pos.x + n.z * m_pos.z + n.w * m_pos.w;
 
     return Plane2D::fromNormal(n, pRef, offset);
 }
-
-

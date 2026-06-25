@@ -1,12 +1,8 @@
-#include "crafting.h"
+﻿#include "crafting.h"
 #include <cstdio>
 #include <string>
 #include <unordered_map>
 #include <windows.h>
-
-// ============================================================================
-// 简易 JSON 解析器（支持新配方格式）
-// ============================================================================
 
 static std::string readFile(const char *path)
 {
@@ -51,69 +47,69 @@ static int parseBlockType(const std::string &name)
         {"log", BLOCK_LOG}, {"leaves", BLOCK_LEAVES}, {"stone", BLOCK_STONE},
         {"planks", BLOCK_PLANKS}, {"stick", BLOCK_STICK},
         {"crafting_table", BLOCK_CRAFTING_TABLE},
-        // 矿石
+
         {"diamond_ore", BLOCK_DIAMOND_ORE},
         {"gold_ore", BLOCK_GOLD_ORE},
         {"iron_ore", BLOCK_IRON_ORE},
-        // 矿物块
+
         {"diamond_block", BLOCK_DIAMOND_BLOCK},
         {"gold_block", BLOCK_GOLD_BLOCK},
         {"iron_block", BLOCK_IRON_BLOCK},
-        // 矿物材料
+
         {"diamond", BLOCK_DIAMOND},
         {"gold_ingot", BLOCK_GOLD_INGOT},
         {"iron_ingot", BLOCK_IRON_INGOT},
         {"gold_nugget", BLOCK_GOLD_NUGGET},
         {"iron_nugget", BLOCK_IRON_NUGGET},
-        // 食物
+
         {"apple", BLOCK_APPLE},
         {"golden_apple", BLOCK_GOLDEN_APPLE},
-        // 木工具
+
         {"wooden_pickaxe", BLOCK_WOODEN_PICKAXE},
         {"wooden_axe", BLOCK_WOODEN_AXE},
         {"wooden_shovel", BLOCK_WOODEN_SHOVEL},
         {"wooden_sword", BLOCK_WOODEN_SWORD},
         {"wooden_hoe", BLOCK_WOODEN_HOE},
-        // 石工具
+
         {"stone_pickaxe", BLOCK_STONE_PICKAXE},
         {"stone_axe", BLOCK_STONE_AXE},
         {"stone_shovel", BLOCK_STONE_SHOVEL},
         {"stone_sword", BLOCK_STONE_SWORD},
         {"stone_hoe", BLOCK_STONE_HOE},
-        // 铁工具
+
         {"iron_pickaxe", BLOCK_IRON_PICKAXE},
         {"iron_axe", BLOCK_IRON_AXE},
         {"iron_shovel", BLOCK_IRON_SHOVEL},
         {"iron_sword", BLOCK_IRON_SWORD},
         {"iron_hoe", BLOCK_IRON_HOE},
-        // 铁护甲
+
         {"iron_helmet", BLOCK_IRON_HELMET},
         {"iron_chestplate", BLOCK_IRON_CHESTPLATE},
         {"iron_leggings", BLOCK_IRON_LEGGINGS},
         {"iron_boots", BLOCK_IRON_BOOTS},
-        // 金工具
+
         {"golden_pickaxe", BLOCK_GOLDEN_PICKAXE},
         {"golden_axe", BLOCK_GOLDEN_AXE},
         {"golden_shovel", BLOCK_GOLDEN_SHOVEL},
         {"golden_sword", BLOCK_GOLDEN_SWORD},
         {"golden_hoe", BLOCK_GOLDEN_HOE},
-        // 金护甲
+
         {"golden_helmet", BLOCK_GOLDEN_HELMET},
         {"golden_chestplate", BLOCK_GOLDEN_CHESTPLATE},
         {"golden_leggings", BLOCK_GOLDEN_LEGGINGS},
         {"golden_boots", BLOCK_GOLDEN_BOOTS},
-        // 钻石工具
+
         {"diamond_pickaxe", BLOCK_DIAMOND_PICKAXE},
         {"diamond_axe", BLOCK_DIAMOND_AXE},
         {"diamond_shovel", BLOCK_DIAMOND_SHOVEL},
         {"diamond_sword", BLOCK_DIAMOND_SWORD},
         {"diamond_hoe", BLOCK_DIAMOND_HOE},
-        // 钻石护甲
+
         {"diamond_helmet", BLOCK_DIAMOND_HELMET},
         {"diamond_chestplate", BLOCK_DIAMOND_CHESTPLATE},
         {"diamond_leggings", BLOCK_DIAMOND_LEGGINGS},
         {"diamond_boots", BLOCK_DIAMOND_BOOTS},
-        // 圆石 / 煤炭 / 熔炉
+
         {"cobblestone", BLOCK_COBBLESTONE},
         {"coal_ore", BLOCK_COAL_ORE},
         {"coal", BLOCK_COAL},
@@ -124,7 +120,6 @@ static int parseBlockType(const std::string &name)
     return (it != map.end()) ? it->second : BLOCK_AIR;
 }
 
-// 解析整数
 static int parseInt(const std::string &s, size_t &pos)
 {
     skipWS(s, pos);
@@ -134,12 +129,10 @@ static int parseInt(const std::string &s, size_t &pos)
     return val;
 }
 
-// 解析可变尺寸配方：[[...],[...],...] → 存入 pattern[3][3] 左上角，返回 {w, h}
-// 支持 1×1 ~ 3×3 任意尺寸
 static void parsePattern(const std::string &s, size_t &pos,
     int pattern[3][3], int &outW, int &outH)
 {
-    // 清零
+
     for (int y = 0; y < 3; ++y)
         for (int x = 0; x < 3; ++x)
             pattern[y][x] = BLOCK_AIR;
@@ -147,7 +140,7 @@ static void parsePattern(const std::string &s, size_t &pos,
 
     skipWS(s, pos);
     if (pos >= s.size() || s[pos] != '[') return;
-    ++pos;  // outer [
+    ++pos;
 
     int rowCount = 0;
     int maxCols = 0;
@@ -156,7 +149,7 @@ static void parsePattern(const std::string &s, size_t &pos,
     {
         skipWS(s, pos);
         if (pos >= s.size() || s[pos] != '[') break;
-        ++pos;  // inner [
+        ++pos;
         ++rowCount;
         skipWS(s, pos);
 
@@ -184,13 +177,13 @@ static void parsePattern(const std::string &s, size_t &pos,
         if (colCount > maxCols) maxCols = colCount;
 
         skipWS(s, pos);
-        if (pos < s.size() && s[pos] == ']') ++pos;  // inner ]
+        if (pos < s.size() && s[pos] == ']') ++pos;
         skipWS(s, pos);
         if (pos < s.size() && s[pos] == ',') ++pos;
     }
 
     skipWS(s, pos);
-    if (pos < s.size() && s[pos] == ']') ++pos;  // outer ]
+    if (pos < s.size() && s[pos] == ']') ++pos;
 
     outH = rowCount;
     outW = maxCols;
@@ -198,7 +191,6 @@ static void parsePattern(const std::string &s, size_t &pos,
     if (outH < 1) outH = 1;
 }
 
-// 解析 shapeless 配方主体：{ "dirt": 9, "stone": 1 } → vector<int> (展平)
 static std::vector<int> parseShapelessBody(const std::string &s, size_t &pos)
 {
     std::vector<int> result;
@@ -218,11 +210,10 @@ static std::vector<int> parseShapelessBody(const std::string &s, size_t &pos)
         skipWS(s, pos);
         if (pos < s.size() && s[pos] == ',') ++pos;
     }
-    if (pos < s.size()) ++pos;  // }
+    if (pos < s.size()) ++pos;
     return result;
 }
 
-// 解析单个配方文件的 JSON，加载到 mgr。targetType 由文件名决定
 static void loadRecipeFile(const std::string &json, CraftingManager &mgr, int targetType)
 {
     size_t pos = 0;
@@ -273,7 +264,7 @@ static void loadRecipeFile(const std::string &json, CraftingManager &mgr, int ta
                 skipWS(json, pos);
                 if (pos < json.size() && json[pos] == ',') ++pos;
             }
-            if (pos < json.size()) ++pos;  // }
+            if (pos < json.size()) ++pos;
 
             if (key == "shaped")
             {
@@ -289,13 +280,12 @@ static void loadRecipeFile(const std::string &json, CraftingManager &mgr, int ta
             skipWS(json, pos);
             if (pos < json.size() && json[pos] == ',') ++pos;
         }
-        if (pos < json.size()) ++pos;  // ]
+        if (pos < json.size()) ++pos;
         skipWS(json, pos);
         if (pos < json.size() && json[pos] == ',') ++pos;
     }
 }
 
-// 从文件名提取方块类型 (例如 "planks.json" → BLOCK_PLANKS)
 static int blockTypeFromFilename(const char *filename)
 {
     std::string name(filename);
@@ -304,7 +294,6 @@ static int blockTypeFromFilename(const char *filename)
     return parseBlockType(name);
 }
 
-// 扫描文件夹加载所有配方
 static void loadAllRecipes(CraftingManager &mgr)
 {
     WIN32_FIND_DATAW fd;
@@ -313,7 +302,7 @@ static void loadAllRecipes(CraftingManager &mgr)
 
     do
     {
-        // 宽字符转 UTF-8
+
         char filename[256] = {};
         WideCharToMultiByte(CP_UTF8, 0, fd.cFileName, -1, filename, 256, nullptr, nullptr);
 
@@ -321,7 +310,7 @@ static void loadAllRecipes(CraftingManager &mgr)
         path += filename;
 
         int targetType = blockTypeFromFilename(filename);
-        if (targetType == BLOCK_AIR) continue;  // 未知类型跳过
+        if (targetType == BLOCK_AIR) continue;
 
         std::string json = readFile(path.c_str());
         if (!json.empty())
@@ -331,10 +320,6 @@ static void loadAllRecipes(CraftingManager &mgr)
 
     FindClose(hFind);
 }
-
-// ============================================================================
-// CraftingManager
-// ============================================================================
 
 CraftingManager::CraftingManager()
 {
@@ -389,7 +374,6 @@ CraftResult CraftingManager::match(const int grid[3][3]) const
 {
     CraftResult result;
 
-    // ---- 优先匹配有序配方（滑动窗口） ----
     for (const auto &r : m_shaped)
     {
         int maxOffY = 3 - r.recipeH;
@@ -401,13 +385,11 @@ CraftResult CraftingManager::match(const int grid[3][3]) const
             {
                 bool ok = true;
 
-                // 1) 配方区域逐格匹配
                 for (int y = 0; y < r.recipeH && ok; ++y)
                     for (int x = 0; x < r.recipeW && ok; ++x)
                         if (grid[offY + y][offX + x] != r.pattern[y][x])
                             ok = false;
 
-                // 2) 配方覆盖区域之外必须全空
                 for (int y = 0; y < 3 && ok; ++y)
                     for (int x = 0; x < 3 && ok; ++x)
                     {
@@ -429,7 +411,6 @@ CraftResult CraftingManager::match(const int grid[3][3]) const
         }
     }
 
-    // ---- 再匹配无形状配方 ----
     auto gridCnt = countItems3x3(grid);
     for (const auto &r : m_shapeless)
     {

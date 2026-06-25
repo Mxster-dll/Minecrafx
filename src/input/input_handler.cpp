@@ -1,11 +1,6 @@
-#include "input_handler.h"
+﻿#include "input_handler.h"
 
-// 用于 SetProp/GetProp 的属性名
 static const wchar_t *PROP_NAME = L"InputHandler_This";
-
-// ============================================================================
-// InputHandler
-// ============================================================================
 
 InputHandler::InputHandler(HWND hwnd)
     : m_hwnd(hwnd)
@@ -22,15 +17,13 @@ InputHandler::InputHandler(HWND hwnd)
         m_releaseConsumed[i] = false;
     }
 
-    // 注册 Raw Input：直接从鼠标硬件读取滚轮数据，绕过消息队列
     RAWINPUTDEVICE rid;
-    rid.usUsagePage = 0x01;        // 通用桌面
-    rid.usUsage = 0x02;        // 鼠标
-    rid.dwFlags = RIDEV_INPUTSINK;  // 即使非前台也接收
+    rid.usUsagePage = 0x01;
+    rid.usUsage = 0x02;
+    rid.dwFlags = RIDEV_INPUTSINK;
     rid.hwndTarget = m_hwnd;
     RegisterRawInputDevices(&rid, 1, sizeof(rid));
 
-    // 子类化窗口以拦截 WM_INPUT（Raw Input 通过此消息送达）
     SetProp(m_hwnd, PROP_NAME, reinterpret_cast<HANDLE>(this));
     m_oldWndProc = reinterpret_cast<WNDPROC>(
         SetWindowLongPtr(m_hwnd, GWLP_WNDPROC,
@@ -39,7 +32,7 @@ InputHandler::InputHandler(HWND hwnd)
 
 InputHandler::~InputHandler()
 {
-    // 恢复原窗口过程
+
     if (m_oldWndProc)
     {
         SetWindowLongPtr(m_hwnd, GWLP_WNDPROC,
@@ -47,7 +40,6 @@ InputHandler::~InputHandler()
     }
     RemoveProp(m_hwnd, PROP_NAME);
 
-    // 注销 Raw Input
     RAWINPUTDEVICE rid;
     rid.usUsagePage = 0x01;
     rid.usUsage = 0x02;
@@ -61,7 +53,6 @@ LRESULT CALLBACK InputHandler::wndProcHook(HWND hwnd, UINT msg, WPARAM wp, LPARA
     InputHandler *self = reinterpret_cast<InputHandler *>(
         GetProp(hwnd, PROP_NAME));
 
-    // 处理 Raw Input 消息
     if (msg == WM_INPUT && self)
     {
         UINT size = 0;
@@ -75,11 +66,11 @@ LRESULT CALLBACK InputHandler::wndProcHook(HWND hwnd, UINT msg, WPARAM wp, LPARA
             {
                 if (raw.header.dwType == RIM_TYPEMOUSE)
                 {
-                    // 检查滚轮标志
+
                     USHORT flags = raw.data.mouse.usButtonFlags;
                     if (flags & RI_MOUSE_WHEEL)
                     {
-                        // 滚轮数据在 usButtonData 中（有符号 short）
+
                         self->m_wheelDelta += static_cast<short>(
                             raw.data.mouse.usButtonData);
                     }
@@ -87,13 +78,12 @@ LRESULT CALLBACK InputHandler::wndProcHook(HWND hwnd, UINT msg, WPARAM wp, LPARA
             }
         }
     }
-    // 后备：也拦截 WM_MOUSEWHEEL（某些系统可能仍发送此消息）
+
     else if (msg == WM_MOUSEWHEEL && self)
     {
         self->m_wheelDelta += GET_WHEEL_DELTA_WPARAM(wp);
     }
 
-    // 调用原窗口过程
     if (self && self->m_oldWndProc)
         return CallWindowProc(self->m_oldWndProc, hwnd, msg, wp, lp);
 
@@ -102,14 +92,13 @@ LRESULT CALLBACK InputHandler::wndProcHook(HWND hwnd, UINT msg, WPARAM wp, LPARA
 
 void InputHandler::update()
 {
-    // 更新键盘
+
     m_keyboard.update();
 
-    // 备份上一帧鼠标按键状态
     for (int i = 0; i < MOUSE_BUTTON_COUNT; ++i)
     {
         m_mousePrev[i] = m_mouseCurr[i];
-        // 按键释放时重置消费标记，允许下次边沿触发
+
         if (!m_mouseCurr[i])
         {
             m_clickConsumed[i] = false;
@@ -117,7 +106,6 @@ void InputHandler::update()
         }
     }
 
-    // 窗口失焦 → 清零
     if (GetForegroundWindow() != m_hwnd)
     {
         for (int i = 0; i < MOUSE_BUTTON_COUNT; ++i)
@@ -125,7 +113,6 @@ void InputHandler::update()
         return;
     }
 
-    // 读取鼠标按键状态
     m_mouseCurr[0] = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
     m_mouseCurr[1] = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
     m_mouseCurr[2] = (GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0;
@@ -151,10 +138,8 @@ bool InputHandler::getMouseClick(int button)
     if (button < 0 || button >= MOUSE_BUTTON_COUNT)
         return false;
 
-    // 上升沿检测：当前按下且上一帧未按下，且本周期未消费
     bool clicked = m_mouseCurr[button] && !m_mousePrev[button] && !m_clickConsumed[button];
 
-    // 标记已消费，防止同一按下周期内重复触发
     if (clicked)
         m_clickConsumed[button] = true;
 
@@ -166,10 +151,8 @@ bool InputHandler::getMouseRelease(int button)
     if (button < 0 || button >= MOUSE_BUTTON_COUNT)
         return false;
 
-    // 下降沿检测：上一帧按下且当前帧未按下，且未消费
     bool released = m_mousePrev[button] && !m_mouseCurr[button] && !m_releaseConsumed[button];
 
-    // 标记已消费，防止重复触发
     if (released)
         m_releaseConsumed[button] = true;
 
@@ -205,5 +188,3 @@ void InputHandler::showMouseCursor(bool visible)
     else
         m_mouse.hideCursor();
 }
-
-

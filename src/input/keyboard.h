@@ -1,10 +1,7 @@
-#pragma once
+﻿#pragma once
 
 #include <windows.h>
 
-/**
- * @brief 按键枚举，值对应 Windows 虚拟键码
- */
 enum Key : int
 {
     A = 'A', B = 'B', C = 'C', D = 'D', E = 'E', F = 'F', G = 'G',
@@ -40,34 +37,16 @@ enum Key : int
     PrintScreen = VK_SNAPSHOT,
 };
 
-/**
- * @brief 键盘输入管理器（基于 Windows GetAsyncKeyState）
- *
- * 绑定窗口句柄，失焦时自动忽略所有按键，保证与鼠标输入范围一致。
- */
 class KeyboardInput
 {
 public:
-    /**
-     * @brief 绑定窗口句柄
-     * @param hwnd 目标窗口句柄，失焦时忽略输入
-     */
+
     explicit KeyboardInput(HWND hwnd);
 
-    /**
-     * @brief 每帧开始时调用，刷新按键状态（窗口失焦则全部清零）
-     */
     void update();
 
-    /**
-     * @brief 按键当前是否被按住
-     * @param key 按键枚举值，如 Key::W、Key::Space、Key::Esc 等
-     */
     bool isKeyDown(Key key) const;
 
-    /**
-     * @brief 按键是否在本帧刚刚按下（上升沿触发，只触发一次）
-     */
     bool isPressed(Key key) const;
 
 private:

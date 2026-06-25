@@ -1,9 +1,9 @@
-#include "inventory.h"
+﻿#include "inventory.h"
 #include "crafting.h"
 
 Inventory::Inventory()
 {
-    // 热键栏：常用方块
+
     m_slots[0] = { BLOCK_GRASS,  64 };
     m_slots[1] = { BLOCK_DIRT,   64 };
     m_slots[2] = { BLOCK_STONE,  64 };
@@ -13,7 +13,6 @@ Inventory::Inventory()
     m_slots[6] = { BLOCK_CRAFTING_TABLE, 1 };
     m_slots[7] = { BLOCK_STICK,  64 };
 
-    // 背包第一行：矿物材料 + 工具
     m_slots[9] = { BLOCK_DIAMOND_ORE, 64 };
     m_slots[10] = { BLOCK_GOLD_ORE,    64 };
     m_slots[11] = { BLOCK_IRON_ORE,    64 };
@@ -24,7 +23,6 @@ Inventory::Inventory()
     m_slots[16] = { BLOCK_IRON_NUGGET, 64 };
     m_slots[17] = { BLOCK_APPLE,       64 };
 
-    // 背包第二行：矿物块 + 护甲
     m_slots[18] = { BLOCK_DIAMOND_BLOCK, 64 };
     m_slots[19] = { BLOCK_GOLD_BLOCK,    64 };
     m_slots[20] = { BLOCK_IRON_BLOCK,    64 };
@@ -35,7 +33,6 @@ Inventory::Inventory()
     m_slots[25] = { BLOCK_DIAMOND_HOE,     1 };
     m_slots[26] = { BLOCK_GOLDEN_APPLE,   64 };
 
-    // 背包第三行：全套钻石护甲
     m_slots[27] = { BLOCK_DIAMOND_HELMET,      1 };
     m_slots[28] = { BLOCK_DIAMOND_CHESTPLATE,  1 };
     m_slots[29] = { BLOCK_DIAMOND_LEGGINGS,    1 };
@@ -112,7 +109,7 @@ void Inventory::slotScreenRect(int index,
     }
     else
     {
-        // 盔甲槽位
+
         int ai = index - ARMOR_BASE;
         nx = ARMOR_X;
         ny = armorSlotNativeY(ai);
@@ -144,12 +141,10 @@ int Inventory::hitTest(int screenX, int screenY,
     int outY0 = isCT ? CT_OUTPUT_Y : INV_OUTPUT_Y;
     int outSz = isCT ? CT_OUTPUT_SIZE : SLOT_SIZE;
 
-    // 输出区（优先命中，因为面积大）
     if (nx >= outX0 && nx < outX0 + outSz &&
         ny >= outY0 && ny < outY0 + outSz)
         return CRAFT_OUTPUT_IDX;
 
-    // 合成区（2×2 或 3×3）
     for (int ci = 0; ci < craftW * craftH; ++ci)
     {
         int cx = craftX + (ci % craftW) * SLOT_STEP;
@@ -158,7 +153,6 @@ int Inventory::hitTest(int screenX, int screenY,
             return CRAFT_BASE + ci;
     }
 
-    // 快捷栏
     for (int i = 0; i < HOTBAR_SLOTS; ++i)
     {
         int hx = BP_ORIGIN_X + i * SLOT_STEP;
@@ -166,7 +160,6 @@ int Inventory::hitTest(int screenX, int screenY,
             return i;
     }
 
-    // 背包
     for (int r = 0; r < BACKPACK_ROWS; ++r)
         for (int c = 0; c < BACKPACK_COLS; ++c)
         {
@@ -176,7 +169,6 @@ int Inventory::hitTest(int screenX, int screenY,
                 return HOTBAR_SLOTS + r * BACKPACK_COLS + c;
         }
 
-    // 盔甲槽位
     for (int ai = 0; ai < ARMOR_SLOTS; ++ai)
     {
         int ay = armorSlotNativeY(ai);
@@ -192,7 +184,6 @@ void Inventory::updateCraftingResult(const CraftingManager &craftMgr)
     int craftW = (m_craftMode == CM_CraftingTable3x3) ? 3 : 2;
     int craftH = (m_craftMode == CM_CraftingTable3x3) ? 3 : 2;
 
-    // 将合成区填入 3×3 网格（左上角对齐）
     int grid[3][3] = {};
     for (int ci = 0; ci < craftW * craftH; ++ci)
     {
@@ -214,10 +205,10 @@ void Inventory::updateCraftingResult(const CraftingManager &craftMgr)
     }
 }
 
-bool Inventory::pickup(int slotIndex, int count /* = -1 */)
+bool Inventory::pickup(int slotIndex, int count )
 {
     if (slotIndex < 0 || slotIndex >= TOTAL_SLOTS) return false;
-    if (isDragging()) return false;  // 手上已有物品，请用 addToDrag 或 placeInto
+    if (isDragging()) return false;
     auto &s = m_slots[slotIndex];
     if (s.blockType == BLOCK_AIR || s.count <= 0) return false;
 
@@ -262,10 +253,8 @@ bool Inventory::placeInto(int slotIndex)
     if (!isDragging()) return false;
     if (slotIndex < 0 || slotIndex >= TOTAL_SLOTS) { cancelDrag(); return false; }
 
-    // 不能放入输出区
     if (slotIndex == CRAFT_OUTPUT_IDX) return false;
 
-    // 盔甲槽位：只接受对应类型（46~49）
     if (slotIndex >= ARMOR_BASE && slotIndex < ARMOR_BASE + ARMOR_SLOTS)
     {
         int ai = slotIndex - ARMOR_BASE;
@@ -287,7 +276,7 @@ bool Inventory::placeInto(int slotIndex)
         m_dragging = -1;
         return true;
     }
-    // 交换
+
     int tt = s.blockType, tc = s.count;
     s.blockType = m_dragType;
     s.count = m_dragCount;
@@ -302,7 +291,6 @@ bool Inventory::placeOneInto(int slotIndex)
     if (slotIndex < 0 || slotIndex >= TOTAL_SLOTS) return false;
     if (slotIndex == CRAFT_OUTPUT_IDX) return false;
 
-    // 盔甲槽位：不接受右键逐一放入（防堆叠）
     if (slotIndex >= ARMOR_BASE && slotIndex < ARMOR_BASE + ARMOR_SLOTS) return false;
 
     auto &s = m_slots[slotIndex];
@@ -352,16 +340,16 @@ bool Inventory::isValidArmorForSlot(int armorSubIndex, int blockType)
 {
     switch (armorSubIndex)
     {
-        case 0:  // 头盔
+        case 0:
             return blockType == BLOCK_IRON_HELMET || blockType == BLOCK_GOLDEN_HELMET ||
                 blockType == BLOCK_DIAMOND_HELMET;
-        case 1:  // 胸甲
+        case 1:
             return blockType == BLOCK_IRON_CHESTPLATE || blockType == BLOCK_GOLDEN_CHESTPLATE ||
                 blockType == BLOCK_DIAMOND_CHESTPLATE;
-        case 2:  // 护腿
+        case 2:
             return blockType == BLOCK_IRON_LEGGINGS || blockType == BLOCK_GOLDEN_LEGGINGS ||
                 blockType == BLOCK_DIAMOND_LEGGINGS;
-        case 3:  // 靴子
+        case 3:
             return blockType == BLOCK_IRON_BOOTS || blockType == BLOCK_GOLDEN_BOOTS ||
                 blockType == BLOCK_DIAMOND_BOOTS;
         default: return false;
@@ -375,13 +363,13 @@ bool Inventory::takeCraftOutput(const CraftingManager &craftMgr)
 
     if (isDragging())
     {
-        // 手上已有物品 → 必须同种才能累加
+
         if (m_dragType != out.blockType) return false;
         m_dragCount += out.count;
     }
     else
     {
-        // 拿起产物
+
         m_dragging = CRAFT_OUTPUT_IDX;
         m_dragType = out.blockType;
         m_dragCount = out.count;
@@ -389,7 +377,6 @@ bool Inventory::takeCraftOutput(const CraftingManager &craftMgr)
     out.blockType = BLOCK_AIR;
     out.count = 0;
 
-    // 消耗合成区材料（每个非空格减 1）
     int craftW = (m_craftMode == CM_CraftingTable3x3) ? 3 : 2;
     int craftH = (m_craftMode == CM_CraftingTable3x3) ? 3 : 2;
     for (int ci = 0; ci < craftW * craftH; ++ci)
@@ -403,7 +390,6 @@ bool Inventory::takeCraftOutput(const CraftingManager &craftMgr)
         }
     }
 
-    // 重新计算合成结果
     updateCraftingResult(craftMgr);
     return true;
 }

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <windows.h>
 #include <vector>
@@ -8,18 +8,12 @@
 #include <atomic>
 #include <functional>
 
-/**
- * @brief 简易线程池 — 支持 parallelRanges 并行任务分发
- *
- * 主线程也参与执行，避免闲置。
- */
 class ThreadPool
 {
 public:
     explicit ThreadPool(int numThreads);
     ~ThreadPool();
 
-    /** @brief 并行执行：将 [0, count) 按 numTasks 份均分，每份调用 func(taskIdx, start, end) */
     void parallelRanges(int count, int numTasks,
         const std::function<void(int, int, int)> &func);
 
