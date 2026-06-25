@@ -98,11 +98,7 @@ enum BlockType : int
     BLOCK_DIAMOND_LEGGINGS = 57,
     BLOCK_DIAMOND_BOOTS = 58,
 
-    // ── 下界合金工具 ──
-    BLOCK_NETHERITE_PICKAXE = 59,
-    BLOCK_NETHERITE_AXE = 60,
-
-    MAX_BLOCK_TYPE = 61  // 方块类型总数（数组大小用）
+    MAX_BLOCK_TYPE = 59  // 方块类型总数（数组大小用）
 };
 
 // 碰撞常量

@@ -331,6 +331,18 @@ int Renderer::blockTexId(int blockType, int face)
     }
 }
 
+void Renderer::loadDestroyStages()
+{
+    wchar_t path[128];
+    for (int i = 0; i < DESTROY_STAGES; ++i)
+    {
+        swprintf(path, 128, L"../assert/texture/destroy_stage_%d.png", i);
+        int w, h;
+        loadTexPixels(path, m_destroyPixels[i], w, h);
+    }
+    m_destroyLoaded = true;
+}
+
 COLORREF Renderer::sampleTexture(int texId, double tu, double tv) const
 {
     if (texId < 0 || texId >= MAX_TEX || !m_blockTexLoaded)
@@ -415,8 +427,6 @@ static const wchar_t *kHotbarIcons[MAX_BLOCK_TYPE] = {
     L"../assert/gui/item/diamond_chestplate.png",  // 56
     L"../assert/gui/item/diamond_leggings.png",    // 57
     L"../assert/gui/item/diamond_boots.png",       // 58
-    L"../assert/gui/item/netherite_pickaxe.png",   // 59 (复用钻石镐图标)
-    L"../assert/gui/item/netherite_axe.png",       // 60 (复用钻石斧图标)
 };
 
 static const wchar_t *kBigIconPaths[MAX_BLOCK_TYPE] = {
@@ -452,7 +462,6 @@ static const wchar_t *kBigIconPaths[MAX_BLOCK_TYPE] = {
     L"../assert/gui/item/diamond_hoe.png",
     L"../assert/gui/item/diamond_helmet.png", L"../assert/gui/item/diamond_chestplate.png",
     L"../assert/gui/item/diamond_leggings.png", L"../assert/gui/item/diamond_boots.png",
-    L"../assert/gui/item/netherite_pickaxe.png", L"../assert/gui/item/netherite_axe.png",
 };
 
 void Renderer::loadHotbar()
@@ -633,7 +642,7 @@ void Renderer::drawBlockIcon(int screenX, int screenY, int size, int blockType, 
     }
 }
 
-void Renderer::drawHotbar(int selectedSlot, const int *hotbarBlockTypes)
+void Renderer::drawHotbar(int selectedSlot, const int *hotbarBlockTypes, const int *hotbarCounts)
 {
     if (!m_hotbarLoaded || !m_dibReady || m_hbBgW <= 0 || m_hbBgH <= 0) return;
 
@@ -691,6 +700,24 @@ void Renderer::drawHotbar(int selectedSlot, const int *hotbarBlockTypes)
                 if (px >= 0 && px < m_screenWidth)
                     m_pBits[dstRow + px] = alphaBlend(m_pBits[dstRow + px], c);
             }
+        }
+
+        // 数量文字（右下角）
+        if (hotbarCounts && hotbarCounts[slot] > 1)
+        {
+            wchar_t buf[8];
+            swprintf(buf, 8, L"%d", hotbarCounts[slot]);
+            HFONT smallFont = CreateFontW(12, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Minecraft AE");
+            HFONT oldF = (HFONT) SelectObject(m_memDC, smallFont);
+            SetBkMode(m_memDC, TRANSPARENT);
+            SetTextColor(m_memDC, RGB(255, 255, 255));
+            SIZE ts;
+            GetTextExtentPoint32W(m_memDC, buf, (int) wcslen(buf), &ts);
+            TextOutW(m_memDC, screenX + sz - ts.cx - 1, screenY + sz - ts.cy + 1, buf, (int) wcslen(buf));
+            SelectObject(m_memDC, oldF);
+            DeleteObject(smallFont);
         }
     }
 
@@ -882,9 +909,10 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
                     int topId = blockTexId(bt, 0);
                     int sideId = blockTexId(bt, 1);
                     int bottomId = blockTexId(bt, 2);
+                    int ds = (m_miningStage >= 0 && blk == m_miningTarget) ? m_miningStage : -1;
                     size_t before = localTris.size();
                     blockToTriangles(blk.x, blk.y, blk.z, blk.w, cam, plane,
-                        topId, sideId, bottomId, localTris, world);
+                        topId, sideId, bottomId, localTris, world, ds);
                     if (localTris.size() > before) ++localGeom;
                 }
                 threadGeom[t] = localGeom;
@@ -1339,7 +1367,7 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
     const Camera4D &cam, const Plane2D &plane,
     int topTexId, int sideTexId, int bottomTexId,
     std::vector<Tri3D> &outTris,
-    const World &world)
+    const World &world, int destroyStage)
 {
     const Vec4 &camPos = cam.getPos();
     double half = m_blockHalf;
@@ -1389,6 +1417,7 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
             t.color = RGB(128, 128, 128);
             t.depth = yHigh;
             t.texId = topTexId;
+            t.destroyStage = destroyStage;
             outTris.push_back(t);
         }
     }
@@ -1408,6 +1437,7 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
             b.color = RGB(128, 128, 128);
             b.depth = yLow;
             b.texId = bottomTexId;
+            b.destroyStage = destroyStage;
             outTris.push_back(b);
         }
     }
@@ -1427,6 +1457,7 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
         t1.color = RGB(128, 128, 128);
         t1.depth = (yLow + yHigh) * 0.5;
         t1.texId = sideTexId;
+        t1.destroyStage = destroyStage;
         outTris.push_back(t1);
 
         Tri3D t2;
@@ -1439,6 +1470,7 @@ void Renderer::blockToTriangles(int bx, int by, int bz, int bw,
         t2.color = RGB(128, 128, 128);
         t2.depth = (yLow + yHigh) * 0.5;
         t2.texId = sideTexId;
+        t2.destroyStage = destroyStage;
         outTris.push_back(t2);
     }
 }
@@ -1517,7 +1549,7 @@ void Renderer::rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d,
             double tvL = tvz0 + dtvL * t, tvR = tvz0 + dtvR * t;
             double ooL = ooz0 + doL * t, ooR = ooz0 + doR * t;
             if (xL > xR) { std::swap(xL, xR); std::swap(zL, zR); std::swap(tuL, tuR); std::swap(tvL, tvR); std::swap(ooL, ooR); }
-            drawScanline(y, xL, xR, zL, zR, tuL, tvL, ooL, tuR, tvR, ooR, tri.texId, tri.color, tileYMin, tileYMax);
+            drawScanline(y, xL, xR, zL, zR, tuL, tvL, ooL, tuR, tvR, ooR, tri.texId, tri.color, tri.destroyStage, tileYMin, tileYMax);
         }
     }
 
@@ -1548,14 +1580,14 @@ void Renderer::rasterizeTriangle(const Tri3D &tri, const Camera3D &cam3d,
             double tvL = tvz0 + dtvL * tFull, tvR = tvz1 + dtvR * tBot;
             double ooL = ooz0 + doL * tFull, ooR = ooz1 + doR * tBot;
             if (xL > xR) { std::swap(xL, xR); std::swap(zL, zR); std::swap(tuL, tuR); std::swap(tvL, tvR); std::swap(ooL, ooR); }
-            drawScanline(y, xL, xR, zL, zR, tuL, tvL, ooL, tuR, tvR, ooR, tri.texId, tri.color, tileYMin, tileYMax);
+            drawScanline(y, xL, xR, zL, zR, tuL, tvL, ooL, tuR, tvR, ooR, tri.texId, tri.color, tri.destroyStage, tileYMin, tileYMax);
         }
     }
 }
 
 void Renderer::drawScanline(int y, int x0, int x1, double z0, double z1,
     double tu0, double tv0, double ooz0, double tu1, double tv1, double ooz1,
-    int texId, COLORREF color, int tileYMin, int tileYMax)
+    int texId, COLORREF color, int destroyStage, int tileYMin, int tileYMax)
 {
     if (y < tileYMin || y >= tileYMax) return;
     if (y < 0 || y >= m_screenHeight) return;
@@ -1604,6 +1636,28 @@ void Renderer::drawScanline(int y, int x0, int x1, double z0, double z1,
                 double tu = (tu0 + dtu * t) / oo;
                 double tv = (tv0 + dtv * t) / oo;
                 m_pBits[idx] = sampleTexture(texId, tu, tv);
+                // 叠加挖掘阶段纹理（灰度遮罩：白=保持原色，黑=变黑，透明=无效果）
+                if (destroyStage >= 0 && destroyStage < DESTROY_STAGES && m_destroyLoaded)
+                {
+                    int dtx = (int) (tu * 16.0) & 15;
+                    int dty = (int) (tv * 16.0) & 15;
+                    DWORD dc = m_destroyPixels[destroyStage][dty][dtx];
+                    // Alpha 通道在 DWORD 高位：0xAARRGGBB 或 0xAABBGGRR
+                    int alpha = (int) ((dc >> 24) & 0xFF);
+                    if (alpha > 0)
+                    {
+                        // 灰度值（RGB 平均，通道顺序不影响灰度结果）
+                        int gray = ((int) (dc & 0xFF) + (int) ((dc >> 8) & 0xFF) + (int) ((dc >> 16) & 0xFF)) / 3;
+                        // 综合透明度与灰度：alpha 越高、gray 越低 → 越暗
+                        double strength = (alpha / 255.0) * (1.0 - gray / 255.0);
+                        double factor = 1.0 - strength;
+                        DWORD base = m_pBits[idx];
+                        int r = (int) ((base & 0xFF) * factor);
+                        int g = (int) (((base >> 8) & 0xFF) * factor);
+                        int b = (int) (((base >> 16) & 0xFF) * factor);
+                        m_pBits[idx] = RGB(r, g, b);
+                    }
+                }
             }
             else
                 m_pBits[idx] = color;

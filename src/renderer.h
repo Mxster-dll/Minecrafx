@@ -44,12 +44,28 @@ public:
     /** @brief 绘制目标方块的黑色线框（深度缓冲） */
     void drawBlockOutline(const IVec4 &blockPos, const Camera4D &cam);
 
+    /** @brief 绘制挖掘进度蒙版（半透明黑色覆盖，progress 0~1） */
     /** @brief 设置当前目标方块（每帧调用，传空 IVec4 清零） */
     void setTargetBlock(const IVec4 &pos) { m_targetBlock = pos; m_hasTarget = true; }
     void clearTargetBlock() { m_hasTarget = false; }
 
+    /** @brief 设置挖掘目标：block 为挖掘中方块，progress 0~1 */
+    void setMiningTarget(const IVec4 &block, double progress)
+    {
+        m_miningTarget = block;
+        m_miningStage = (progress > 0.0 && progress < 1.0)
+            ? (int) (progress * 10.0) : -1;
+        if (m_miningStage > 9) m_miningStage = 9;
+    }
+    void clearMiningTarget() { m_miningStage = -1; }
+
+    /** @brief 设置挖掘目标方块与进度（0~1），-1 stage 表示无挖掘 */
+
     /** @brief 从 ../assert/texture/ 加载方块贴图（含像素数据） */
     void loadBlockTextures();
+
+    /** @brief 加载 destroy_stage_0~9.png 挖掘阶段贴图 */
+    void loadDestroyStages();
 
     /** @brief 由方块类型计算纹理 ID（face: 0=顶,1=侧,2=底） */
     static int blockTexId(int blockType, int face);
@@ -61,7 +77,8 @@ public:
     void loadHotbar();
 
     /** @brief 绘制热键栏 */
-    void drawHotbar(int selectedSlot, const int *hotbarBlockTypes = nullptr);
+    void drawHotbar(int selectedSlot, const int *hotbarBlockTypes = nullptr,
+        const int *hotbarCounts = nullptr);
 
     /** @brief 在屏幕 (x,y) 处绘制一个 sz×sz 的方块图标，count>1 时显示数字 */
     void drawBlockIcon(int screenX, int screenY, int size, int blockType, int count = 1);
@@ -163,6 +180,11 @@ private:
     int m_texW[MAX_TEX], m_texH[MAX_TEX];
     bool m_blockTexLoaded;
 
+    // ---- 挖掘阶段贴图（0~9，共 10 张 16×16） ----
+    static constexpr int DESTROY_STAGES = 10;
+    COLORREF m_destroyPixels[DESTROY_STAGES][16][16];
+    bool m_destroyLoaded = false;
+
     // ---- 热键栏 ----
     static constexpr int HOTBAR_SLOTS = 9;
     static constexpr int HB_ICON_SIZE = 16;
@@ -201,6 +223,10 @@ private:
     IVec4 m_targetBlock;
     bool m_hasTarget = false;
 
+    // ---- 挖掘目标 ----
+    IVec4 m_miningTarget;
+    int m_miningStage = -1;  // -1=无挖掘, 0~9=阶段
+
     // ---- 内部方法 ----
 
     /** @brief 清空帧缓冲 */
@@ -220,7 +246,7 @@ private:
         const Camera4D &cam, const Plane2D &plane,
         int topTexId, int sideTexId, int bottomTexId,
         std::vector<Tri3D> &outTris,
-        const World &world);
+        const World &world, int destroyStage = -1);
 
     /**
      * @brief 3D→2D：光栅化所有三角形（支持 Tile 范围）
@@ -236,7 +262,8 @@ private:
     void drawScanline(int y, int x0, int x1, double z0, double z1,
         double tuz0, double tvz0, double ooz0,
         double tuz1, double tvz1, double ooz1,
-        int texId, COLORREF color, int tileYMin = 0, int tileYMax = 99999);
+        int texId, COLORREF color, int destroyStage = -1,
+        int tileYMin = 0, int tileYMax = 99999);
 
     /** @brief 绘制一条经深度测试的 3D 线段到 DIB */
     void drawOutlineEdge3D(double u0, double v0, double y0,

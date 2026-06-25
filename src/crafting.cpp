@@ -115,9 +115,6 @@ static int parseBlockType(const std::string &name)
         {"diamond_chestplate", BLOCK_DIAMOND_CHESTPLATE},
         {"diamond_leggings", BLOCK_DIAMOND_LEGGINGS},
         {"diamond_boots", BLOCK_DIAMOND_BOOTS},
-        // 下界合金工具
-        {"netherite_pickaxe", BLOCK_NETHERITE_PICKAXE},
-        {"netherite_axe", BLOCK_NETHERITE_AXE},
     };
     auto it = map.find(name);
     return (it != map.end()) ? it->second : BLOCK_AIR;

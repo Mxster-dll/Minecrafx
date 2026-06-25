@@ -117,12 +117,13 @@ int main()
         wcscpy(sfxDir, tmp);
     }
 
-    wchar_t digPath[4][MAX_PATH], stepPath[6][MAX_PATH], clickPath[MAX_PATH];
+    wchar_t digPath[4][MAX_PATH], stepPath[6][MAX_PATH], clickPath[MAX_PATH], popPath[MAX_PATH];
     for (int i = 0; i < 4; ++i)
         swprintf(digPath[i], MAX_PATH, L"%lsdig%d.mp3", sfxDir, i + 1);
     for (int i = 0; i < 6; ++i)
         swprintf(stepPath[i], MAX_PATH, L"%lsstep%d.mp3", sfxDir, i + 1);
     swprintf(clickPath, MAX_PATH, L"%lsclick_stereo.mp3", sfxDir);
+    swprintf(popPath, MAX_PATH, L"%lspop.mp3", sfxDir);
 
     // 音效播放：先关旧音效再开新的（异步，不阻塞游戏）
     auto playSFX = [](const wchar_t *path)
@@ -142,6 +143,7 @@ int main()
 
     // ---- 加载方块贴图 ----
     renderer.loadBlockTextures();
+    renderer.loadDestroyStages();
     renderer.loadHotbar();
     renderer.loadInventoryIcons();
 
@@ -158,10 +160,147 @@ int main()
         return (int) std::floor(h);
     };
 
+    // ---- 挖掘时间查找（单位：秒，原始表×100ms÷1000） ----
+    // 返回值为秒；若无匹配工具则返回 default 值
+    auto getMiningTime = [](int blockType, int toolType) -> double
+    {
+        // 工具分类辅助
+        auto isPickaxe = [](int t)
+        {
+            return t == BLOCK_WOODEN_PICKAXE || t == BLOCK_STONE_PICKAXE ||
+                t == BLOCK_IRON_PICKAXE || t == BLOCK_DIAMOND_PICKAXE ||
+                t == BLOCK_GOLDEN_PICKAXE;
+        };
+        auto isAxe = [](int t)
+        {
+            return t == BLOCK_WOODEN_AXE || t == BLOCK_STONE_AXE ||
+                t == BLOCK_IRON_AXE || t == BLOCK_DIAMOND_AXE ||
+                t == BLOCK_GOLDEN_AXE;
+        };
+        auto isShovel = [](int t)
+        {
+            return t == BLOCK_WOODEN_SHOVEL || t == BLOCK_STONE_SHOVEL ||
+                t == BLOCK_IRON_SHOVEL || t == BLOCK_DIAMOND_SHOVEL ||
+                t == BLOCK_GOLDEN_SHOVEL;
+        };
+
+        // 按工具材质返回系数：木=1.0, 石=0.5, 铁=0.4, 钻=0.3, 金=0.15
+        auto pickSpeed = [&](int t, double base) -> double
+        {
+            if (t == BLOCK_GOLDEN_PICKAXE)  return base * 0.15;
+            if (t == BLOCK_DIAMOND_PICKAXE) return base * 0.3;
+            if (t == BLOCK_IRON_PICKAXE)    return base * 0.4;
+            if (t == BLOCK_STONE_PICKAXE)   return base * 0.5;
+            return base; // wooden or unknown
+        };
+        auto axeSpeed = [&](int t, double base) -> double
+        {
+            if (t == BLOCK_GOLDEN_AXE)  return base * 0.2;
+            if (t == BLOCK_DIAMOND_AXE) return base * 0.25;
+            if (t == BLOCK_IRON_AXE)    return base * 0.35;
+            if (t == BLOCK_STONE_AXE)   return base * 0.55;
+            return base;
+        };
+        auto shovelSpeed = [&](int t, double base) -> double
+        {
+            if (t == BLOCK_GOLDEN_SHOVEL)  return base * 0.12;
+            if (t == BLOCK_DIAMOND_SHOVEL) return base * 0.15;
+            if (t == BLOCK_IRON_SHOVEL)    return base * 0.25;
+            if (t == BLOCK_STONE_SHOVEL)   return base * 0.4;
+            return base * 0.6; // wooden
+        };
+
+        switch (blockType)
+        {
+            case BLOCK_GRASS:  // 1, default=0.9s
+                if (isShovel(toolType)) return shovelSpeed(toolType, 0.5);
+                return 0.9;
+            case BLOCK_DIRT:   // 2, default=0.8s
+                if (isShovel(toolType)) return shovelSpeed(toolType, 0.4);
+                return 0.8;
+            case BLOCK_LOG:    // 3, default=3.0s
+            case BLOCK_PLANKS: // 6, default=3.0s
+                if (isAxe(toolType)) return axeSpeed(toolType, 1.5);
+                return 3.0;
+            case BLOCK_LEAVES: // 4, default=0.3s
+                if (toolType == BLOCK_WOODEN_SWORD || toolType == BLOCK_STONE_SWORD ||
+                    toolType == BLOCK_IRON_SWORD || toolType == BLOCK_DIAMOND_SWORD ||
+                    toolType == BLOCK_GOLDEN_SWORD)
+                    return 0.1;
+                return 0.3;
+            case BLOCK_STONE:  // 5, default=7.5s
+                if (isPickaxe(toolType)) return pickSpeed(toolType, 1.2);
+                return 7.5;
+            case BLOCK_CRAFTING_TABLE: // 8, default=3.8s
+                if (isAxe(toolType)) return axeSpeed(toolType, 1.9);
+                return 3.8;
+            case BLOCK_DIAMOND_ORE: // 9, default=15s
+            case BLOCK_GOLD_ORE:    // 10, default=15s
+                if (isPickaxe(toolType)) return pickSpeed(toolType, 1.5);
+                return 15.0;
+            case BLOCK_IRON_ORE:  // 11, default=15s
+                if (isPickaxe(toolType)) return pickSpeed(toolType, 0.8);
+                return 15.0;
+            case BLOCK_DIAMOND_BLOCK: // 12, default=25s
+            case BLOCK_IRON_BLOCK:    // 14, default=25s
+                if (isPickaxe(toolType)) return pickSpeed(toolType, 1.3);
+                return 25.0;
+            case BLOCK_GOLD_BLOCK: // 13, default=15s
+                if (isPickaxe(toolType)) return pickSpeed(toolType, 0.8);
+                return 15.0;
+            default:
+                return 1.0; // 兜底 1 秒
+        }
+    };
+
+    // ---- 挖掘等级检查（工具类型不匹配/等级不足 → 不掉落） ----
+    auto canHarvest = [](int blockType, int toolType) -> bool
+    {
+        auto isAnyPickaxe = [](int t)
+        {
+            return t == BLOCK_WOODEN_PICKAXE || t == BLOCK_STONE_PICKAXE ||
+                t == BLOCK_IRON_PICKAXE || t == BLOCK_DIAMOND_PICKAXE ||
+                t == BLOCK_GOLDEN_PICKAXE;
+        };
+        auto pickTier = [](int t) -> int
+        {
+            if (t == BLOCK_WOODEN_PICKAXE || t == BLOCK_GOLDEN_PICKAXE) return 0;
+            if (t == BLOCK_STONE_PICKAXE) return 1;
+            if (t == BLOCK_IRON_PICKAXE) return 2;
+            if (t == BLOCK_DIAMOND_PICKAXE) return 3;
+            return -1;
+        };
+        switch (blockType)
+        {
+            case BLOCK_STONE:
+            case BLOCK_DIAMOND_ORE:
+            case BLOCK_GOLD_ORE:
+            case BLOCK_IRON_ORE:
+            case BLOCK_DIAMOND_BLOCK:
+            case BLOCK_GOLD_BLOCK:
+            case BLOCK_IRON_BLOCK:
+                if (!isAnyPickaxe(toolType)) return false;  // 必须用镐
+                break;
+            default: break;
+        }
+        int tier = pickTier(toolType);
+        switch (blockType)
+        {
+            case BLOCK_IRON_ORE:    return tier >= 1;  // 石镐+
+            case BLOCK_GOLD_ORE:
+            case BLOCK_DIAMOND_ORE:
+            case BLOCK_DIAMOND_BLOCK:
+            case BLOCK_GOLD_BLOCK:
+            case BLOCK_IRON_BLOCK:  return tier >= 2;  // 铁镐+
+            default:                return true;
+        }
+    };
+
     constexpr int MX = 48, MZ = 48, MW = 24;
 
     // ---- 移动模式 ----
     bool flyMode = true;
+    bool isCreative = false;   // 创造模式 / 生存模式
     double verticalVel = 0.0;
     bool onGround = false;
     clock_t lastSpacePress = 0;
@@ -173,6 +312,11 @@ int main()
     clock_t lastFrame = clock();
     int interactCooldown = 0;  // 放置/摧毁冷却帧数
     int selectedSlot = 0;      // 热键栏选中槽位
+    // ---- 挖掘状态（生存模式） ----
+    IVec4 miningTarget;
+    double miningProgress = 0.0;
+    double miningTotalTime = 0.0;
+    double miningCooldown = 0.0;  // 完成后 0.05s 延迟
     clock_t lastStepTime = 0;  // 上次脚步声时间
 
     // ---- 3D 地图 + 3D 摄像机（选模式后初始化） ----
@@ -275,6 +419,10 @@ int main()
             if (click1)
             {
                 playSFX(clickPath);
+                isCreative = false;
+                // 清空背包
+                for (int i = 0; i < Inventory::HOTBAR_SLOTS + Inventory::BACKPACK_SLOTS; ++i)
+                    inventory.getSlot(i) = { BLOCK_AIR, 0 };
                 // 生成丘陵地形
                 for (int x = 0; x < MX; ++x)
                     for (int z = 0; z < MZ; ++z)
@@ -286,6 +434,7 @@ int main()
                             {
                                 int type = BLOCK_DIRT;
                                 if (y == ht - 1) type = BLOCK_GRASS;
+                                else if (y < ht - 3) type = BLOCK_STONE;  // 深层石头
                                 world.set(IVec4(x, y, z, w), type);
                             }
                         }
@@ -346,6 +495,26 @@ int main()
             if (click2)
             {
                 playSFX(clickPath);
+                isCreative = true;
+                // 填充背包：排除工具、武器、盔甲
+                {
+                    auto isExcluded = [](int id) -> bool
+                    {
+                        // 木/石/铁/金/钻石 工具 (22-26, 27-31, 32-36, 41-45, 50-54)
+                        if (id >= 22 && id <= 54) return true;
+                        // 盔甲 (37-40, 46-49, 55-58)
+                        if (id >= 37 && id <= 40) return true;
+                        if (id >= 46 && id <= 49) return true;
+                        if (id >= 55 && id <= 58) return true;
+                        return false;
+                    };
+                    int slot = 0;
+                    for (int id = 1; id < MAX_BLOCK_TYPE && slot < Inventory::HOTBAR_SLOTS + Inventory::BACKPACK_SLOTS; ++id)
+                    {
+                        if (!isExcluded(id))
+                            inventory.getSlot(slot++) = { id, 1 };
+                    }
+                }
                 constexpr int CF_X = 16, CF_Z = 16, CF_W = 16;
                 for (int x = 0; x < CF_X; ++x)
                     for (int z = 0; z < CF_Z; ++z)
@@ -1016,40 +1185,156 @@ int main()
             };
             hasTarget = raycast3D(targetedBlock, targetedPrev);
 
-            // 鼠标按键行为（带冷却防止连点）
+            // 鼠标按键行为
             IVec4 hitPos, prevPos;
             bool mapChanged = false;
             IVec4 changedPos; int changedType = 0;  // 增量更新参数
-            if (interactCooldown > 0) --interactCooldown;
-            else
+
+            // ── 左键：挖掘（创造模式即时 / 生存模式持握蓄力） ──
+            if (isCreative)
             {
-                if (input.getMouseClick(0))
+                // 创造模式：点击即摧毁，无进度，不掉落
+                if (interactCooldown > 0) --interactCooldown;
+                else if (input.getMouseClick(0) && hasTarget)
                 {
                     if (raycast3D(hitPos, prevPos))
                     {
                         world.set(hitPos, 0);
                         mapChanged = true; changedPos = hitPos; changedType = 0;
-                        interactCooldown = 8;
-                        playSFX(digPath[rand() % 4]);
+                        interactCooldown = 4;
                     }
                 }
-                if (input.getMouseClick(1))
+            }
+            else
+            {
+                // 生存模式：持握挖掘，有进度
+                if (input.isMouseButtonDown(0) && hasTarget)
                 {
-                    // 右键工作台 → 打开工作台界面
-                    if (hasTarget && world.get(targetedBlock) == BLOCK_CRAFTING_TABLE)
+                    int curBlock = world.get(targetedBlock);
+                    if (curBlock <= 0) { miningProgress = 0.0; }
+                    else if (targetedBlock == miningTarget)
                     {
-                        playSFX(clickPath);
-                        inventory.setCraftMode(Inventory::CM_CraftingTable3x3);
-                        state = GameState::CraftingTable;
-                        renderer.captureBackground();
-                        renderer.applyGaussianBlur();
-                        input.showMouseCursor(true);
-                        continue;
+                        // 继续挖掘同一方块
+                        int toolType = inventory.hotbarBlockType(selectedSlot);
+                        miningTotalTime = getMiningTime(curBlock, toolType);
+                        miningProgress += dt;
+                        if (miningProgress >= miningTotalTime)
+                        {
+                            miningProgress = miningTotalTime;  // 到达 100%
+                            if (miningCooldown <= 0.0)
+                                miningCooldown = 0.05;  // 进入 0.05s 延迟
+                        }
                     }
-
-                    if (raycast3D(hitPos, prevPos))
+                    else
                     {
-                        int placeType = inventory.hotbarBlockType(selectedSlot);
+                        // 目标切换（冷却期间不重置）
+                        if (miningCooldown <= 0.0)
+                        {
+                            miningTarget = targetedBlock;
+                            miningProgress = 0.0;
+                            miningCooldown = 0.0;
+                        }
+                    }
+                }
+                else
+                {
+                    // 未按住左键或没有目标（冷却期间不重置）
+                    if (miningCooldown <= 0.0)
+                    {
+                        miningProgress = 0.0;
+                        miningTarget = IVec4();
+                        miningCooldown = 0.0;
+                    }
+                }
+
+                // 挖掘冷却倒计时
+                if (miningCooldown > 0.0)
+                {
+                    miningCooldown -= dt;
+                    if (miningCooldown <= 0.0)
+                    {
+                        int destroyedType = world.get(miningTarget);
+                        world.set(miningTarget, 0);
+                        mapChanged = true; changedPos = miningTarget; changedType = 0;
+                        playSFX(popPath);
+                        // 掉落（仅当工具等级足够，且树叶不掉落自身）
+                        if (destroyedType != BLOCK_LEAVES &&
+                            canHarvest(destroyedType, inventory.hotbarBlockType(selectedSlot)))
+                        {
+                            bool placed = false;
+                            for (int i = 0; i < Inventory::HOTBAR_SLOTS + Inventory::BACKPACK_SLOTS; ++i)
+                            {
+                                auto &slot = inventory.getSlot(i);
+                                if (slot.blockType == destroyedType)
+                                {
+                                    slot.count++; placed = true; break;
+                                }
+                            }
+                            if (!placed)
+                            {
+                                for (int i = 0; i < Inventory::HOTBAR_SLOTS + Inventory::BACKPACK_SLOTS; ++i)
+                                {
+                                    auto &slot = inventory.getSlot(i);
+                                    if (slot.blockType == BLOCK_AIR)
+                                    {
+                                        slot.blockType = destroyedType; slot.count = 1; placed = true; break;
+                                    }
+                                }
+                            }
+                        }
+                        // 树叶额外掉落苹果（50% 概率）
+                        if (destroyedType == BLOCK_LEAVES && (rand() % 100) < 50)
+                        {
+                            bool placed = false;
+                            for (int i = 0; i < Inventory::HOTBAR_SLOTS + Inventory::BACKPACK_SLOTS; ++i)
+                            {
+                                auto &slot = inventory.getSlot(i);
+                                if (slot.blockType == BLOCK_APPLE)
+                                {
+                                    slot.count++; placed = true; break;
+                                }
+                            }
+                            if (!placed)
+                            {
+                                for (int i = 0; i < Inventory::HOTBAR_SLOTS + Inventory::BACKPACK_SLOTS; ++i)
+                                {
+                                    auto &slot = inventory.getSlot(i);
+                                    if (slot.blockType == BLOCK_AIR)
+                                    {
+                                        slot.blockType = BLOCK_APPLE; slot.count = 1; break;
+                                    }
+                                }
+                            }
+                        }
+                        miningProgress = 0.0;
+                        miningTotalTime = 0.0;
+                        miningCooldown = 0.0;
+                        miningTarget = IVec4();
+                    }
+                }
+            }
+
+            // ── 右键：放置方块 / 打开工作台 ──
+            if (input.getMouseClick(1))
+            {
+                // 右键工作台 → 打开工作台界面
+                if (hasTarget && world.get(targetedBlock) == BLOCK_CRAFTING_TABLE)
+                {
+                    playSFX(clickPath);
+                    inventory.setCraftMode(Inventory::CM_CraftingTable3x3);
+                    state = GameState::CraftingTable;
+                    renderer.captureBackground();
+                    renderer.applyGaussianBlur();
+                    input.showMouseCursor(true);
+                    continue;
+                }
+
+                if (raycast3D(hitPos, prevPos))
+                {
+                    int placeType = inventory.hotbarBlockType(selectedSlot);
+                    if (placeType <= 0) { /* 手持空物品，不放置 */ }
+                    else
+                    {
                         Vec4 pp = camera.getPos();
                         IVec4 playerFeet((int) std::round(pp.x), (int) std::round(pp.y - CYLINDER_H + 0.5),
                             (int) std::round(pp.z), (int) std::round(pp.w));
@@ -1065,7 +1350,13 @@ int main()
                         {
                             world.set(prevPos, placeType);
                             mapChanged = true; changedPos = prevPos; changedType = placeType;
-                            interactCooldown = 15;
+                            // 生存模式消耗 1 个物品
+                            if (!isCreative)
+                            {
+                                auto &slot = inventory.getSlot(selectedSlot);
+                                if (slot.count > 0) slot.count--;
+                                if (slot.count <= 0) slot.blockType = BLOCK_AIR;
+                            }
                             playSFX(digPath[rand() % 4]);
                         }
                     }
@@ -1089,11 +1380,21 @@ int main()
             else
                 renderer.clearTargetBlock();
 
+            // 挖掘目标（必须在 renderWorld 之前设置，管线内逐面叠加 destroy_stage）
+            if (!isCreative && miningProgress > 0.0 && miningTotalTime > 0.0 && world.get(miningTarget) > 0)
+                renderer.setMiningTarget(miningTarget, miningProgress / miningTotalTime);
+            else
+                renderer.clearMiningTarget();
+
             renderer.renderWorld(world, camera);
             // 快捷栏类型从 Inventory 读取
-            int hbTypes[9];
-            for (int i = 0; i < 9; ++i) hbTypes[i] = inventory.getSlot(i).blockType;
-            renderer.drawHotbar(selectedSlot, hbTypes);
+            int hbTypes[9], hbCounts[9];
+            for (int i = 0; i < 9; ++i)
+            {
+                hbTypes[i] = inventory.getSlot(i).blockType;
+                hbCounts[i] = inventory.getSlot(i).count;
+            }
+            renderer.drawHotbar(selectedSlot, hbTypes, hbCounts);
             renderer.drawCrosshair();
             renderer.drawHUD(camera);
 
