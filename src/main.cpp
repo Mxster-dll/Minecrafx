@@ -168,6 +168,7 @@ int main()
     constexpr double GRAVITY = 25.0;
     constexpr double JUMP_VEL = 8.5;
     double sliceVelocity = 0.0;
+    double pendingSliceRotation = 0.0;  // 累积未应用的切片旋转（用于节流地图重建）
     clock_t lastFrame = clock();
     int interactCooldown = 0;  // 放置/摧毁冷却帧数
     int selectedSlot = 0;      // 热键栏选中槽位
@@ -319,6 +320,7 @@ int main()
                 // 初始地图
                 map3D = generateMap3D(world, camera, 0.5, [](int bx, int by, int bz, int bw)->COLORREF { return blockColor(bx, by, bz, bw); });
                 { Plane2D pl = camera.getViewPlane(); Vec3 cXZW = Vec3::fromVec4(camera.getPos()); cam3U = vec3Dot(cXZW, pl.p) - vec3Dot(Vec3::fromVec4(map3D.camRef4D), pl.p); cam3V = vec3Dot(cXZW, pl.q) - vec3Dot(Vec3::fromVec4(map3D.camRef4D), pl.q); cam3Y = camera.getPos().y - map3D.camRef4D.y; }
+                pendingSliceRotation = 0.0;  // 新地图，重置累积
                 state = GameState::Gameplay;
                 input.showMouseCursor(false);
                 input.getMouseDelta();
@@ -335,6 +337,7 @@ int main()
                             world.set(IVec4(x, 0, z, w), BLOCK_GRASS);
                 map3D = generateMap3D(world, camera, 0.5, [](int bx, int by, int bz, int bw)->COLORREF { return blockColor(bx, by, bz, bw); });
                 { Plane2D pl = camera.getViewPlane(); Vec3 cXZW = Vec3::fromVec4(camera.getPos()); cam3U = vec3Dot(cXZW, pl.p) - vec3Dot(Vec3::fromVec4(map3D.camRef4D), pl.p); cam3V = vec3Dot(cXZW, pl.q) - vec3Dot(Vec3::fromVec4(map3D.camRef4D), pl.q); cam3Y = camera.getPos().y - map3D.camRef4D.y; }
+                pendingSliceRotation = 0.0;  // 新地图，重置累积
                 state = GameState::Gameplay;
                 input.showMouseCursor(false);
                 input.getMouseDelta();
@@ -671,10 +674,9 @@ int main()
                 continue;
             }
 
-            // 按钮交互
             int btnX = (SCREEN_WIDTH - BTN_W) / 2;
-            int btn1Y = SCREEN_HEIGHT / 2 - 15;       // 返回标题页
-            int btn2Y = btn1Y + BTN_H + 15;            // 退出游戏
+            int btn1Y = SCREEN_HEIGHT / 2 - 15;
+            int btn2Y = btn1Y + BTN_H + 15;
             POINT mp = input.getMouseScreenPos();
             bool hover1 = (mp.x >= btnX && mp.x < btnX + BTN_W && mp.y >= btn1Y && mp.y < btn1Y + BTN_H);
             bool hover2 = (mp.x >= btnX && mp.x < btnX + BTN_W && mp.y >= btn2Y && mp.y < btn2Y + BTN_H);
@@ -683,17 +685,16 @@ int main()
                 input.requestQuit();
             if (mouseClick && hover1)
             {
-                // 返回标题页：清空世界，重置状态
                 world = World();
                 camera = Camera4D();
                 map3D.valid = false;
                 cam3U = cam3V = cam3Y = cam3Yaw = cam3Pitch = 0;
                 selectedSlot = 0;
+                pendingSliceRotation = 0.0;
                 state = GameState::Login;
                 continue;
             }
 
-            // 渲染暂停界面
             cleardevice();
             setbkcolor(RGB(10, 10, 30));
             renderer.drawBackground();
@@ -903,7 +904,7 @@ int main()
         // ---- F3：切换 HUD 显示 ----
         if (input.isPressed(Key::F3)) renderer.toggleHUD();
 
-        // ---- 滚轮：重建地图 ----
+        // ---- 滚轮：重建地图（累积旋转，超过阈值才重建，避免平滑衰减期间每帧重建卡顿） ----
         {
             double inputDesire = 0.0;
             int wheel = input.getMouseWheel();
@@ -913,20 +914,46 @@ int main()
             if (std::abs(sliceVelocity) > 1e-10)
             {
                 camera.rotateSlice(sliceVelocity);
-                // 重建 3D 地图
-                map3D = generateMap3D(world, camera, 0.5,
-                    [](int bx, int by, int bz, int bw) -> COLORREF
+                pendingSliceRotation += sliceVelocity;
+
+                // 只在累积旋转超过阈值时重建地图（~0.7°/次），大幅减少 map3D 重建频率
+                constexpr double MAP_REBUILD_THRESHOLD = 0.012;
+                if (std::abs(pendingSliceRotation) >= MAP_REBUILD_THRESHOLD)
                 {
-                    return blockColor(bx, by, bz, bw);
-                });
-                // 重新计算 3D 位置
-                Plane2D pl = camera.getViewPlane();
-                Vec3 cXZW = Vec3::fromVec4(camera.getPos());
-                cam3U = vec3Dot(cXZW, pl.p) - vec3Dot(Vec3::fromVec4(map3D.camRef4D), pl.p);
-                cam3V = vec3Dot(cXZW, pl.q) - vec3Dot(Vec3::fromVec4(map3D.camRef4D), pl.q);
-                cam3Y = camera.getPos().y - map3D.camRef4D.y;
+                    pendingSliceRotation = 0.0;
+                    // 重建 3D 地图
+                    map3D = generateMap3D(world, camera, 0.5,
+                        [](int bx, int by, int bz, int bw) -> COLORREF
+                    {
+                        return blockColor(bx, by, bz, bw);
+                    });
+                    // 重新计算 3D 位置
+                    Plane2D pl = camera.getViewPlane();
+                    Vec3 cXZW = Vec3::fromVec4(camera.getPos());
+                    cam3U = vec3Dot(cXZW, pl.p) - vec3Dot(Vec3::fromVec4(map3D.camRef4D), pl.p);
+                    cam3V = vec3Dot(cXZW, pl.q) - vec3Dot(Vec3::fromVec4(map3D.camRef4D), pl.q);
+                    cam3Y = camera.getPos().y - map3D.camRef4D.y;
+                }
             }
-            else sliceVelocity = 0;
+            else
+            {
+                // 旋转完全停止，若仍有未应用累积则做最后一次重建以确保碰撞精度
+                if (std::abs(pendingSliceRotation) > 1e-10)
+                {
+                    pendingSliceRotation = 0.0;
+                    map3D = generateMap3D(world, camera, 0.5,
+                        [](int bx, int by, int bz, int bw) -> COLORREF
+                    {
+                        return blockColor(bx, by, bz, bw);
+                    });
+                    Plane2D pl = camera.getViewPlane();
+                    Vec3 cXZW = Vec3::fromVec4(camera.getPos());
+                    cam3U = vec3Dot(cXZW, pl.p) - vec3Dot(Vec3::fromVec4(map3D.camRef4D), pl.p);
+                    cam3V = vec3Dot(cXZW, pl.q) - vec3Dot(Vec3::fromVec4(map3D.camRef4D), pl.q);
+                    cam3Y = camera.getPos().y - map3D.camRef4D.y;
+                }
+                sliceVelocity = 0;
+            }
         }
 
 

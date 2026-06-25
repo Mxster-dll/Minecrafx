@@ -751,10 +751,48 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
     // 1. 清空帧缓冲
     resetBuffers();
 
-    DWORD bg = 0x001E0A0A;
-    int total = m_screenWidth * m_screenHeight;
-    DWORD *bits = m_pBits;
-    for (int i = 0; i < total; ++i) bits[i] = bg;
+    // 天空/虚空渐变：地平线在俯角 45°（-0.785 rad），随俯仰角动态变化
+    {
+        double pitch = cam.getPitch();
+        constexpr double fov = 1.0472;                // 垂直视场角 60°
+        constexpr double horizonOffset = 0.785;        // 地平线偏移：俯视 45° 开始渐变
+        DWORD *bits = m_pBits;
+        for (int y = 0; y < m_screenHeight; ++y)
+        {
+            double t = 0.5 - (double) y / (m_screenHeight - 1);
+            double angle = pitch + t * fov + horizonOffset;
+
+            int r, g, b;
+            // 用 smoothstep 在 horizon ±8° 范围内平滑过渡
+            double blend = angle / 0.14;               // ~8° 过渡带
+            if (blend > 1.0)  blend = 1.0;
+            if (blend < 0.0)  blend = 0.0;
+            // smoothstep: 3t² - 2t³
+            double w = blend * blend * (3.0 - 2.0 * blend);
+
+            // 天空色（地平线以上）
+            double s = (angle + 0.5) / 1.8;  if (s > 1.0) s = 1.0; if (s < 0.0) s = 0.0;
+            int sr = (int) (180 * (1.0 - s) + 60 * s);
+            int sg = (int) (220 * (1.0 - s) + 140 * s);
+            int sb = (int) (255 * (1.0 - s) + 230 * s);
+
+            // 虚空色（地平线以下）
+            double v = -(angle - 0.5) / 1.8; if (v > 1.0) v = 1.0; if (v < 0.0) v = 0.0;
+            int vr = (int) (30 * (1.0 - v) + 2 * v);
+            int vg = (int) (30 * (1.0 - v) + 2 * v);
+            int vb = (int) (50 * (1.0 - v) + 8 * v);
+
+            r = (int) (sr * w + vr * (1.0 - w));
+            g = (int) (sg * w + vg * (1.0 - w));
+            b = (int) (sb * w + vb * (1.0 - w));
+
+            // EasyX 32-bit DIB 使用 RGBA 字节序
+            DWORD color = (r << 16) | (g << 8) | b;
+            DWORD *row = bits + y * m_screenWidth;
+            for (int x = 0; x < m_screenWidth; ++x)
+                row[x] = color;
+        }
+    }
 
     // 2. 获取观察平面
     Plane2D plane = cam.getViewPlane();
