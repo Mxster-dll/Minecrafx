@@ -59,6 +59,9 @@ public:
     }
     void clearMiningTarget() { m_miningStage = -1; }
 
+    /** @brief 设置熔炉是否活跃（切换 lit 贴图） */
+    static void setFurnaceActive(bool active) { m_furnaceActive = active; }
+
     /** @brief 设置挖掘目标方块与进度（0~1），-1 stage 表示无挖掘 */
 
     /** @brief 从 ../assert/texture/ 加载方块贴图（含像素数据） */
@@ -228,6 +231,9 @@ private:
     // ---- 挖掘目标 ----
     IVec4 m_miningTarget;
     int m_miningStage = -1;  // -1=无挖掘, 0~9=阶段
+
+    // ---- 熔炉状态 ----
+    static inline bool m_furnaceActive = false;
 
     // ---- 内部方法 ----
 

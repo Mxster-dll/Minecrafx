@@ -27,6 +27,7 @@
 #include "input/input_handler.h"
 #include "inventory.h"
 #include "crafting.h"
+#include "furnace.h"
 
  // ---- 游戏状态 ----
 enum class GameState
@@ -35,6 +36,7 @@ enum class GameState
     Gameplay,      // 正常游戏
     Inventory,     // 背包界面（E 键打开，2×2 合成）
     CraftingTable, // 工作台界面（右键工作台打开，3×3 合成）
+    Furnace,       // 熔炉界面（右键熔炉打开）
     Paused         // 暂停菜单（Esc 键打开）
 };
 
@@ -344,17 +346,22 @@ int main()
     SetWindowText(hwnd, L"Minecrafx");
 
     // ---- 预加载 GUI 图片 ----
-    IMAGE imgInventory, imgCraftingTable, imgButton;
+    IMAGE imgInventory, imgCraftingTable, imgSmoker, imgButton;
+    IMAGE imgBurnProgress, imgLitProgress;
     IMAGE imgIsles;  // 登录页背景
     loadimage(&imgIsles, L"../assert/start.png");
     // 加载原图 → 3x 最邻近放大（无后期处理）
     {
-        IMAGE imgInvNative, imgCTNative;
+        IMAGE imgInvNative, imgCTNative, imgSmokerNative;
         loadimage(&imgInvNative, L"../assert/gui/widget/inventory.png");
         loadimage(&imgCTNative, L"../assert/gui/widget/crafting_table.png");
+        loadimage(&imgSmokerNative, L"../assert/gui/widget/smoker.png");
         nearestScale(imgInventory, imgInvNative, 3);
         nearestScale(imgCraftingTable, imgCTNative, 3);
+        nearestScale(imgSmoker, imgSmokerNative, 3);
     }
+    loadimage(&imgBurnProgress, L"../assert/gui/widget/burn_progress.png");
+    loadimage(&imgLitProgress, L"../assert/gui/widget/lit_progress.png");
     // 按钮贴图：594×54，无需缩放
     constexpr int BTN_W = 594, BTN_H = 54;
     loadimage(&imgButton, L"../assert/gui/widget/button.png");
@@ -363,6 +370,7 @@ int main()
     GameState state = GameState::Login;
     Inventory inventory;
     CraftingManager craftMgr;  // 合成配方
+    FurnaceManager::State furnaceState;  // 熔炉状态
 
     InputHandler input(hwnd);
     input.showMouseCursor(true);  // 登录页显示鼠标
@@ -377,6 +385,32 @@ int main()
         lastFrame = nowFrame;
         if (dt > 0.1) dt = 0.1;
         if (dt <= 0.0) dt = 0.001;
+
+        // ── 熔炉后台更新（所有状态下持续运行） ──
+        {
+            constexpr int FURN_IN = Inventory::ARMOR_BASE + Inventory::ARMOR_SLOTS;
+            constexpr int FURN_FU = FURN_IN + 1;
+            constexpr int FURN_OU = FURN_IN + 2;
+            auto &inSlot = inventory.getSlot(FURN_IN);
+            auto &fuelSlot = inventory.getSlot(FURN_FU);
+            auto &outSlot = inventory.getSlot(FURN_OU);
+            furnaceState.inputType = inSlot.blockType;
+            furnaceState.inputCount = inSlot.count;
+            furnaceState.fuelType = fuelSlot.blockType;
+            furnaceState.fuelCount = fuelSlot.count;
+            furnaceState.outputType = outSlot.blockType;
+            furnaceState.outputCount = outSlot.count;
+
+            FurnaceManager::update(furnaceState, dt);
+
+            inSlot.blockType = furnaceState.inputType;
+            inSlot.count = furnaceState.inputCount;
+            fuelSlot.blockType = furnaceState.fuelType;
+            fuelSlot.count = furnaceState.fuelCount;
+            outSlot.blockType = furnaceState.outputType;
+            outSlot.count = furnaceState.outputCount;
+            renderer.setFurnaceActive(furnaceState.active);
+        }
 
         // ================================================================
         // 登录页：选择模式
@@ -886,6 +920,258 @@ int main()
             continue;
         }
 
+        // ================================================================
+        // 熔炉界面
+        // ================================================================
+        if (state == GameState::Furnace)
+        {
+            if (input.isPressed(Key::Esc) || input.isPressed(Key::E))
+            {
+                if (inventory.isDragging()) inventory.cancelDrag();
+                state = GameState::Gameplay;
+                input.showMouseCursor(false);
+                input.getMouseDelta();
+                continue;
+            }
+
+            int smDispW = imgSmoker.getwidth();
+            int smDispH = imgSmoker.getheight();
+            int smDispX = (SCREEN_WIDTH - smDispW) / 2;
+            int smDispY = (SCREEN_HEIGHT - smDispH) / 2;
+            int smNativeW = smDispW / 3;
+            int smNativeH = smDispH / 3;
+
+            POINT mp = input.getMouseScreenPos();
+            bool mouseDown = input.getMouseClick(0);
+            bool mouseUp = input.getMouseRelease(0);
+            bool rightClick = input.getMouseClick(1);
+
+            // 熔炉槽位索引
+            constexpr int FURN_INPUT = Inventory::ARMOR_BASE + Inventory::ARMOR_SLOTS;     // 50
+            constexpr int FURN_FUEL = FURN_INPUT + 1;  // 51
+            constexpr int FURN_OUTPUT = FURN_INPUT + 2;  // 52
+
+            // 槽位命中检测
+            auto hitFurnaceSlot = [&](int nx, int ny) -> int
+            {
+                if (nx >= 56 && nx < 72 && ny >= 17 && ny < 33) return FURN_INPUT;
+                if (nx >= 56 && nx < 72 && ny >= 53 && ny < 69) return FURN_FUEL;
+                if (nx >= 116 && nx < 132 && ny >= 35 && ny < 51) return FURN_OUTPUT;
+                return -1;
+            };
+
+            // 背包/快捷栏沿用 inventory.hitTest
+            int hoveredSlot = -1;
+            // 先检测熔炉槽位
+            {
+                double sx = (double) smDispW / smNativeW;
+                double sy = (double) smDispH / smNativeH;
+                double nx = (mp.x - smDispX) / sx;
+                double ny = (mp.y - smDispY) / sy;
+                hoveredSlot = hitFurnaceSlot((int) nx, (int) ny);
+            }
+            if (hoveredSlot < 0)
+                hoveredSlot = inventory.hitTest(mp.x, mp.y,
+                    smDispX, smDispY, smDispW, smDispH,
+                    smNativeW, smNativeH);
+
+            // 左键交互（与背包/工作台一致）
+            static int dragSrcSlot = -1;
+            static bool didAutoPickup = false;
+
+            // 熔炉格放入验证
+            auto canPlaceInFurnace = [&](int slotIdx, int itemType) -> bool
+            {
+                if (slotIdx == FURN_OUTPUT) return false;  // 输出格不可放入
+                if (slotIdx == FURN_FUEL) return FurnaceManager::fuelValue(itemType) > 0.0;
+                if (slotIdx == FURN_INPUT) return true;    // 输入格接受任何物品
+                return true;
+            };
+
+            if (mouseDown && hoveredSlot >= 0)
+            {
+                dragSrcSlot = hoveredSlot;
+                didAutoPickup = false;
+                if (!inventory.isDragging())
+                    didAutoPickup = inventory.pickup(hoveredSlot, -1);
+            }
+            if (mouseUp && inventory.isDragging())
+            {
+                bool sameSlot = (hoveredSlot == dragSrcSlot);
+                if (!(sameSlot && didAutoPickup) && hoveredSlot >= 0)
+                {
+                    if (canPlaceInFurnace(hoveredSlot, inventory.dragBlockType()))
+                        inventory.placeInto(hoveredSlot);
+                }
+            }
+            else if (mouseUp && hoveredSlot >= 0 && !inventory.isDragging())
+            {
+                // 点击输出格有产物 → 拿取
+                if (hoveredSlot == FURN_OUTPUT && inventory.getSlot(FURN_OUTPUT).blockType != BLOCK_AIR)
+                {
+                    inventory.pickup(FURN_OUTPUT, -1);
+                    inventory.getSlot(FURN_OUTPUT) = { BLOCK_AIR, 0 };
+                }
+                else
+                    inventory.pickup(hoveredSlot, -1);
+            }
+            if (rightClick && hoveredSlot >= 0)
+            {
+                if (inventory.isDragging())
+                {
+                    if (canPlaceInFurnace(hoveredSlot, inventory.dragBlockType()))
+                        inventory.placeOneInto(hoveredSlot);
+                }
+                else
+                    inventory.pickup(hoveredSlot, 1);
+            }
+
+            // 渲染
+            cleardevice();
+            setbkcolor(RGB(10, 10, 30));
+            renderer.drawBackground();
+            renderer.drawImageCentered(&imgSmoker);
+
+            // 绘制背包+快捷栏+盔甲槽（跳过熔炉三格，它们单独绘制）
+            for (int i = 0; i < Inventory::ARMOR_BASE + Inventory::ARMOR_SLOTS; ++i)
+            {
+                const auto &slot = inventory.getSlot(i);
+                if (slot.blockType == BLOCK_AIR || slot.count <= 0) continue;
+                int sx, sy, sw, sh;
+                inventory.slotScreenRect(i,
+                    smDispX, smDispY, smDispW, smDispH,
+                    smNativeW, smNativeH, sx, sy, sw, sh);
+                renderer.drawBlockIcon(sx, sy, sh, slot.blockType, slot.count);
+            }
+            // 绘制熔炉三格物品
+            auto drawFurnSlot = [&](int nativeX, int nativeY, int slotIdx)
+            {
+                const auto &slot = inventory.getSlot(slotIdx);
+                if (slot.blockType == BLOCK_AIR || slot.count <= 0) return;
+                double sx = (double) smDispW / smNativeW;
+                double sy = (double) smDispH / smNativeH;
+                int sz = (int) (Inventory::SLOT_SIZE * sx);
+                int dx = smDispX + (int) (nativeX * sx);
+                int dy = smDispY + (int) (nativeY * sy);
+                renderer.drawBlockIcon(dx, dy, sz, slot.blockType, slot.count);
+            };
+            drawFurnSlot(56, 17, FURN_INPUT);
+            drawFurnSlot(56, 53, FURN_FUEL);
+            drawFurnSlot(116, 35, FURN_OUTPUT);
+
+            // 燃烧进度条
+            if (furnaceState.active && imgBurnProgress.getwidth() > 0)
+            {
+                int progW = imgBurnProgress.getwidth();
+                int progH = imgBurnProgress.getheight();
+                int cols = (int) (furnaceState.burnProgress * progW);
+                if (cols > progW) cols = progW;
+                if (cols > 0)
+                {
+                    double sx = (double) smDispW / smNativeW;
+                    double sy = (double) smDispH / smNativeH;
+                    int barX = smDispX + (int) (80 * sx);
+                    int barY = smDispY + (int) (34 * sy);
+                    int barW = (int) (22 * sx);
+                    int barH = (int) (16 * sy);
+                    DWORD *pBuf = GetImageBuffer(&imgBurnProgress);
+                    int pSrcW = imgBurnProgress.getwidth();
+                    if (pBuf)
+                    {
+                        int dispCols = cols * barW / progW;
+                        if (dispCols < 1) dispCols = 1;
+                        for (int dy = 0; dy < barH && dy < progH * barH / progH; ++dy)
+                        {
+                            int py = barY + dy;
+                            if (py < 0 || py >= SCREEN_HEIGHT) continue;
+                            int srcY = dy * progH / barH;
+                            for (int dx = 0; dx < dispCols; ++dx)
+                            {
+                                int px = barX + dx;
+                                if (px < 0 || px >= SCREEN_WIDTH) continue;
+                                int srcX = dx * progW / barW;
+                                if (srcX >= cols) srcX = cols - 1;
+                                DWORD c = pBuf[srcY * pSrcW + srcX];
+                                if (c == 0) continue;
+                                DWORD *bits = renderer.getPixelBits();
+                                bits[py * SCREEN_WIDTH + px] = c;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 燃料剩余指示（lit_progress.png: 14×14，顶行=满，底面=空）
+            if (furnaceState.active && imgLitProgress.getwidth() > 0)
+            {
+                // 计算燃料剩余比例（相对于当前燃料的热值）
+                // burnTimeRemain / fuelCapacity = 剩余可烧数 / 总容量
+                double fuelRatio = (furnaceState.fuelCapacity > 0.0)
+                    ? furnaceState.burnTimeRemain / furnaceState.fuelCapacity : 0.0;
+                if (fuelRatio < 0.0) fuelRatio = 0.0;
+                if (fuelRatio > 1.0) fuelRatio = 1.0;
+
+                int visibleRows = (int) (fuelRatio * 14.0 + 0.5);
+                if (visibleRows < 0) visibleRows = 0;
+                if (visibleRows > 14) visibleRows = 14;
+
+                if (visibleRows > 0)
+                {
+                    double sx = (double) smDispW / smNativeW;
+                    double sy = (double) smDispH / smNativeH;
+                    int fireX = smDispX + (int) (56 * sx);
+                    int fireY = smDispY + (int) (36 * sy);
+                    int fireW = (int) (14 * sx);
+                    int fireH = (int) (14 * sy);
+                    DWORD *pBuf = GetImageBuffer(&imgLitProgress);
+                    int pSrcW = imgLitProgress.getwidth();
+                    int pSrcH = imgLitProgress.getheight();
+                    if (pBuf && pSrcW > 0 && pSrcH > 0)
+                    {
+                        // 从上往下消失：显示底部 visibleRows/14 比例
+                        int emptyRows = 14 - visibleRows;
+                        int dispStartRow = emptyRows * fireH / 14;
+                        int srcStartRow = emptyRows * pSrcH / 14;
+                        int dispCount = fireH - dispStartRow;
+                        int srcCount = pSrcH - srcStartRow;
+                        if (dispCount < 1) dispCount = 1;
+                        if (srcCount < 1) srcCount = 1;
+                        for (int dy = 0; dy < dispCount; ++dy)
+                        {
+                            int py = fireY + dispStartRow + dy;
+                            if (py < 0 || py >= SCREEN_HEIGHT) continue;
+                            int srcY = srcStartRow + dy * srcCount / dispCount;
+                            if (srcY >= pSrcH) srcY = pSrcH - 1;
+                            for (int dx = 0; dx < fireW; ++dx)
+                            {
+                                int px = fireX + dx;
+                                if (px < 0 || px >= SCREEN_WIDTH) continue;
+                                int srcX = dx * pSrcW / fireW;
+                                if (srcX >= pSrcW) srcX = pSrcW - 1;
+                                DWORD c = pBuf[srcY * pSrcW + srcX];
+                                if (c == 0) continue;
+                                DWORD *bits = renderer.getPixelBits();
+                                bits[py * SCREEN_WIDTH + px] = c;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 拖拽中物品
+            if (inventory.isDragging())
+            {
+                double sx = (double) smDispW / smNativeW;
+                int sz = (int) (16 * sx);
+                renderer.drawBlockIcon(mp.x - sz / 2, mp.y - sz / 2, sz,
+                    inventory.dragBlockType(), inventory.dragCount());
+            }
+
+            renderer.flushToScreen();
+            FlushBatchDraw();
+            continue;
+        }
+
         if (state == GameState::Paused)
         {
             if (input.isPressed(Key::Esc))
@@ -1383,6 +1669,16 @@ int main()
                     playSFX(clickPath);
                     inventory.setCraftMode(Inventory::CM_CraftingTable3x3);
                     state = GameState::CraftingTable;
+                    renderer.captureBackground();
+                    renderer.applyGaussianBlur();
+                    input.showMouseCursor(true);
+                    continue;
+                }
+                // 右键熔炉 → 打开熔炉界面
+                if (hasTarget && world.get(targetedBlock) == BLOCK_FURNACE)
+                {
+                    playSFX(clickPath);
+                    state = GameState::Furnace;
                     renderer.captureBackground();
                     renderer.applyGaussianBlur();
                     input.showMouseCursor(true);

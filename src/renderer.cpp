@@ -321,7 +321,7 @@ void Renderer::loadBlockTextures()
     loadTexPixels(L"../assert/texture/furnace_top.png", m_texPixels[51], tw, th); m_texW[51] = tw; m_texH[51] = th;
     loadTexPixels(L"../assert/texture/furnace_side.png", m_texPixels[52], tw, th); m_texW[52] = tw; m_texH[52] = th;
     loadTexPixels(L"../assert/texture/furnace_bottom.png", m_texPixels[53], tw, th); m_texW[53] = tw; m_texH[53] = th;
-    // 54 预留给 furnace_side_on
+    loadTexPixels(L"../assert/texture/furnace_side_on.png", m_texPixels[54], tw, th); m_texW[54] = tw; m_texH[54] = th;
 
     m_blockTexLoaded = true;
 }
@@ -347,7 +347,10 @@ int Renderer::blockTexId(int blockType, int face)
         case BLOCK_COBBLESTONE:     return 42 + face;
         case BLOCK_COAL_ORE:        return 45 + face;
         case BLOCK_COAL_BLOCK:      return 48 + face;
-        case BLOCK_FURNACE:         return 51 + face;
+        case BLOCK_FURNACE:
+            // 侧面：活跃时显示 furnace_side_on
+            if (face == 1 && m_furnaceActive) return 54;
+            return 51 + face;
         default: return -1;
     }
 }

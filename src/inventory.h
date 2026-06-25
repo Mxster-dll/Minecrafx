@@ -18,7 +18,8 @@ public:
     static constexpr int CRAFT_INPUT = 9;   // 最多 3×3 合成台
     static constexpr int CRAFT_OUTPUT = 1;
     static constexpr int ARMOR_SLOTS = 4;   // 头盔/胸甲/护腿/靴子
-    static constexpr int TOTAL_SLOTS = HOTBAR_SLOTS + BACKPACK_SLOTS + CRAFT_INPUT + CRAFT_OUTPUT + ARMOR_SLOTS;
+    static constexpr int FURNACE_SLOTS = 3; // 熔炉输入/燃料/输出
+    static constexpr int TOTAL_SLOTS = HOTBAR_SLOTS + BACKPACK_SLOTS + CRAFT_INPUT + CRAFT_OUTPUT + ARMOR_SLOTS + FURNACE_SLOTS;
 
     enum CraftMode { CM_Inventory2x2, CM_CraftingTable3x3 };
 

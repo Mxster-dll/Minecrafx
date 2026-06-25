@@ -265,12 +265,12 @@ bool Inventory::placeInto(int slotIndex)
     // 不能放入输出区
     if (slotIndex == CRAFT_OUTPUT_IDX) return false;
 
-    // 盔甲槽位：只接受对应类型
-    if (slotIndex >= ARMOR_BASE)
+    // 盔甲槽位：只接受对应类型（46~49）
+    if (slotIndex >= ARMOR_BASE && slotIndex < ARMOR_BASE + ARMOR_SLOTS)
     {
         int ai = slotIndex - ARMOR_BASE;
         if (!isValidArmorForSlot(ai, m_dragType)) return false;
-        if (m_dragCount != 1) return false;  // 盔甲只能单件放入
+        if (m_dragCount != 1) return false;
     }
 
     auto &s = m_slots[slotIndex];
@@ -303,7 +303,7 @@ bool Inventory::placeOneInto(int slotIndex)
     if (slotIndex == CRAFT_OUTPUT_IDX) return false;
 
     // 盔甲槽位：不接受右键逐一放入（防堆叠）
-    if (slotIndex >= ARMOR_BASE) return false;
+    if (slotIndex >= ARMOR_BASE && slotIndex < ARMOR_BASE + ARMOR_SLOTS) return false;
 
     auto &s = m_slots[slotIndex];
     if (s.blockType != BLOCK_AIR && s.blockType != m_dragType) return false;
