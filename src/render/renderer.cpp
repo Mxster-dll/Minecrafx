@@ -7,8 +7,10 @@
 #include <cwchar>
 #include <windows.h>
 
+// NOTE EasyX PNG 像素格式为 0xAARRGGBB，但 DIB 是 0x00RRGGBB
 static inline DWORD alphaBlend(DWORD dst, DWORD src)
 {
+    // 古战场打卡，这个 alphaBlend 写了我一整天，EasyX 的文档太少了
     unsigned int a = (src >> 24) & 0xFF;
     if (a == 0) return dst;
     if (a == 255) return src & 0x00FFFFFF;
@@ -31,6 +33,7 @@ Renderer::Renderer(int screenWidth, int screenHeight)
     , m_screenHeight(screenHeight)
     , m_blockHalf(0.5)
     , m_frameCount(0)
+    // FIXME hardware_concurrency 在虚拟机可能返回 1
     , m_pool(new ThreadPool(std::max(1u, std::thread::hardware_concurrency())))
     , m_hBmp(nullptr)
     , m_memDC(nullptr)
@@ -59,6 +62,7 @@ Renderer::Renderer(int screenWidth, int screenHeight)
     , m_blockTexLoaded(false)
 {
     m_zbuf.resize(m_screenWidth * m_screenHeight);
+    // 创建 DIB 离屏缓冲（不用 EasyX 默认缓冲因为需要直接操控像素）
     memset(m_texPixels, 0, sizeof(m_texPixels));
     memset(m_texW, 0, sizeof(m_texW));
     memset(m_texH, 0, sizeof(m_texH));
@@ -67,7 +71,7 @@ Renderer::Renderer(int screenWidth, int screenHeight)
     BITMAPINFO bmi = {};
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
     bmi.bmiHeader.biWidth = m_screenWidth;
-    bmi.bmiHeader.biHeight = -m_screenHeight;
+    bmi.bmiHeader.biHeight = -m_screenHeight;  // 负数 = top-down DIB
     bmi.bmiHeader.biPlanes = 1;
     bmi.bmiHeader.biBitCount = 32;
     bmi.bmiHeader.biCompression = BI_RGB;
@@ -115,6 +119,7 @@ Renderer::~Renderer()
 
 void Renderer::resetBuffers()
 {
+    // TODO: memset 比 std::fill 快，但 1e30 转 float 可能有精度问题
     std::fill(m_zbuf.begin(), m_zbuf.end(), 1e30);
 }
 
@@ -126,6 +131,8 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
 
     resetBuffers();
 
+    // 天空/虚空渐变
+    // HACK: 天空色写死在代码里，以后抽成 JSON
     {
         double pitch = cam.getPitch();
         constexpr double fov = 1.0472;
@@ -281,7 +288,7 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
                 if (allTris.size() < 16) numTiles = 1;
 
                 m_pool->parallelRanges(m_screenHeight, numTiles,
-                    [&](int , int ty0, int ty1)
+                    [&](int, int ty0, int ty1)
                 {
                     rasterizeTriangles(allTris, cam3d, ty0, ty1);
                 });
@@ -312,7 +319,7 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
     }
 }
 
-static bool blockIntersectsPlane(int bx, int , int bz, int bw,
+static bool blockIntersectsPlane(int bx, int, int bz, int bw,
     const Vec4 &camPos, const Plane2D &plane, double half, double sp)
 {
     double x0 = bx * sp - camPos.x - half;

@@ -1,6 +1,8 @@
 ﻿#include "camera.h"
 #include "project4d.h"
 
+// NOTE 正交化太频繁，有浮点漂移风险
+
 Camera4D::Camera4D()
     : m_pos(12.0, 20.0, -2.0, 6.0)
     , m_right(1.0, 0.0, 0.0, 0.0)

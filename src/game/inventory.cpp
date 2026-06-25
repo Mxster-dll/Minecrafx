@@ -205,7 +205,7 @@ void Inventory::updateCraftingResult(const CraftingManager &craftMgr)
     }
 }
 
-bool Inventory::pickup(int slotIndex, int count )
+bool Inventory::pickup(int slotIndex, int count)
 {
     if (slotIndex < 0 || slotIndex >= TOTAL_SLOTS) return false;
     if (isDragging()) return false;

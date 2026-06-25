@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+// NOTE 考虑拆分头文件
+
 #include "../core/constant.h"
 #include "../world/world.h"
 #include "../world/camera.h"

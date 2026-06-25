@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <vector>
 
+// OpenMP 可选——没有就退化为单线程
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -27,7 +28,7 @@ double vec3Dot(const Vec3 &a, const Vec3 &b)
 
 Vec3 vec3Cross(const Vec3 &a, const Vec3 &b)
 {
-
+    // XZW 空间外积：不同于 R³ 叉积，(x,z,w) 三维循环置换
     return Vec3(
         a.z * b.w - a.w * b.z,
         a.w * b.x - a.x * b.w,
@@ -59,6 +60,7 @@ Plane2D Plane2D::fromNormal(const Vec3 &normal, const Vec3 &pRef, double off)
     plane.n = vec3Normalize(normal);
     plane.offset = off;
 
+    // 参考向量与法向量平行时退化为任意正交向量
     double dot = vec3Dot(pRef, plane.n);
     Vec3 pRaw = vec3Sub(pRef, vec3Scale(plane.n, dot));
     double pLen = vec3Length(pRaw);
@@ -95,6 +97,7 @@ PolyOnPlane intersectCubePlane(
     double w0, double w1,
     const Plane2D &plane)
 {
+    // BUG: 极端角度（法向量与轴夹角 < 0.01°）交线会变形，估计浮点精度
     PolyOnPlane result;
 
     struct { double x, z, w; } verts[8] = {

@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cstdlib>
 
+// TODO 换柏林噪声实现随机化，后续添加群系
+
 int terrainHeight(int x, int z, int w)
 {
     double h = 0.0;

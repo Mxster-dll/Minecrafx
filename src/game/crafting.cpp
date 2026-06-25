@@ -4,8 +4,10 @@
 #include <unordered_map>
 #include <windows.h>
 
+// TODO: 换库解析 json
 static std::string readFile(const char *path)
 {
+    // HACK: 用 fopen 而非 ifstream —— MinGW 下 wchar_t 路径的 ifstream 有 bug
     FILE *f = fopen(path, "rb");
     if (!f) return {};
     fseek(f, 0, SEEK_END);
@@ -42,6 +44,8 @@ static bool isNull(const std::string &s, size_t pos)
 
 static int parseBlockType(const std::string &name)
 {
+    // 这 map 越来越长，每次加方块都得来注册，烦
+    // TODO: 用代码生成器自动生成
     static std::unordered_map<std::string, int> map = {
         {"air", BLOCK_AIR}, {"grass", BLOCK_GRASS}, {"dirt", BLOCK_DIRT},
         {"log", BLOCK_LOG}, {"leaves", BLOCK_LEAVES}, {"stone", BLOCK_STONE},

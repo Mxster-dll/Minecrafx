@@ -1,5 +1,7 @@
 ﻿#include "input_handler.h"
 
+// FIXME 循环快速连按时丢键盘事件
+
 static const wchar_t *PROP_NAME = L"InputHandler_This";
 
 InputHandler::InputHandler(HWND hwnd)

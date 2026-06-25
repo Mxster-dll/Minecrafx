@@ -1,5 +1,7 @@
 ﻿#include "world.h"
 
+// NOTE 没考虑过度大的世界，也就是超过 int 的坐标
+
 int Chunk::get(int lx, int ly, int lz, int lw) const
 {
     auto it = m_blocks.find(IVec4(lx, ly, lz, lw));

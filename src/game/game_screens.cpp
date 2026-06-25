@@ -2,6 +2,8 @@
 #include "../core/constant.h"
 #include <functional>
 
+// TODO: 状态模式重构，此文件内全是 UI 状态机，太丑
+
 bool updateCraftingScreen(
     GameState &state,
     InputHandler &input,

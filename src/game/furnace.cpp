@@ -1,5 +1,8 @@
 ﻿#include "furnace.h"
 
+// BUG: 熔炉烧完偶尔不更新 lit 纹理，要右键重开界面
+// 怀疑 setFurnaceActive 函数的调用时机有问题
+
 FurnaceManager::FurnaceManager() {}
 
 bool FurnaceManager::update(FurnaceManager::State &st, double dt)

@@ -19,6 +19,8 @@
 #include "world/world_gen.h"
 #include "game/game_screens.h"
 
+// TODO 拆分此文件，把 WASD 移动逻辑抽到 PlayerController 类
+
 static void nearestScale(IMAGE &dst, const IMAGE &src, int scale)
 {
     int srcW = src.getwidth(), srcH = src.getheight();
@@ -765,7 +767,7 @@ int main()
                 if (raycast3D(hitPos, prevPos))
                 {
                     int placeType = inventory.hotbarBlockType(selectedSlot);
-                    if (placeType <= 0) {  }
+                    if (placeType <= 0) {}
                     else
                     {
                         Vec4 pp = camera.getPos();
