@@ -269,6 +269,7 @@ int main()
             {
                 playSFX(clickPath);
                 isCreative = false;
+                furnaceState = FurnaceManager::State {};
                 initSurvivalInventory(inventory);
                 generateSurvivalWorld(world, MX, MZ, MW);
 
@@ -285,6 +286,7 @@ int main()
             {
                 playSFX(clickPath);
                 isCreative = true;
+                furnaceState = FurnaceManager::State {};
                 initCreativeInventory(inventory);
                 constexpr int CF_X = 16, CF_Z = 16, CF_W = 16;
                 generateCreativeWorld(world, CF_X, CF_Z, CF_W);
@@ -684,7 +686,7 @@ int main()
 
                             else if (destroyedType == BLOCK_COAL_ORE)
                             {
-                                dropType = BLOCK_COAL; dropCount = 2 + (rand() % 3);
+                                dropType = ITEM_COAL; dropCount = 2 + (rand() % 3);
                             }
 
                             auto addItem = [&](int type, int cnt)
@@ -715,7 +717,7 @@ int main()
                             for (int i = 0; i < Inventory::HOTBAR_SLOTS + Inventory::BACKPACK_SLOTS; ++i)
                             {
                                 auto &slot = inventory.getSlot(i);
-                                if (slot.blockType == BLOCK_APPLE)
+                                if (slot.blockType == ITEM_APPLE)
                                 {
                                     slot.count++; placed = true; break;
                                 }
@@ -727,7 +729,7 @@ int main()
                                     auto &slot = inventory.getSlot(i);
                                     if (slot.blockType == BLOCK_AIR)
                                     {
-                                        slot.blockType = BLOCK_APPLE; slot.count = 1; break;
+                                        slot.blockType = ITEM_APPLE; slot.count = 1; break;
                                     }
                                 }
                             }
@@ -799,7 +801,7 @@ int main()
             }
             if (mapChanged)
             {
-                map3D_updateBlock(map3D, changedPos, changedType, camera, 0.5,
+                map3DUpdateBlock(map3D, changedPos, changedType, camera, 0.5,
                     [](int bx, int by, int bz, int bw)->COLORREF { return blockColor(bx, by, bz, bw); });
             }
         }

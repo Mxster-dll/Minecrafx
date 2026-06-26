@@ -43,7 +43,7 @@ public:
     }
     void clearMiningTarget() { m_miningStage = -1; }
 
-    static void setFurnaceActive(bool active) { m_furnaceActive = active; }
+    static void setFurnaceActive(bool active) { s_furnaceActive = active; }
 
     void loadBlockTextures();
 
@@ -163,7 +163,7 @@ private:
     IVec4 m_miningTarget;
     int m_miningStage = -1;
 
-    static inline bool m_furnaceActive = false;
+    static inline bool s_furnaceActive = false;
 
     void resetBuffers();
 

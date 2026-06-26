@@ -145,7 +145,7 @@ int Renderer::blockTexId(int blockType, int face)
         case BLOCK_COAL_BLOCK:      return 48 + face;
         case BLOCK_FURNACE:
 
-            if (face == 1 && m_furnaceActive) return 54;
+            if (face == 1 && s_furnaceActive) return 54;
             return 51 + face;
         default: return -1;
     }
@@ -736,8 +736,8 @@ void Renderer::applyGaussianBlur()
     std::vector<DWORD> temp(w * h);
 
     constexpr int K = 7;
-    constexpr int weights[K] = { 1, 6, 15, 20, 15, 6, 1 };
-    constexpr int radius = K / 2;
+    constexpr int WEIGHTS[K] = { 1, 6, 15, 20, 15, 6, 1 };
+    constexpr int RADIUS = K / 2;
     constexpr int ITERATIONS = 4;
 
     for (int iter = 0; iter < ITERATIONS; ++iter)
@@ -750,13 +750,13 @@ void Renderer::applyGaussianBlur()
             {
                 int sumR = 0, sumG = 0, sumB = 0;
                 int weightSum = 0;
-                for (int k = -radius; k <= radius; ++k)
+                for (int k = -RADIUS; k <= RADIUS; ++k)
                 {
                     int sx = x + k;
                     if (sx < 0) sx = 0;
                     if (sx >= w) sx = w - 1;
                     DWORD c = m_background[rowBase + sx];
-                    int wt = weights[k + radius];
+                    int wt = WEIGHTS[k + RADIUS];
                     sumR += GetRValue(c) * wt;
                     sumG += GetGValue(c) * wt;
                     sumB += GetBValue(c) * wt;
@@ -776,13 +776,13 @@ void Renderer::applyGaussianBlur()
             {
                 int sumR = 0, sumG = 0, sumB = 0;
                 int weightSum = 0;
-                for (int k = -radius; k <= radius; ++k)
+                for (int k = -RADIUS; k <= RADIUS; ++k)
                 {
                     int sy = y + k;
                     if (sy < 0) sy = 0;
                     if (sy >= h) sy = h - 1;
                     DWORD c = temp[sy * w + x];
-                    int wt = weights[k + radius];
+                    int wt = WEIGHTS[k + RADIUS];
                     sumR += GetRValue(c) * wt;
                     sumG += GetGValue(c) * wt;
                     sumB += GetBValue(c) * wt;

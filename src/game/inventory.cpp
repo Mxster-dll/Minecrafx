@@ -11,32 +11,32 @@ Inventory::Inventory()
     m_slots[4] = { BLOCK_PLANKS, 64 };
     m_slots[5] = { BLOCK_LEAVES, 64 };
     m_slots[6] = { BLOCK_CRAFTING_TABLE, 1 };
-    m_slots[7] = { BLOCK_STICK,  64 };
+    m_slots[7] = { ITEM_STICK,  64 };
 
     m_slots[9] = { BLOCK_DIAMOND_ORE, 64 };
     m_slots[10] = { BLOCK_GOLD_ORE,    64 };
     m_slots[11] = { BLOCK_IRON_ORE,    64 };
-    m_slots[12] = { BLOCK_DIAMOND,     64 };
-    m_slots[13] = { BLOCK_GOLD_INGOT,  64 };
-    m_slots[14] = { BLOCK_IRON_INGOT,  64 };
-    m_slots[15] = { BLOCK_GOLD_NUGGET, 64 };
-    m_slots[16] = { BLOCK_IRON_NUGGET, 64 };
-    m_slots[17] = { BLOCK_APPLE,       64 };
+    m_slots[12] = { ITEM_DIAMOND,     64 };
+    m_slots[13] = { ITEM_GOLD_INGOT,  64 };
+    m_slots[14] = { ITEM_IRON_INGOT,  64 };
+    m_slots[15] = { ITEM_GOLD_NUGGET, 64 };
+    m_slots[16] = { ITEM_IRON_NUGGET, 64 };
+    m_slots[17] = { ITEM_APPLE,       64 };
 
     m_slots[18] = { BLOCK_DIAMOND_BLOCK, 64 };
     m_slots[19] = { BLOCK_GOLD_BLOCK,    64 };
     m_slots[20] = { BLOCK_IRON_BLOCK,    64 };
-    m_slots[21] = { BLOCK_DIAMOND_PICKAXE, 1 };
-    m_slots[22] = { BLOCK_DIAMOND_AXE,     1 };
-    m_slots[23] = { BLOCK_DIAMOND_SWORD,   1 };
-    m_slots[24] = { BLOCK_DIAMOND_SHOVEL,  1 };
-    m_slots[25] = { BLOCK_DIAMOND_HOE,     1 };
-    m_slots[26] = { BLOCK_GOLDEN_APPLE,   64 };
+    m_slots[21] = { ITEM_DIAMOND_PICKAXE, 1 };
+    m_slots[22] = { ITEM_DIAMOND_AXE,     1 };
+    m_slots[23] = { ITEM_DIAMOND_SWORD,   1 };
+    m_slots[24] = { ITEM_DIAMOND_SHOVEL,  1 };
+    m_slots[25] = { ITEM_DIAMOND_HOE,     1 };
+    m_slots[26] = { ITEM_GOLDEN_APPLE,   64 };
 
-    m_slots[27] = { BLOCK_DIAMOND_HELMET,      1 };
-    m_slots[28] = { BLOCK_DIAMOND_CHESTPLATE,  1 };
-    m_slots[29] = { BLOCK_DIAMOND_LEGGINGS,    1 };
-    m_slots[30] = { BLOCK_DIAMOND_BOOTS,       1 };
+    m_slots[27] = { ITEM_DIAMOND_HELMET,      1 };
+    m_slots[28] = { ITEM_DIAMOND_CHESTPLATE,  1 };
+    m_slots[29] = { ITEM_DIAMOND_LEGGINGS,    1 };
+    m_slots[30] = { ITEM_DIAMOND_BOOTS,       1 };
 }
 
 Inventory::Slot &Inventory::getSlot(int index)
@@ -341,17 +341,17 @@ bool Inventory::isValidArmorForSlot(int armorSubIndex, int blockType)
     switch (armorSubIndex)
     {
         case 0:
-            return blockType == BLOCK_IRON_HELMET || blockType == BLOCK_GOLDEN_HELMET ||
-                blockType == BLOCK_DIAMOND_HELMET;
+            return blockType == ITEM_IRON_HELMET || blockType == ITEM_GOLDEN_HELMET ||
+                blockType == ITEM_DIAMOND_HELMET;
         case 1:
-            return blockType == BLOCK_IRON_CHESTPLATE || blockType == BLOCK_GOLDEN_CHESTPLATE ||
-                blockType == BLOCK_DIAMOND_CHESTPLATE;
+            return blockType == ITEM_IRON_CHESTPLATE || blockType == ITEM_GOLDEN_CHESTPLATE ||
+                blockType == ITEM_DIAMOND_CHESTPLATE;
         case 2:
-            return blockType == BLOCK_IRON_LEGGINGS || blockType == BLOCK_GOLDEN_LEGGINGS ||
-                blockType == BLOCK_DIAMOND_LEGGINGS;
+            return blockType == ITEM_IRON_LEGGINGS || blockType == ITEM_GOLDEN_LEGGINGS ||
+                blockType == ITEM_DIAMOND_LEGGINGS;
         case 3:
-            return blockType == BLOCK_IRON_BOOTS || blockType == BLOCK_GOLDEN_BOOTS ||
-                blockType == BLOCK_DIAMOND_BOOTS;
+            return blockType == ITEM_IRON_BOOTS || blockType == ITEM_GOLDEN_BOOTS ||
+                blockType == ITEM_DIAMOND_BOOTS;
         default: return false;
     }
 }
@@ -391,5 +391,76 @@ bool Inventory::takeCraftOutput(const CraftingManager &craftMgr)
     }
 
     updateCraftingResult(craftMgr);
+    return true;
+}
+
+void Inventory::returnCraftItems()
+{
+    // 将合成区所有物品移回背包/快捷栏
+    for (int ci = 0; ci < CRAFT_INPUT; ++ci)
+    {
+        auto &s = m_slots[CRAFT_BASE + ci];
+        if (s.blockType == BLOCK_AIR || s.count <= 0) continue;
+
+        int remaining = s.count;
+        int type = s.blockType;
+
+        // 先尝试叠加到已有的同类型堆
+        for (int i = 0; i < CRAFT_BASE && remaining > 0; ++i)
+        {
+            auto &tgt = m_slots[i];
+            if (tgt.blockType == type && tgt.count < 64)
+            {
+                int space = 64 - tgt.count;
+                int move = (remaining < space) ? remaining : space;
+                tgt.count += move;
+                remaining -= move;
+            }
+        }
+        // 如果还有剩余，放入第一个空格
+        for (int i = 0; i < CRAFT_BASE && remaining > 0; ++i)
+        {
+            auto &tgt = m_slots[i];
+            if (tgt.blockType == BLOCK_AIR)
+            {
+                tgt.blockType = type;
+                tgt.count = (remaining > 64) ? 64 : remaining;
+                remaining -= tgt.count;
+            }
+        }
+
+        // 清空合成格（多余的丢弃）
+        s.blockType = BLOCK_AIR;
+        s.count = 0;
+    }
+}
+
+bool Inventory::collectAll(int slotIndex)
+{
+    if (isDragging()) return false;
+    if (slotIndex < 0 || slotIndex >= TOTAL_SLOTS) return false;
+
+    auto &src = m_slots[slotIndex];
+    if (src.blockType == BLOCK_AIR || src.count <= 0) return false;
+
+    int type = src.blockType;
+
+    // 先拿起当前格的物品
+    if (!pickup(slotIndex, -1)) return false;
+
+    // 遍历背包和快捷栏，收集所有同类物品
+    for (int i = 0; i < CRAFT_BASE; ++i)
+    {
+        if (i == slotIndex) continue;
+        auto &s = m_slots[i];
+        if (s.blockType == type && s.count > 0)
+        {
+            int take = s.count;
+            s.blockType = BLOCK_AIR;
+            s.count = 0;
+            m_dragCount += take;
+        }
+    }
+
     return true;
 }

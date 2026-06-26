@@ -108,13 +108,16 @@ void generateCreativeWorld(World &world, int CX, int CZ, int CW)
 
 void initSurvivalInventory(Inventory &inv)
 {
-    for (int i = 0; i < Inventory::HOTBAR_SLOTS + Inventory::BACKPACK_SLOTS; ++i)
+    for (int i = 0; i < Inventory::TOTAL_SLOTS; ++i)
         inv.getSlot(i) = { BLOCK_AIR, 0 };
-    inv.getSlot(0) = { BLOCK_IRON_PICKAXE, 1 };
 }
 
 void initCreativeInventory(Inventory &inv)
 {
+    // 清空所有槽位（包括合成区、护甲、熔炉）
+    for (int i = 0; i < Inventory::TOTAL_SLOTS; ++i)
+        inv.getSlot(i) = { BLOCK_AIR, 0 };
+
     auto isExcluded = [](int id) -> bool
     {
 

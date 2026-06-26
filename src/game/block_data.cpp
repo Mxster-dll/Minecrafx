@@ -2,65 +2,65 @@
 
 static inline bool isPickaxe(int t)
 {
-    return t == BLOCK_WOODEN_PICKAXE || t == BLOCK_STONE_PICKAXE ||
-        t == BLOCK_IRON_PICKAXE || t == BLOCK_DIAMOND_PICKAXE ||
-        t == BLOCK_GOLDEN_PICKAXE;
+    return t == ITEM_WOODEN_PICKAXE || t == ITEM_STONE_PICKAXE ||
+        t == ITEM_IRON_PICKAXE || t == ITEM_DIAMOND_PICKAXE ||
+        t == ITEM_GOLDEN_PICKAXE;
 }
 
 static inline bool isAxe(int t)
 {
-    return t == BLOCK_WOODEN_AXE || t == BLOCK_STONE_AXE ||
-        t == BLOCK_IRON_AXE || t == BLOCK_DIAMOND_AXE ||
-        t == BLOCK_GOLDEN_AXE;
+    return t == ITEM_WOODEN_AXE || t == ITEM_STONE_AXE ||
+        t == ITEM_IRON_AXE || t == ITEM_DIAMOND_AXE ||
+        t == ITEM_GOLDEN_AXE;
 }
 
 static inline bool isShovel(int t)
 {
-    return t == BLOCK_WOODEN_SHOVEL || t == BLOCK_STONE_SHOVEL ||
-        t == BLOCK_IRON_SHOVEL || t == BLOCK_DIAMOND_SHOVEL ||
-        t == BLOCK_GOLDEN_SHOVEL;
+    return t == ITEM_WOODEN_SHOVEL || t == ITEM_STONE_SHOVEL ||
+        t == ITEM_IRON_SHOVEL || t == ITEM_DIAMOND_SHOVEL ||
+        t == ITEM_GOLDEN_SHOVEL;
 }
 
 static inline bool isSword(int t)
 {
-    return t == BLOCK_WOODEN_SWORD || t == BLOCK_STONE_SWORD ||
-        t == BLOCK_IRON_SWORD || t == BLOCK_DIAMOND_SWORD ||
-        t == BLOCK_GOLDEN_SWORD;
+    return t == ITEM_WOODEN_SWORD || t == ITEM_STONE_SWORD ||
+        t == ITEM_IRON_SWORD || t == ITEM_DIAMOND_SWORD ||
+        t == ITEM_GOLDEN_SWORD;
 }
 
 static inline double pickSpeed(int t, double base)
 {
-    if (t == BLOCK_GOLDEN_PICKAXE)  return base * 0.15;
-    if (t == BLOCK_DIAMOND_PICKAXE) return base * 0.3;
-    if (t == BLOCK_IRON_PICKAXE)    return base * 0.4;
-    if (t == BLOCK_STONE_PICKAXE)   return base * 0.5;
+    if (t == ITEM_GOLDEN_PICKAXE)  return base * 0.15;
+    if (t == ITEM_DIAMOND_PICKAXE) return base * 0.3;
+    if (t == ITEM_IRON_PICKAXE)    return base * 0.4;
+    if (t == ITEM_STONE_PICKAXE)   return base * 0.5;
     return base;
 }
 
 static inline double axeSpeed(int t, double base)
 {
-    if (t == BLOCK_GOLDEN_AXE)  return base * 0.2;
-    if (t == BLOCK_DIAMOND_AXE) return base * 0.25;
-    if (t == BLOCK_IRON_AXE)    return base * 0.35;
-    if (t == BLOCK_STONE_AXE)   return base * 0.55;
+    if (t == ITEM_GOLDEN_AXE)  return base * 0.2;
+    if (t == ITEM_DIAMOND_AXE) return base * 0.25;
+    if (t == ITEM_IRON_AXE)    return base * 0.35;
+    if (t == ITEM_STONE_AXE)   return base * 0.55;
     return base;
 }
 
 static inline double shovelSpeed(int t, double base)
 {
-    if (t == BLOCK_GOLDEN_SHOVEL)  return base * 0.12;
-    if (t == BLOCK_DIAMOND_SHOVEL) return base * 0.15;
-    if (t == BLOCK_IRON_SHOVEL)    return base * 0.25;
-    if (t == BLOCK_STONE_SHOVEL)   return base * 0.4;
+    if (t == ITEM_GOLDEN_SHOVEL)  return base * 0.12;
+    if (t == ITEM_DIAMOND_SHOVEL) return base * 0.15;
+    if (t == ITEM_IRON_SHOVEL)    return base * 0.25;
+    if (t == ITEM_STONE_SHOVEL)   return base * 0.4;
     return base * 0.6;
 }
 
 static inline int pickTier(int t)
 {
-    if (t == BLOCK_WOODEN_PICKAXE || t == BLOCK_GOLDEN_PICKAXE) return 0;
-    if (t == BLOCK_STONE_PICKAXE)   return 1;
-    if (t == BLOCK_IRON_PICKAXE)    return 2;
-    if (t == BLOCK_DIAMOND_PICKAXE) return 3;
+    if (t == ITEM_WOODEN_PICKAXE || t == ITEM_GOLDEN_PICKAXE) return 0;
+    if (t == ITEM_STONE_PICKAXE)   return 1;
+    if (t == ITEM_IRON_PICKAXE)    return 2;
+    if (t == ITEM_DIAMOND_PICKAXE) return 3;
     return -1;
 }
 

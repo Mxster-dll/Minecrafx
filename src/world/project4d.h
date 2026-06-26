@@ -87,7 +87,7 @@ struct Map3D
 Map3D generateMap3D(const class World &world, const class Camera4D &cam4D,
     double blockHalf, COLORREF(*getColor)(int, int, int, int));
 
-void map3D_updateBlock(Map3D &map, const IVec4 &worldPos, int blockType,
+void map3DUpdateBlock(Map3D &map, const IVec4 &worldPos, int blockType,
     const Camera4D &cam4D, double blockHalf,
     COLORREF(*getColor)(int, int, int, int));
 

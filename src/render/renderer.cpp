@@ -135,13 +135,13 @@ void Renderer::renderWorld(const World &world, const Camera4D &cam)
     // HACK: 天空色写死在代码里，以后抽成 JSON
     {
         double pitch = cam.getPitch();
-        constexpr double fov = 1.0472;
-        constexpr double horizonOffset = 0.785;
+        constexpr double FOV = 1.0472;
+        constexpr double HORIZON_OFFSET = 0.785;
         DWORD *bits = m_pBits;
         for (int y = 0; y < m_screenHeight; ++y)
         {
             double t = 0.5 - (double) y / (m_screenHeight - 1);
-            double angle = pitch + t * fov + horizonOffset;
+            double angle = pitch + t * FOV + HORIZON_OFFSET;
 
             int r, g, b;
 

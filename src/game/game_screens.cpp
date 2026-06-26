@@ -1,6 +1,7 @@
 ﻿#include "game_screens.h"
 #include "../core/constant.h"
 #include <functional>
+#include <ctime>
 
 // TODO: 状态模式重构，此文件内全是 UI 状态机，太丑
 
@@ -19,6 +20,8 @@ bool updateCraftingScreen(
     {
         playSFX(clickPath);
         if (inventory.isDragging()) inventory.cancelDrag();
+        // 关闭前将合成区物品退回背包
+        inventory.returnCraftItems();
         if (craftMode == Inventory::CM_CraftingTable3x3)
             inventory.setCraftMode(Inventory::CM_Inventory2x2);
         state = GameState::Gameplay;
@@ -38,6 +41,7 @@ bool updateCraftingScreen(
     bool mouseDown = input.getMouseClick(0);
     bool mouseUp = input.getMouseRelease(0);
     bool rightClick = input.getMouseClick(1);
+    bool rightHeld = input.isMouseButtonDown(1);
 
     int hoveredSlot = inventory.hitTest(mp.x, mp.y,
         bgX, bgY, bgW, bgH, nativeW, nativeH);
@@ -48,13 +52,28 @@ bool updateCraftingScreen(
     static int  dragSrcSlot = -1;
     static bool didAutoPickup = false;
 
+    // ── 左键按下（含双击检测） ──
+    static clock_t lastClickTime = 0;
+    static int     lastClickSlot = -1;
     if (mouseDown && hoveredSlot >= 0)
     {
         dragSrcSlot = hoveredSlot;
         didAutoPickup = false;
         bool wasCraft = (hoveredSlot >= CRAFT_BASE);
 
-        if (!inventory.isDragging())
+        clock_t now = clock();
+        bool isDoubleClick = (hoveredSlot == lastClickSlot &&
+            (now - lastClickTime) < CLOCKS_PER_SEC * 350 / 1000);
+
+        if (isDoubleClick && !inventory.isDragging())
+        {
+            // 双击：收集所有同类物品到手上
+            inventory.collectAll(hoveredSlot);
+            didAutoPickup = inventory.isDragging();
+            lastClickSlot = -1;
+            lastClickTime = 0;
+        }
+        else if (!inventory.isDragging())
         {
             if (hoveredSlot == OUTPUT_SLOT)
             {
@@ -65,11 +84,15 @@ bool updateCraftingScreen(
             {
                 didAutoPickup = inventory.pickup(hoveredSlot, -1);
             }
+            lastClickSlot = hoveredSlot;
+            lastClickTime = now;
         }
+
         if (wasCraft)
             inventory.updateCraftingResult(craftMgr);
     }
 
+    // ── 左键释放 ──
     if (mouseUp)
     {
         bool wasCraft = (hoveredSlot >= CRAFT_BASE);
@@ -101,6 +124,8 @@ bool updateCraftingScreen(
             inventory.updateCraftingResult(craftMgr);
     }
 
+    // ── 右键按下（离散点击）+ 右键拖动 ──
+    static int  lastRightDragSlot = -1;
     if (rightClick && hoveredSlot >= 0)
     {
         bool wasCraft = (hoveredSlot >= CRAFT_BASE);
@@ -110,7 +135,10 @@ bool updateCraftingScreen(
             if (hoveredSlot == OUTPUT_SLOT)
                 inventory.takeCraftOutput(craftMgr);
             else
+            {
                 inventory.placeOneInto(hoveredSlot);
+                lastRightDragSlot = hoveredSlot;  // 防止拖动重复放置
+            }
         }
         else
         {
@@ -124,12 +152,27 @@ bool updateCraftingScreen(
             inventory.updateCraftingResult(craftMgr);
     }
 
+    if (rightHeld && inventory.isDragging())
+    {
+        if (hoveredSlot >= 0 && hoveredSlot != lastRightDragSlot &&
+            hoveredSlot != OUTPUT_SLOT)
+        {
+            inventory.placeOneInto(hoveredSlot);
+            lastRightDragSlot = hoveredSlot;
+        }
+    }
+    if (!rightHeld)
+    {
+        lastRightDragSlot = -1;
+    }
+
     cleardevice();
     setbkcolor(RGB(10, 10, 30));
     renderer.drawBackground();
     renderer.drawImageCentered(&bgImage);
 
-    for (int i = 0; i < Inventory::TOTAL_SLOTS; ++i)
+    // 只渲染背包/快捷栏/合成/护甲槽，不渲染熔炉槽
+    for (int i = 0; i < Inventory::ARMOR_BASE + Inventory::ARMOR_SLOTS; ++i)
     {
         const auto &slot = inventory.getSlot(i);
         if (slot.blockType == BLOCK_AIR || slot.count <= 0) continue;
@@ -180,6 +223,7 @@ bool updateFurnaceScreen(
     bool mouseDown = input.getMouseClick(0);
     bool mouseUp = input.getMouseRelease(0);
     bool rightClick = input.getMouseClick(1);
+    bool rightHeld = input.isMouseButtonDown(1);
 
     constexpr int FURN_IN = Inventory::ARMOR_BASE + Inventory::ARMOR_SLOTS;
     constexpr int FURN_FU = FURN_IN + 1;
@@ -215,12 +259,31 @@ bool updateFurnaceScreen(
         return true;
     };
 
+    // ── 左键按下（含双击检测） ──
+    static clock_t lastClickTime_f = 0;
+    static int     lastClickSlot_f = -1;
     if (mouseDown && hoveredSlot >= 0)
     {
         dragSrcSlot = hoveredSlot;
         didAutoPickup = false;
-        if (!inventory.isDragging())
+
+        clock_t now = clock();
+        bool isDoubleClick = (hoveredSlot == lastClickSlot_f &&
+            (now - lastClickTime_f) < CLOCKS_PER_SEC * 350 / 1000);
+
+        if (isDoubleClick && !inventory.isDragging())
+        {
+            inventory.collectAll(hoveredSlot);
+            didAutoPickup = inventory.isDragging();
+            lastClickSlot_f = -1;
+            lastClickTime_f = 0;
+        }
+        else if (!inventory.isDragging())
+        {
             didAutoPickup = inventory.pickup(hoveredSlot, -1);
+            lastClickSlot_f = hoveredSlot;
+            lastClickTime_f = now;
+        }
     }
     if (mouseUp && inventory.isDragging())
     {
@@ -241,15 +304,34 @@ bool updateFurnaceScreen(
         else
             inventory.pickup(hoveredSlot, -1);
     }
+    // ── 右键按下（离散点击）+ 右键拖动 ──
+    static int  lastRightDragSlot_f = -1;
     if (rightClick && hoveredSlot >= 0)
     {
         if (inventory.isDragging())
         {
             if (canPlaceInFurnace(hoveredSlot, inventory.dragBlockType()))
+            {
                 inventory.placeOneInto(hoveredSlot);
+                lastRightDragSlot_f = hoveredSlot;  // 防止拖动重复放置
+            }
         }
         else
             inventory.pickup(hoveredSlot, 1);
+    }
+
+    if (rightHeld && inventory.isDragging())
+    {
+        if (hoveredSlot >= 0 && hoveredSlot != lastRightDragSlot_f)
+        {
+            if (canPlaceInFurnace(hoveredSlot, inventory.dragBlockType()))
+                inventory.placeOneInto(hoveredSlot);
+            lastRightDragSlot_f = hoveredSlot;
+        }
+    }
+    if (!rightHeld)
+    {
+        lastRightDragSlot_f = -1;
     }
 
     cleardevice();

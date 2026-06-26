@@ -86,6 +86,9 @@ public:
     int  dragCount()    const { return m_dragCount; }
     void cancelDrag();
 
+    void returnCraftItems();
+    bool collectAll(int slotIndex);
+
     static constexpr int ARMOR_BASE = HOTBAR_SLOTS + BACKPACK_SLOTS + CRAFT_INPUT + CRAFT_OUTPUT;
     static bool isValidArmorForSlot(int armorSubIndex, int blockType);
     static int armorSlotNativeY(int subIndex);
